@@ -13,7 +13,7 @@ pub fn Spectrogram() -> impl IntoView {
 
     // Drag state for selection
     let is_dragging = RwSignal::new(false);
-    let drag_start = RwSignal::new((0.0f64, 0.0f64)); // (time, freq)
+    let drag_start = RwSignal::new((0.0f64, 0.0f64));
 
     // Re-compute pre-render when current file changes
     Effect::new(move || {
@@ -29,11 +29,13 @@ pub fn Spectrogram() -> impl IntoView {
         }
     });
 
-    // Redraw when pre-rendered data, scroll, zoom, or selection changes
+    // Redraw when pre-rendered data, scroll, zoom, selection, or playhead changes
     Effect::new(move || {
         let scroll = state.scroll_offset.get();
         let zoom = state.zoom_level.get();
         let selection = state.selection.get();
+        let playhead = state.playhead_time.get();
+        let is_playing = state.is_playing.get();
         let _pre = pre_rendered.track();
 
         let Some(canvas_el) = canvas_ref.get() else { return };
@@ -93,6 +95,21 @@ pub fn Spectrogram() -> impl IntoView {
                         display_h as f64,
                     );
                 }
+
+                // Draw playhead
+                if is_playing {
+                    let visible_time = (display_w as f64 / zoom) * time_res;
+                    let px_per_sec = display_w as f64 / visible_time;
+                    let x = (playhead - scroll) * px_per_sec;
+                    if x >= 0.0 && x <= display_w as f64 {
+                        ctx.set_stroke_style_str("rgba(255, 80, 80, 0.9)");
+                        ctx.set_line_width(2.0);
+                        ctx.begin_path();
+                        ctx.move_to(x, 0.0);
+                        ctx.line_to(x, display_h as f64);
+                        ctx.stroke();
+                    }
+                }
             } else {
                 ctx.set_fill_style_str("#000");
                 ctx.fill_rect(0.0, 0.0, display_w as f64, display_h as f64);
@@ -124,7 +141,7 @@ pub fn Spectrogram() -> impl IntoView {
     };
 
     let on_mousedown = move |ev: MouseEvent| {
-        if ev.button() != 0 { return; } // left button only
+        if ev.button() != 0 { return; }
         if let Some((t, f)) = mouse_to_tf(&ev) {
             is_dragging.set(true);
             drag_start.set((t, f));
@@ -156,7 +173,6 @@ pub fn Spectrogram() -> impl IntoView {
                 freq_low: f0.min(f),
                 freq_high: f0.max(f),
             };
-            // Only keep selection if it has meaningful size
             if sel.time_end - sel.time_start > 0.0001 {
                 state.selection.set(Some(sel));
             } else {
@@ -165,7 +181,6 @@ pub fn Spectrogram() -> impl IntoView {
         }
     };
 
-    // Mouse wheel for scroll/zoom
     let on_wheel = move |ev: web_sys::WheelEvent| {
         ev.prevent_default();
         if ev.ctrl_key() {

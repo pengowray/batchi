@@ -20,6 +20,7 @@ pub struct Selection {
 pub enum PlaybackMode {
     Normal,
     Heterodyne,
+    TimeExpansion,
 }
 
 #[derive(Clone)]
@@ -29,9 +30,12 @@ pub struct AppState {
     pub selection: RwSignal<Option<Selection>>,
     pub playback_mode: RwSignal<PlaybackMode>,
     pub het_frequency: RwSignal<f64>,
+    pub te_factor: RwSignal<f64>,
     pub zoom_level: RwSignal<f64>,
     pub scroll_offset: RwSignal<f64>,
     pub is_playing: RwSignal<bool>,
+    pub playhead_time: RwSignal<f64>,
+    pub loading_count: RwSignal<usize>,
     pub join_files: RwSignal<bool>,
     pub auto_advance: RwSignal<bool>,
 }
@@ -42,11 +46,14 @@ impl AppState {
             files: RwSignal::new(Vec::new()),
             current_file_index: RwSignal::new(None),
             selection: RwSignal::new(None),
-            playback_mode: RwSignal::new(PlaybackMode::Normal),
+            playback_mode: RwSignal::new(PlaybackMode::TimeExpansion),
             het_frequency: RwSignal::new(45_000.0),
+            te_factor: RwSignal::new(10.0),
             zoom_level: RwSignal::new(1.0),
             scroll_offset: RwSignal::new(0.0),
             is_playing: RwSignal::new(false),
+            playhead_time: RwSignal::new(0.0),
+            loading_count: RwSignal::new(0),
             join_files: RwSignal::new(false),
             auto_advance: RwSignal::new(true),
         }

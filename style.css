@@ -185,3 +185,119 @@ html, body {
     color: #555;
     font-size: 18px;
 }
+
+/* Toolbar brand */
+.toolbar-brand {
+    font-weight: 700;
+    font-size: 15px;
+    color: #eee;
+    letter-spacing: 0.5px;
+}
+
+/* Mode group — radio-style buttons */
+.mode-group {
+    display: flex;
+    gap: 0;
+}
+
+.mode-btn {
+    background: #2a2a2a !important;
+    border: 1px solid #444 !important;
+    border-radius: 0 !important;
+    padding: 4px 14px !important;
+    font-size: 12px !important;
+    font-weight: 600;
+    color: #888 !important;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+}
+
+.mode-btn:first-child {
+    border-radius: 3px 0 0 3px !important;
+}
+
+.mode-btn:last-child {
+    border-radius: 0 3px 3px 0 !important;
+}
+
+.mode-btn:not(:first-child) {
+    border-left: none !important;
+}
+
+.mode-btn:hover {
+    background: #383838 !important;
+    color: #bbb !important;
+}
+
+.mode-btn.active {
+    background: #1a5a3a !important;
+    border-color: #4a8 !important;
+    color: #fff !important;
+}
+
+/* Play/Stop button */
+.play-btn {
+    min-width: 60px;
+    font-weight: 600 !important;
+}
+
+.play-btn.playing {
+    background: #5a2020 !important;
+    border-color: #a44 !important;
+    color: #fff !important;
+}
+
+/* Mode-specific parameter controls */
+.mode-param {
+    color: #aaa !important;
+    font-variant-numeric: tabular-nums;
+    min-width: 120px;
+}
+
+.mode-hint {
+    color: #666;
+    font-size: 12px;
+    font-style: italic;
+}
+
+/* File item details */
+.file-item-name {
+    font-size: 13px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.file-item-info {
+    font-size: 11px;
+    color: #777;
+    margin-top: 2px;
+}
+
+.file-item.active .file-item-info {
+    color: #99b;
+}
+
+/* Loading indicator */
+.file-item.loading {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #888;
+    font-size: 12px;
+    cursor: default;
+}
+
+.loading-spinner {
+    width: 14px;
+    height: 14px;
+    border: 2px solid #444;
+    border-top-color: #4a8;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    flex-shrink: 0;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}

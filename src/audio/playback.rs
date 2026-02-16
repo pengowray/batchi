@@ -1,6 +1,7 @@
+use leptos::prelude::*;
 use web_sys::{AudioContext, AudioContextOptions, AudioBufferSourceNode};
 use crate::types::AudioData;
-use crate::state::Selection;
+use crate::state::{AppState, Selection, PlaybackMode};
 use crate::dsp::heterodyne::heterodyne_mix;
 use crate::dsp::filters::lowpass_filter;
 use std::cell::RefCell;
@@ -8,9 +9,11 @@ use std::cell::RefCell;
 thread_local! {
     static CURRENT_SOURCE: RefCell<Option<AudioBufferSourceNode>> = RefCell::new(None);
     static CURRENT_CTX: RefCell<Option<AudioContext>> = RefCell::new(None);
+    static PLAYHEAD_HANDLE: RefCell<Option<i32>> = RefCell::new(None);
 }
 
-pub fn stop() {
+pub fn stop(state: &AppState) {
+    cancel_playhead();
     CURRENT_SOURCE.with(|s| {
         if let Some(source) = s.borrow_mut().take() {
             #[allow(deprecated)]
@@ -22,16 +25,28 @@ pub fn stop() {
             let _ = ctx.close();
         }
     });
+    state.is_playing.set(false);
 }
 
-pub fn play_normal(audio: &AudioData, selection: Option<Selection>) {
-    stop();
+pub fn play(state: &AppState) {
+    stop(state);
 
-    let (samples, sample_rate) = extract_selection(audio, selection);
+    let files = state.files.get_untracked();
+    let idx = state.current_file_index.get_untracked();
+    let Some(file) = idx.and_then(|i| files.get(i)) else { return };
 
-    // Apply bandpass if selection has frequency bounds
+    let mode = state.playback_mode.get_untracked();
+    let selection = state.selection.get_untracked();
+    let het_freq = state.het_frequency.get_untracked();
+    let te_factor = state.te_factor.get_untracked();
+
+    let (samples, sample_rate) = extract_selection(&file.audio, selection);
+
+    // Apply bandpass if selection has frequency bounds (Normal/TE modes)
     let samples = if let Some(sel) = selection {
-        if sel.freq_low > 0.0 || sel.freq_high < (sample_rate as f64 / 2.0) {
+        if matches!(mode, PlaybackMode::Normal | PlaybackMode::TimeExpansion)
+            && (sel.freq_low > 0.0 || sel.freq_high < (sample_rate as f64 / 2.0))
+        {
             apply_bandpass(&samples, sample_rate, sel.freq_low, sel.freq_high)
         } else {
             samples
@@ -40,27 +55,46 @@ pub fn play_normal(audio: &AudioData, selection: Option<Selection>) {
         samples
     };
 
-    play_samples(&samples, sample_rate);
-}
+    // Determine playback start time (in the original audio timeline)
+    let play_start_time = selection.map(|s| s.time_start).unwrap_or(0.0);
+    let play_duration_orig = samples.len() as f64 / sample_rate as f64;
 
-pub fn play_heterodyne(audio: &AudioData, lo_freq: f64, selection: Option<Selection>) {
-    stop();
-
-    let (samples, sample_rate) = extract_selection(audio, selection);
-
-    // If selection has frequency bounds, use center as LO frequency
-    let effective_lo = if let Some(sel) = selection {
-        if sel.freq_low > 0.0 || sel.freq_high > 0.0 {
-            (sel.freq_low + sel.freq_high) / 2.0
-        } else {
-            lo_freq
+    match mode {
+        PlaybackMode::Normal => {
+            play_samples(&samples, sample_rate);
         }
-    } else {
-        lo_freq
+        PlaybackMode::Heterodyne => {
+            let effective_lo = if let Some(sel) = selection {
+                if sel.freq_low > 0.0 || sel.freq_high > 0.0 {
+                    (sel.freq_low + sel.freq_high) / 2.0
+                } else {
+                    het_freq
+                }
+            } else {
+                het_freq
+            };
+            let processed = heterodyne_mix(&samples, sample_rate, effective_lo);
+            play_samples(&processed, sample_rate);
+        }
+        PlaybackMode::TimeExpansion => {
+            // TE: play at reduced sample rate = original_rate / factor
+            // This stretches time by the factor, shifting frequencies down
+            let te_rate = (sample_rate as f64 / te_factor) as u32;
+            let te_rate = te_rate.max(8000); // browser minimum
+            play_samples(&samples, te_rate);
+        }
+    }
+
+    // Start playhead animation
+    let playback_speed = match mode {
+        PlaybackMode::Normal => 1.0,
+        PlaybackMode::Heterodyne => 1.0,
+        PlaybackMode::TimeExpansion => 1.0 / te_factor,
     };
 
-    let processed = heterodyne_mix(&samples, sample_rate, effective_lo);
-    play_samples(&processed, sample_rate);
+    state.is_playing.set(true);
+    state.playhead_time.set(play_start_time);
+    start_playhead(state.clone(), play_start_time, play_duration_orig, playback_speed);
 }
 
 fn extract_selection(audio: &AudioData, selection: Option<Selection>) -> (Vec<f32>, u32) {
@@ -79,14 +113,12 @@ fn extract_selection(audio: &AudioData, selection: Option<Selection>) -> (Vec<f3
 
 fn apply_bandpass(samples: &[f32], sample_rate: u32, freq_low: f64, freq_high: f64) -> Vec<f32> {
     let mut result = samples.to_vec();
-    // High-pass via subtraction: result = original - lowpass(original, freq_low)
     if freq_low > 0.0 {
         let lp = cascaded_lowpass(&result, freq_low, sample_rate, 4);
         for (r, l) in result.iter_mut().zip(lp.iter()) {
             *r -= l;
         }
     }
-    // Low-pass
     if freq_high < (sample_rate as f64 / 2.0) {
         result = cascaded_lowpass(&result, freq_high, sample_rate, 4);
     }
@@ -102,7 +134,6 @@ fn cascaded_lowpass(samples: &[f32], cutoff: f64, sample_rate: u32, passes: usiz
 }
 
 fn play_samples(samples: &[f32], sample_rate: u32) {
-    // Try to create AudioContext at the file's native sample rate
     let opts = AudioContextOptions::new();
     opts.set_sample_rate(sample_rate as f32);
     let ctx = AudioContext::new_with_context_options(&opts)
@@ -112,7 +143,7 @@ fn play_samples(samples: &[f32], sample_rate: u32) {
     let buffer = ctx
         .create_buffer(1, samples.len() as u32, sample_rate as f32)
         .unwrap();
-    let _ = buffer.copy_to_channel(&samples, 0);
+    let _ = buffer.copy_to_channel(samples, 0);
 
     let source = ctx.create_buffer_source().unwrap();
     source.set_buffer(Some(&buffer));
@@ -124,5 +155,63 @@ fn play_samples(samples: &[f32], sample_rate: u32) {
     });
     CURRENT_CTX.with(|c| {
         *c.borrow_mut() = Some(ctx);
+    });
+}
+
+/// Animate the playhead using requestAnimationFrame
+fn start_playhead(state: AppState, start_time: f64, duration: f64, speed: f64) {
+    let window = web_sys::window().unwrap();
+    let perf = window.performance().unwrap();
+    let anim_start = perf.now();
+    let end_time = start_time + duration;
+
+    // Use a recursive rAF loop via Closure
+    use std::rc::Rc;
+    use wasm_bindgen::prelude::*;
+
+    let cb: Rc<RefCell<Option<Closure<dyn FnMut()>>>> = Rc::new(RefCell::new(None));
+    let cb_clone = cb.clone();
+
+    *cb.borrow_mut() = Some(Closure::new(move || {
+        if !state.is_playing.get_untracked() {
+            return;
+        }
+        let window = web_sys::window().unwrap();
+        let perf = window.performance().unwrap();
+        let elapsed_ms = perf.now() - anim_start;
+        let elapsed_real = elapsed_ms / 1000.0;
+        let current = start_time + elapsed_real * speed;
+
+        if current >= end_time {
+            state.playhead_time.set(end_time);
+            state.is_playing.set(false);
+            return;
+        }
+
+        state.playhead_time.set(current);
+
+        let handle = window
+            .request_animation_frame(
+                cb_clone.borrow().as_ref().unwrap().as_ref().unchecked_ref(),
+            )
+            .unwrap();
+        PLAYHEAD_HANDLE.with(|h| {
+            *h.borrow_mut() = Some(handle);
+        });
+    }));
+
+    let handle = window
+        .request_animation_frame(cb.borrow().as_ref().unwrap().as_ref().unchecked_ref())
+        .unwrap();
+    PLAYHEAD_HANDLE.with(|h| {
+        *h.borrow_mut() = Some(handle);
+    });
+}
+
+fn cancel_playhead() {
+    PLAYHEAD_HANDLE.with(|h| {
+        if let Some(handle) = h.borrow_mut().take() {
+            let _ = web_sys::window().unwrap().cancel_animation_frame(handle);
+        }
     });
 }

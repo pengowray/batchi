@@ -13,6 +13,8 @@ pub fn Waveform() -> impl IntoView {
         let scroll = state.scroll_offset.get();
         let zoom = state.zoom_level.get();
         let selection = state.selection.get();
+        let playhead = state.playhead_time.get();
+        let is_playing = state.is_playing.get();
         let files = state.files.get();
         let idx = state.current_file_index.get();
 
@@ -50,13 +52,28 @@ pub fn Waveform() -> impl IntoView {
                 display_h as f64,
                 sel_time,
             );
+
+            // Draw playhead
+            if is_playing {
+                let time_res = file.spectrogram.time_resolution;
+                let visible_time = (display_w as f64 / zoom) * time_res;
+                let px_per_sec = display_w as f64 / visible_time;
+                let x = (playhead - scroll) * px_per_sec;
+                if x >= 0.0 && x <= display_w as f64 {
+                    ctx.set_stroke_style_str("rgba(255, 80, 80, 0.9)");
+                    ctx.set_line_width(2.0);
+                    ctx.begin_path();
+                    ctx.move_to(x, 0.0);
+                    ctx.line_to(x, display_h as f64);
+                    ctx.stroke();
+                }
+            }
         } else {
             ctx.set_fill_style_str("#0a0a0a");
             ctx.fill_rect(0.0, 0.0, display_w as f64, display_h as f64);
         }
     });
 
-    // Same scroll/zoom as spectrogram
     let on_wheel = move |ev: web_sys::WheelEvent| {
         ev.prevent_default();
         if ev.ctrl_key() {

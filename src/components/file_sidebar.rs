@@ -14,6 +14,7 @@ pub fn FileSidebar() -> impl IntoView {
     let drag_over = RwSignal::new(false);
     let files = state.files;
     let current_idx = state.current_file_index;
+    let loading_count = state.loading_count;
 
     let on_dragover = move |ev: DragEvent| {
         ev.prevent_default();
@@ -35,11 +36,13 @@ pub fn FileSidebar() -> impl IntoView {
         for i in 0..file_list.length() {
             let Some(file) = file_list.get(i) else { continue };
             let state = state_for_drop.clone();
+            state.loading_count.update(|c| *c += 1);
             spawn_local(async move {
-                match read_and_load_file(file, state).await {
+                match read_and_load_file(file, state.clone()).await {
                     Ok(()) => {}
                     Err(e) => log::error!("Failed to load file: {e}"),
                 }
+                state.loading_count.update(|c| *c = c.saturating_sub(1));
             });
         }
     };
@@ -55,13 +58,16 @@ pub fn FileSidebar() -> impl IntoView {
             >
                 {move || {
                     let file_vec = files.get();
-                    if file_vec.is_empty() {
+                    let lc = loading_count.get();
+                    if file_vec.is_empty() && lc == 0 {
                         view! {
                             <div class="drop-hint">"Drop WAV/FLAC files here"</div>
                         }.into_any()
                     } else {
                         let items: Vec<_> = file_vec.iter().enumerate().map(|(i, f)| {
                             let name = f.name.clone();
+                            let dur = f.audio.duration_secs;
+                            let sr = f.audio.sample_rate;
                             let is_active = move || current_idx.get() == Some(i);
                             let on_click = move |_| {
                                 current_idx.set(Some(i));
@@ -71,12 +77,30 @@ pub fn FileSidebar() -> impl IntoView {
                                     class=move || if is_active() { "file-item active" } else { "file-item" }
                                     on:click=on_click
                                 >
-                                    {name}
+                                    <div class="file-item-name">{name}</div>
+                                    <div class="file-item-info">
+                                        {format!("{:.1}s  {}kHz", dur, sr / 1000)}
+                                    </div>
                                 </div>
                             }
                         }).collect();
                         view! {
-                            <div class="file-list">{items}</div>
+                            <div class="file-list">
+                                {items}
+                                {move || {
+                                    let lc = loading_count.get();
+                                    if lc > 0 {
+                                        view! {
+                                            <div class="file-item loading">
+                                                <div class="loading-spinner"></div>
+                                                {format!("Loading {} file{}...", lc, if lc > 1 { "s" } else { "" })}
+                                            </div>
+                                        }.into_any()
+                                    } else {
+                                        view! { <span></span> }.into_any()
+                                    }
+                                }}
+                            </div>
                         }.into_any()
                     }
                 }}
@@ -140,7 +164,6 @@ async fn read_file_bytes(file: &File) -> Result<Vec<u8>, String> {
         reader_clone.set_onloadend(Some(onload.as_ref().unchecked_ref()));
         reader_clone.set_onerror(Some(onerror.as_ref().unchecked_ref()));
 
-        // Prevent closures from being dropped
         onload.forget();
         onerror.forget();
     });
