@@ -1,16 +1,19 @@
 use leptos::prelude::*;
 use wasm_bindgen::JsCast;
-use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement};
+use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement, MouseEvent};
 use crate::canvas::spectrogram_renderer::{self, PreRendered};
-use crate::state::AppState;
+use crate::state::{AppState, Selection};
 
 #[component]
 pub fn Spectrogram() -> impl IntoView {
     let state = expect_context::<AppState>();
     let canvas_ref = NodeRef::<leptos::html::Canvas>::new();
 
-    // Store pre-rendered data in a signal so we only compute it when file changes
     let pre_rendered: RwSignal<Option<PreRendered>> = RwSignal::new(None);
+
+    // Drag state for selection
+    let is_dragging = RwSignal::new(false);
+    let drag_start = RwSignal::new((0.0f64, 0.0f64)); // (time, freq)
 
     // Re-compute pre-render when current file changes
     Effect::new(move || {
@@ -26,16 +29,16 @@ pub fn Spectrogram() -> impl IntoView {
         }
     });
 
-    // Redraw when pre-rendered data, scroll, or zoom changes
+    // Redraw when pre-rendered data, scroll, zoom, or selection changes
     Effect::new(move || {
         let scroll = state.scroll_offset.get();
         let zoom = state.zoom_level.get();
+        let selection = state.selection.get();
         let _pre = pre_rendered.track();
 
         let Some(canvas_el) = canvas_ref.get() else { return };
         let canvas: &HtmlCanvasElement = canvas_el.as_ref();
 
-        // Sync canvas internal resolution with display size
         let rect = canvas.get_bounding_client_rect();
         let display_w = rect.width() as u32;
         let display_h = rect.height() as u32;
@@ -56,7 +59,6 @@ pub fn Spectrogram() -> impl IntoView {
 
         pre_rendered.with_untracked(|pr| {
             if let Some(rendered) = pr {
-                // Convert scroll_offset (seconds) to column index
                 let files = state.files.get_untracked();
                 let idx = state.current_file_index.get_untracked();
                 let time_res = idx
@@ -67,7 +69,6 @@ pub fn Spectrogram() -> impl IntoView {
 
                 spectrogram_renderer::blit_viewport(&ctx, rendered, canvas, scroll_col, zoom);
 
-                // Draw frequency markers
                 let max_freq = idx
                     .and_then(|i| files.get(i))
                     .map(|f| f.spectrogram.max_freq)
@@ -78,6 +79,20 @@ pub fn Spectrogram() -> impl IntoView {
                     display_h as f64,
                     display_w as f64,
                 );
+
+                // Draw selection overlay
+                if let Some(sel) = selection {
+                    spectrogram_renderer::draw_selection(
+                        &ctx,
+                        &sel,
+                        max_freq,
+                        scroll,
+                        time_res,
+                        zoom,
+                        display_w as f64,
+                        display_h as f64,
+                    );
+                }
             } else {
                 ctx.set_fill_style_str("#000");
                 ctx.fill_rect(0.0, 0.0, display_w as f64, display_h as f64);
@@ -85,17 +100,80 @@ pub fn Spectrogram() -> impl IntoView {
         });
     });
 
+    // Helper to get time/freq from mouse event
+    let mouse_to_tf = move |ev: &MouseEvent| -> Option<(f64, f64)> {
+        let canvas_el = canvas_ref.get()?;
+        let canvas: &HtmlCanvasElement = canvas_el.as_ref();
+        let rect = canvas.get_bounding_client_rect();
+        let px_x = ev.client_x() as f64 - rect.left();
+        let px_y = ev.client_y() as f64 - rect.top();
+        let cw = canvas.width() as f64;
+        let ch = canvas.height() as f64;
+
+        let files = state.files.get_untracked();
+        let idx = state.current_file_index.get_untracked()?;
+        let file = files.get(idx)?;
+        let time_res = file.spectrogram.time_resolution;
+        let max_freq = file.spectrogram.max_freq;
+        let scroll = state.scroll_offset.get_untracked();
+        let zoom = state.zoom_level.get_untracked();
+
+        Some(spectrogram_renderer::pixel_to_time_freq(
+            px_x, px_y, max_freq, scroll, time_res, zoom, cw, ch,
+        ))
+    };
+
+    let on_mousedown = move |ev: MouseEvent| {
+        if ev.button() != 0 { return; } // left button only
+        if let Some((t, f)) = mouse_to_tf(&ev) {
+            is_dragging.set(true);
+            drag_start.set((t, f));
+            state.selection.set(None);
+        }
+    };
+
+    let on_mousemove = move |ev: MouseEvent| {
+        if !is_dragging.get_untracked() { return; }
+        if let Some((t, f)) = mouse_to_tf(&ev) {
+            let (t0, f0) = drag_start.get_untracked();
+            state.selection.set(Some(Selection {
+                time_start: t0.min(t),
+                time_end: t0.max(t),
+                freq_low: f0.min(f),
+                freq_high: f0.max(f),
+            }));
+        }
+    };
+
+    let on_mouseup = move |ev: MouseEvent| {
+        if !is_dragging.get_untracked() { return; }
+        is_dragging.set(false);
+        if let Some((t, f)) = mouse_to_tf(&ev) {
+            let (t0, f0) = drag_start.get_untracked();
+            let sel = Selection {
+                time_start: t0.min(t),
+                time_end: t0.max(t),
+                freq_low: f0.min(f),
+                freq_high: f0.max(f),
+            };
+            // Only keep selection if it has meaningful size
+            if sel.time_end - sel.time_start > 0.0001 {
+                state.selection.set(Some(sel));
+            } else {
+                state.selection.set(None);
+            }
+        }
+    };
+
     // Mouse wheel for scroll/zoom
     let on_wheel = move |ev: web_sys::WheelEvent| {
         ev.prevent_default();
         if ev.ctrl_key() {
-            // Zoom
             let delta = if ev.delta_y() > 0.0 { 0.9 } else { 1.1 };
             state.zoom_level.update(|z| {
                 *z = (*z * delta).max(0.1).min(100.0);
             });
         } else {
-            // Scroll
             let delta = ev.delta_y() * 0.001;
             state.scroll_offset.update(|s| {
                 *s = (*s + delta).max(0.0);
@@ -108,6 +186,9 @@ pub fn Spectrogram() -> impl IntoView {
             <canvas
                 node_ref=canvas_ref
                 on:wheel=on_wheel
+                on:mousedown=on_mousedown
+                on:mousemove=on_mousemove
+                on:mouseup=on_mouseup
             />
         </div>
     }

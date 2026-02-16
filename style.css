@@ -171,6 +171,12 @@ html, body {
     width: 100px;
 }
 
+.toolbar-sep {
+    width: 1px;
+    height: 20px;
+    background: #444;
+}
+
 .empty-state {
     display: flex;
     align-items: center;

@@ -2,6 +2,9 @@ use leptos::prelude::*;
 use crate::state::AppState;
 use crate::components::file_sidebar::FileSidebar;
 use crate::components::spectrogram::Spectrogram;
+use crate::components::waveform::Waveform;
+use crate::components::toolbar::Toolbar;
+use crate::components::analysis_panel::AnalysisPanel;
 
 #[component]
 pub fn App() -> impl IntoView {
@@ -23,17 +26,13 @@ fn MainArea() -> impl IntoView {
 
     view! {
         <div class="main">
-            <div class="toolbar">
-                <span style="color: #666">"Batgram"</span>
-            </div>
+            <Toolbar />
             {move || {
                 if has_file() {
                     view! {
                         <Spectrogram />
-                        <div class="waveform-container"></div>
-                        <div class="analysis-panel">
-                            <span>"No selection"</span>
-                        </div>
+                        <Waveform />
+                        <AnalysisPanel />
                     }.into_any()
                 } else {
                     view! {
