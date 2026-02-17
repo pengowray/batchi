@@ -64,6 +64,12 @@ html, body {
     padding: 8px 0;
 }
 
+.sidebar-panel-empty {
+    padding: 16px;
+    color: #555;
+    font-size: 13px;
+}
+
 .setting-group {
     padding: 4px 0;
 }

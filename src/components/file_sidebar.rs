@@ -6,6 +6,7 @@ use wasm_bindgen_futures::JsFuture;
 use web_sys::{CanvasRenderingContext2d, DragEvent, File, FileReader, HtmlCanvasElement, ImageData};
 use crate::audio::loader::load_audio;
 use crate::dsp::fft::{compute_preview, compute_spectrogram};
+use crate::dsp::zero_crossing::zero_crossing_frequency;
 use crate::state::{AppState, LoadedFile, SidebarTab, SpectrogramDisplay};
 use crate::types::{PreviewImage, SpectrogramData};
 
@@ -28,10 +29,17 @@ pub fn FileSidebar() -> impl IntoView {
                 >
                     "Display"
                 </button>
+                <button
+                    class=move || if state.sidebar_tab.get() == SidebarTab::Selection { "sidebar-tab active" } else { "sidebar-tab" }
+                    on:click=move |_| state.sidebar_tab.set(SidebarTab::Selection)
+                >
+                    "Selection"
+                </button>
             </div>
             {move || match state.sidebar_tab.get() {
                 SidebarTab::Files => view! { <FilesPanel /> }.into_any(),
                 SidebarTab::Spectrogram => view! { <SpectrogramSettingsPanel /> }.into_any(),
+                SidebarTab::Selection => view! { <SelectionPanel /> }.into_any(),
             }}
         </div>
     }
@@ -299,6 +307,81 @@ fn SpectrogramSettingsPanel() -> impl IntoView {
                     }
                 }}
             </div>
+        </div>
+    }
+}
+
+#[component]
+fn SelectionPanel() -> impl IntoView {
+    let state = expect_context::<AppState>();
+
+    let analysis = move || {
+        let selection = state.selection.get()?;
+        let dragging = state.is_dragging.get();
+        let files = state.files.get();
+        let idx = state.current_file_index.get()?;
+        let file = files.get(idx)?;
+
+        let sr = file.audio.sample_rate;
+        let start = ((selection.time_start * sr as f64) as usize).min(file.audio.samples.len());
+        let end = ((selection.time_end * sr as f64) as usize).min(file.audio.samples.len());
+
+        if end <= start {
+            return None;
+        }
+
+        let duration = selection.time_end - selection.time_start;
+        let frames = end - start;
+
+        let (crossing_count, estimated_freq) = if dragging {
+            (None, None)
+        } else {
+            let slice = &file.audio.samples[start..end];
+            let zc = zero_crossing_frequency(slice, sr);
+            (Some(zc.crossing_count), Some(zc.estimated_frequency_hz))
+        };
+
+        Some((duration, frames, crossing_count, estimated_freq, selection.freq_low, selection.freq_high))
+    };
+
+    view! {
+        <div class="sidebar-panel">
+            {move || {
+                match analysis() {
+                    Some((duration, frames, crossing_count, estimated_freq, freq_low, freq_high)) => {
+                        view! {
+                            <div class="setting-group">
+                                <div class="setting-group-title">"Selection"</div>
+                                <div class="setting-row">
+                                    <span class="setting-label">"Duration"</span>
+                                    <span class="setting-value">{format!("{:.3} s", duration)}</span>
+                                </div>
+                                <div class="setting-row">
+                                    <span class="setting-label">"Frames"</span>
+                                    <span class="setting-value">{format!("{}", frames)}</span>
+                                </div>
+                                <div class="setting-row">
+                                    <span class="setting-label">"Freq range"</span>
+                                    <span class="setting-value">{format!("{:.0} – {:.0} kHz", freq_low / 1000.0, freq_high / 1000.0)}</span>
+                                </div>
+                                <div class="setting-row">
+                                    <span class="setting-label">"ZC count"</span>
+                                    <span class="setting-value">{match crossing_count { Some(c) => format!("{c}"), None => "...".into() }}</span>
+                                </div>
+                                <div class="setting-row">
+                                    <span class="setting-label">"ZC est. freq"</span>
+                                    <span class="setting-value">{match estimated_freq { Some(f) => format!("~{:.1} kHz", f / 1000.0), None => "...".into() }}</span>
+                                </div>
+                            </div>
+                        }.into_any()
+                    }
+                    None => {
+                        view! {
+                            <div class="sidebar-panel-empty">"No selection"</div>
+                        }.into_any()
+                    }
+                }
+            }}
         </div>
     }
 }

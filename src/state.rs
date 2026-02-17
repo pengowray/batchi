@@ -39,6 +39,7 @@ pub enum SidebarTab {
     #[default]
     Files,
     Spectrogram,
+    Selection,
 }
 
 #[derive(Clone, Copy)]
