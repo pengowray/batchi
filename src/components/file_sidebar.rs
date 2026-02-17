@@ -1,12 +1,13 @@
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use wasm_bindgen::prelude::*;
-use wasm_bindgen::JsCast;
+use wasm_bindgen::{Clamped, JsCast};
 use wasm_bindgen_futures::JsFuture;
-use web_sys::{DragEvent, File, FileReader};
+use web_sys::{CanvasRenderingContext2d, DragEvent, File, FileReader, HtmlCanvasElement, ImageData};
 use crate::audio::loader::load_audio;
-use crate::dsp::fft::compute_spectrogram;
+use crate::dsp::fft::{compute_preview, compute_spectrogram};
 use crate::state::{AppState, LoadedFile, SidebarTab, SpectrogramDisplay};
+use crate::types::{PreviewImage, SpectrogramData};
 
 #[component]
 pub fn FileSidebar() -> impl IntoView {
@@ -94,6 +95,7 @@ fn FilesPanel() -> impl IntoView {
                         let name = f.name.clone();
                         let dur = f.audio.duration_secs;
                         let sr = f.audio.sample_rate;
+                        let preview = f.preview.clone();
                         let is_active = move || current_idx.get() == Some(i);
                         let on_click = move |_| {
                             current_idx.set(Some(i));
@@ -103,6 +105,7 @@ fn FilesPanel() -> impl IntoView {
                                 class=move || if is_active() { "file-item active" } else { "file-item" }
                                 on:click=on_click
                             >
+                                {preview.map(|pv| view! { <PreviewCanvas preview=pv /> })}
                                 <div class="file-item-name">{name}</div>
                                 <div class="file-item-info">
                                     {format!("{:.1}s  {}kHz", dur, sr / 1000)}
@@ -138,14 +141,19 @@ fn FilesPanel() -> impl IntoView {
 fn SpectrogramSettingsPanel() -> impl IntoView {
     let state = expect_context::<AppState>();
 
+    let on_toggle_change = move |ev: web_sys::Event| {
+        let target = ev.target().unwrap();
+        let input: web_sys::HtmlInputElement = target.unchecked_into();
+        state.mv_enabled.set(input.checked());
+    };
+
     let on_display_change = move |ev: web_sys::Event| {
         let target = ev.target().unwrap();
         let select: web_sys::HtmlSelectElement = target.unchecked_into();
         let mode = match select.value().as_str() {
             "centroid" => SpectrogramDisplay::MovementCentroid,
             "gradient" => SpectrogramDisplay::MovementGradient,
-            "flow" => SpectrogramDisplay::MovementFlow,
-            _ => SpectrogramDisplay::Normal,
+            _ => SpectrogramDisplay::MovementFlow,
         };
         state.spectrogram_display.set(mode);
     };
@@ -213,26 +221,33 @@ fn SpectrogramSettingsPanel() -> impl IntoView {
             <div class="setting-group">
                 <div class="setting-group-title">"Movement overlay"</div>
                 <div class="setting-row">
-                    <span class="setting-label">"Algorithm"</span>
-                    <select
-                        class="setting-select"
-                        on:change=on_display_change
-                        prop:value=move || match state.spectrogram_display.get() {
-                            SpectrogramDisplay::Normal => "off",
-                            SpectrogramDisplay::MovementCentroid => "centroid",
-                            SpectrogramDisplay::MovementGradient => "gradient",
-                            SpectrogramDisplay::MovementFlow => "flow",
-                        }
-                    >
-                        <option value="off">"Off"</option>
-                        <option value="centroid">"Centroid"</option>
-                        <option value="gradient">"Gradient"</option>
-                        <option value="flow">"Flow"</option>
-                    </select>
+                    <span class="setting-label">"Enabled"</span>
+                    <input
+                        type="checkbox"
+                        class="setting-checkbox"
+                        prop:checked=move || state.mv_enabled.get()
+                        on:change=on_toggle_change
+                    />
                 </div>
                 {move || {
-                    if state.spectrogram_display.get().is_active() {
+                    if state.mv_enabled.get() {
                         view! {
+                            <div class="setting-row">
+                                <span class="setting-label">"Algorithm"</span>
+                                <select
+                                    class="setting-select"
+                                    on:change=on_display_change
+                                    prop:value=move || match state.spectrogram_display.get() {
+                                        SpectrogramDisplay::MovementCentroid => "centroid",
+                                        SpectrogramDisplay::MovementGradient => "gradient",
+                                        SpectrogramDisplay::MovementFlow => "flow",
+                                    }
+                                >
+                                    <option value="flow">"Flow"</option>
+                                    <option value="centroid">"Centroid"</option>
+                                    <option value="gradient">"Gradient"</option>
+                                </select>
+                            </div>
                             <div class="setting-row">
                                 <span class="setting-label">"Intensity gate"</span>
                                 <div class="setting-slider-row">
@@ -288,6 +303,36 @@ fn SpectrogramSettingsPanel() -> impl IntoView {
     }
 }
 
+#[component]
+fn PreviewCanvas(preview: PreviewImage) -> impl IntoView {
+    let canvas_ref = NodeRef::<leptos::html::Canvas>::new();
+    let pv = preview.clone();
+
+    Effect::new(move || {
+        let Some(el) = canvas_ref.get() else { return };
+        let canvas: &HtmlCanvasElement = el.as_ref();
+        canvas.set_width(pv.width);
+        canvas.set_height(pv.height);
+        let ctx = canvas
+            .get_context("2d")
+            .unwrap()
+            .unwrap()
+            .dyn_into::<CanvasRenderingContext2d>()
+            .unwrap();
+        let clamped = Clamped(pv.pixels.as_slice());
+        if let Ok(img) = ImageData::new_with_u8_clamped_array_and_sh(clamped, pv.width, pv.height) {
+            let _ = ctx.put_image_data(&img, 0.0, 0.0);
+        }
+    });
+
+    view! {
+        <canvas
+            node_ref=canvas_ref
+            class="file-preview-canvas"
+        />
+    }
+}
+
 async fn read_and_load_file(file: File, state: AppState) -> Result<(), String> {
     let name = file.name();
     let bytes = read_file_bytes(&file).await?;
@@ -301,7 +346,48 @@ async fn read_and_load_file(file: File, state: AppState) -> Result<(), String> {
         audio.duration_secs
     );
 
-    let spectrogram = compute_spectrogram(&audio, 2048, 512);
+    // Phase 1: fast preview
+    let preview = compute_preview(&audio, 256, 128);
+    let audio_for_stft = audio.clone();
+    let name_check = name.clone();
+
+    let placeholder_spec = SpectrogramData {
+        columns: Vec::new(),
+        freq_resolution: 0.0,
+        time_resolution: 0.0,
+        max_freq: audio.sample_rate as f64 / 2.0,
+        sample_rate: audio.sample_rate,
+    };
+
+    let file_index;
+    {
+        let mut idx = 0;
+        state.files.update(|files| {
+            idx = files.len();
+            files.push(LoadedFile {
+                name,
+                audio,
+                spectrogram: placeholder_spec,
+                preview: Some(preview),
+            });
+            if files.len() == 1 {
+                state.current_file_index.set(Some(0));
+            }
+        });
+        file_index = idx;
+    }
+
+    // Yield to let the UI render the preview
+    let yield_promise = js_sys::Promise::new(&mut |resolve, _| {
+        web_sys::window()
+            .unwrap()
+            .set_timeout_with_callback(&resolve)
+            .unwrap();
+    });
+    JsFuture::from(yield_promise).await.ok();
+
+    // Phase 2: full spectrogram
+    let spectrogram = compute_spectrogram(&audio_for_stft, 2048, 512);
     log::info!(
         "Spectrogram: {} columns, freq_res={:.1} Hz, time_res={:.4}s",
         spectrogram.columns.len(),
@@ -309,16 +395,11 @@ async fn read_and_load_file(file: File, state: AppState) -> Result<(), String> {
         spectrogram.time_resolution
     );
 
-    let loaded = LoadedFile {
-        name,
-        audio,
-        spectrogram,
-    };
-
     state.files.update(|files| {
-        files.push(loaded);
-        if files.len() == 1 {
-            state.current_file_index.set(Some(0));
+        if let Some(f) = files.get_mut(file_index) {
+            if f.name == name_check {
+                f.spectrogram = spectrogram;
+            }
         }
     });
 

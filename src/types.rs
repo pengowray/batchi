@@ -22,6 +22,13 @@ pub struct SpectrogramData {
 }
 
 #[derive(Clone, Debug)]
+pub struct PreviewImage {
+    pub width: u32,
+    pub height: u32,
+    pub pixels: Vec<u8>, // RGBA, row-major, row 0 = highest freq
+}
+
+#[derive(Clone, Debug)]
 pub struct ZeroCrossingResult {
     pub estimated_frequency_hz: f64,
     pub crossing_count: usize,

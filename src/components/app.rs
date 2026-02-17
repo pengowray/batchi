@@ -1,5 +1,8 @@
 use leptos::prelude::*;
+use wasm_bindgen::prelude::*;
+use wasm_bindgen::JsCast;
 use crate::state::AppState;
+use crate::audio::playback;
 use crate::components::file_sidebar::FileSidebar;
 use crate::components::spectrogram::Spectrogram;
 use crate::components::waveform::Waveform;
@@ -10,6 +13,33 @@ use crate::components::analysis_panel::AnalysisPanel;
 pub fn App() -> impl IntoView {
     let state = AppState::new();
     provide_context(state);
+
+    // Global keyboard shortcut: Space = play/stop
+    let state_kb = state.clone();
+    let handler = Closure::<dyn Fn(web_sys::KeyboardEvent)>::new(move |ev: web_sys::KeyboardEvent| {
+        // Ignore if focus is on an input/select/textarea
+        if let Some(target) = ev.target() {
+            if let Ok(el) = target.dyn_into::<web_sys::HtmlElement>() {
+                let tag = el.tag_name();
+                if tag == "INPUT" || tag == "SELECT" || tag == "TEXTAREA" {
+                    return;
+                }
+            }
+        }
+        if ev.key() == " " {
+            ev.prevent_default();
+            if state_kb.current_file_index.get_untracked().is_some() {
+                if state_kb.is_playing.get_untracked() {
+                    playback::stop(&state_kb);
+                } else {
+                    playback::play(&state_kb);
+                }
+            }
+        }
+    });
+    let window = web_sys::window().unwrap();
+    let _ = window.add_event_listener_with_callback("keydown", handler.as_ref().unchecked_ref());
+    handler.forget();
 
     view! {
         <div class="app">

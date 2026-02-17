@@ -1,11 +1,12 @@
 use leptos::prelude::*;
-use crate::types::{AudioData, SpectrogramData};
+use crate::types::{AudioData, PreviewImage, SpectrogramData};
 
 #[derive(Clone, Debug)]
 pub struct LoadedFile {
     pub name: String,
     pub audio: AudioData,
     pub spectrogram: SpectrogramData,
+    pub preview: Option<PreviewImage>,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -26,17 +27,10 @@ pub enum PlaybackMode {
 
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
 pub enum SpectrogramDisplay {
-    #[default]
-    Normal,
     MovementCentroid,
     MovementGradient,
+    #[default]
     MovementFlow,
-}
-
-impl SpectrogramDisplay {
-    pub fn is_active(self) -> bool {
-        !matches!(self, Self::Normal)
-    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
@@ -65,6 +59,7 @@ pub struct AppState {
     pub het_interacting: RwSignal<bool>,
     pub is_dragging: RwSignal<bool>,
     pub spectrogram_display: RwSignal<SpectrogramDisplay>,
+    pub mv_enabled: RwSignal<bool>,
     pub sidebar_tab: RwSignal<SidebarTab>,
     pub mv_intensity_gate: RwSignal<f32>,
     pub mv_movement_gate: RwSignal<f32>,
@@ -91,11 +86,12 @@ impl AppState {
             ps_factor: RwSignal::new(10.0),
             het_interacting: RwSignal::new(false),
             is_dragging: RwSignal::new(false),
-            spectrogram_display: RwSignal::new(SpectrogramDisplay::Normal),
+            spectrogram_display: RwSignal::new(SpectrogramDisplay::MovementFlow),
+            mv_enabled: RwSignal::new(false),
             sidebar_tab: RwSignal::new(SidebarTab::Files),
-            mv_intensity_gate: RwSignal::new(0.3),
-            mv_movement_gate: RwSignal::new(0.15),
-            mv_opacity: RwSignal::new(0.5),
+            mv_intensity_gate: RwSignal::new(0.5),
+            mv_movement_gate: RwSignal::new(0.75),
+            mv_opacity: RwSignal::new(0.75),
             max_display_freq: RwSignal::new(None),
         }
     }

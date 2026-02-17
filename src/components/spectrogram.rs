@@ -20,28 +20,36 @@ pub fn Spectrogram() -> impl IntoView {
         let files = state.files.get();
         let idx = state.current_file_index.get();
         let display = state.spectrogram_display.get();
+        let enabled = state.mv_enabled.get();
         if let Some(i) = idx {
             if let Some(file) = files.get(i) {
-                match display {
-                    SpectrogramDisplay::Normal => {
-                        movement_cache.set(None);
-                        pre_rendered.set(Some(spectrogram_renderer::pre_render(&file.spectrogram)));
+                if file.spectrogram.columns.is_empty() {
+                    // Full spectrogram not yet computed; show preview as placeholder
+                    movement_cache.set(None);
+                    if let Some(ref pv) = file.preview {
+                        pre_rendered.set(Some(PreRendered {
+                            width: pv.width,
+                            height: pv.height,
+                            pixels: pv.pixels.clone(),
+                        }));
+                    } else {
+                        pre_rendered.set(None);
                     }
-                    _ => {
-                        let algo = match display {
-                            SpectrogramDisplay::MovementCentroid => MovementAlgo::Centroid,
-                            SpectrogramDisplay::MovementGradient => MovementAlgo::Gradient,
-                            SpectrogramDisplay::MovementFlow => MovementAlgo::Flow,
-                            _ => unreachable!(),
-                        };
-                        let md = spectrogram_renderer::compute_movement_data(&file.spectrogram, algo);
-                        // Immediately composite with current gate/opacity settings
-                        let ig = state.mv_intensity_gate.get_untracked();
-                        let mg = state.mv_movement_gate.get_untracked();
-                        let op = state.mv_opacity.get_untracked();
-                        pre_rendered.set(Some(spectrogram_renderer::composite_movement(&md, ig, mg, op)));
-                        movement_cache.set(Some(md));
-                    }
+                } else if !enabled {
+                    movement_cache.set(None);
+                    pre_rendered.set(Some(spectrogram_renderer::pre_render(&file.spectrogram)));
+                } else {
+                    let algo = match display {
+                        SpectrogramDisplay::MovementCentroid => MovementAlgo::Centroid,
+                        SpectrogramDisplay::MovementGradient => MovementAlgo::Gradient,
+                        SpectrogramDisplay::MovementFlow => MovementAlgo::Flow,
+                    };
+                    let md = spectrogram_renderer::compute_movement_data(&file.spectrogram, algo);
+                    let ig = state.mv_intensity_gate.get_untracked();
+                    let mg = state.mv_movement_gate.get_untracked();
+                    let op = state.mv_opacity.get_untracked();
+                    pre_rendered.set(Some(spectrogram_renderer::composite_movement(&md, ig, mg, op)));
+                    movement_cache.set(Some(md));
                 }
             }
         } else {

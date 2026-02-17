@@ -1,4 +1,5 @@
-use crate::types::{AudioData, SpectrogramColumn, SpectrogramData};
+use crate::canvas::colors::magnitude_to_greyscale;
+use crate::types::{AudioData, PreviewImage, SpectrogramColumn, SpectrogramData};
 use realfft::RealFftPlanner;
 
 /// Compute a spectrogram from audio data using a Short-Time Fourier Transform (STFT).
@@ -53,6 +54,68 @@ pub fn compute_spectrogram(
         time_resolution,
         max_freq,
         sample_rate: audio.sample_rate,
+    }
+}
+
+/// Compute a fast low-resolution preview spectrogram as an RGBA pixel buffer.
+/// Uses FFT=256 with a dynamic hop to produce roughly `target_width` columns.
+pub fn compute_preview(audio: &AudioData, target_width: u32, target_height: u32) -> PreviewImage {
+    if audio.samples.len() < 256 {
+        // Too short for even one FFT frame
+        return PreviewImage {
+            width: 1,
+            height: 1,
+            pixels: vec![0, 0, 0, 255],
+        };
+    }
+
+    let fft_size = 256;
+    let hop = (audio.samples.len() / target_width as usize).max(fft_size);
+    let spec = compute_spectrogram(audio, fft_size, hop);
+
+    if spec.columns.is_empty() {
+        return PreviewImage {
+            width: 1,
+            height: 1,
+            pixels: vec![0, 0, 0, 255],
+        };
+    }
+
+    let src_w = spec.columns.len();
+    let src_h = spec.columns[0].magnitudes.len();
+    let out_w = (src_w as u32).min(target_width);
+    let out_h = (src_h as u32).min(target_height);
+
+    // Find global max magnitude for normalization
+    let max_mag = spec
+        .columns
+        .iter()
+        .flat_map(|c| c.magnitudes.iter())
+        .copied()
+        .fold(0.0f32, f32::max);
+
+    let mut pixels = vec![0u8; (out_w * out_h * 4) as usize];
+
+    for x in 0..out_w {
+        let src_col = (x as usize * src_w) / out_w as usize;
+        let col = &spec.columns[src_col.min(src_w - 1)];
+        for y in 0..out_h {
+            // Map output row to source bin (row 0 = highest freq)
+            let src_bin = src_h - 1 - ((y as usize * src_h) / out_h as usize).min(src_h - 1);
+            let mag = col.magnitudes[src_bin];
+            let grey = magnitude_to_greyscale(mag, max_mag);
+            let idx = (y * out_w + x) as usize * 4;
+            pixels[idx] = grey;
+            pixels[idx + 1] = grey;
+            pixels[idx + 2] = grey;
+            pixels[idx + 3] = 255;
+        }
+    }
+
+    PreviewImage {
+        width: out_w,
+        height: out_h,
+        pixels,
     }
 }
 
