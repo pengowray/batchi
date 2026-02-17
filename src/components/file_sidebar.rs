@@ -644,7 +644,10 @@ fn FilterPanel() -> impl IntoView {
                             match mode {
                                 crate::state::PlaybackMode::Heterodyne => {
                                     view! {
-                                        <div class="setting-row">
+                                        <div class="setting-row"
+                                            on:mouseenter=move |_| state.het_interacting.set(true)
+                                            on:mouseleave=move |_| state.het_interacting.set(false)
+                                        >
                                             <span class="setting-label">"HET LP"</span>
                                             <div class="setting-slider-row">
                                                 <input
