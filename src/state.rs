@@ -91,7 +91,7 @@ impl AppState {
             join_files: RwSignal::new(false),
             auto_advance: RwSignal::new(true),
             ps_factor: RwSignal::new(10.0),
-            zc_factor: RwSignal::new(10.0),
+            zc_factor: RwSignal::new(8.0),
             het_interacting: RwSignal::new(false),
             is_dragging: RwSignal::new(false),
             spectrogram_display: RwSignal::new(SpectrogramDisplay::MovementFlow),
