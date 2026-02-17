@@ -755,6 +755,64 @@ pub fn draw_harmonic_shadows(
     let _ = ctx.set_line_dash(&js_sys::Array::new());
 }
 
+/// Draw filter EQ band overlay on the spectrogram.
+///
+/// Highlights the frequency region of the currently hovered band slider.
+/// band: 0=below, 1=selected, 2=harmonics, 3=above
+pub fn draw_filter_overlay(
+    ctx: &CanvasRenderingContext2d,
+    hovered_band: u8,
+    freq_low: f64,
+    freq_high: f64,
+    band_mode: u8,
+    max_freq: f64,
+    canvas_width: f64,
+    canvas_height: f64,
+) {
+    let harmonics_active = band_mode >= 4 && freq_low > 0.0 && freq_high / freq_low < 2.0;
+    let harmonics_upper = freq_high * 2.0;
+
+    // Determine the frequency range for the hovered band
+    let (band_lo, band_hi, color) = match hovered_band {
+        0 => (0.0, freq_low, "rgba(255, 80, 80, 0.15)"),       // below — red tint
+        1 => (freq_low, freq_high, "rgba(80, 255, 120, 0.15)"), // selected — green
+        2 if harmonics_active => (freq_high, harmonics_upper, "rgba(80, 120, 255, 0.15)"), // harmonics — blue
+        3 => {
+            let lo = if harmonics_active { harmonics_upper } else { freq_high };
+            (lo, max_freq, "rgba(255, 180, 60, 0.15)")          // above — orange
+        }
+        _ => return,
+    };
+
+    let y_top = (canvas_height * (1.0 - band_hi.min(max_freq) / max_freq)).max(0.0);
+    let y_bot = (canvas_height * (1.0 - band_lo.max(0.0) / max_freq)).min(canvas_height);
+
+    if y_bot <= y_top {
+        return;
+    }
+
+    // Fill the band region
+    ctx.set_fill_style_str(color);
+    ctx.fill_rect(0.0, y_top, canvas_width, y_bot - y_top);
+
+    // Edge lines
+    let edge_color = match hovered_band {
+        0 => "rgba(255, 80, 80, 0.5)",
+        1 => "rgba(80, 255, 120, 0.5)",
+        2 => "rgba(80, 120, 255, 0.5)",
+        3 => "rgba(255, 180, 60, 0.5)",
+        _ => return,
+    };
+    ctx.set_stroke_style_str(edge_color);
+    ctx.set_line_width(1.0);
+    for &y in &[y_top, y_bot] {
+        ctx.begin_path();
+        ctx.move_to(0.0, y);
+        ctx.line_to(canvas_width, y);
+        ctx.stroke();
+    }
+}
+
 /// Convert pixel coordinates on the spectrogram canvas to (time, frequency).
 pub fn pixel_to_time_freq(
     px_x: f64,

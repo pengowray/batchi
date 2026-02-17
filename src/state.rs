@@ -40,6 +40,7 @@ pub enum SidebarTab {
     Files,
     Spectrogram,
     Selection,
+    Filter,
 }
 
 #[derive(Clone, Copy)]
@@ -73,6 +74,17 @@ pub struct AppState {
     pub label_hover_opacity: RwSignal<f64>,
     pub follow_cursor: RwSignal<bool>,
     pub pre_play_scroll: RwSignal<f64>,
+    // Filter EQ
+    pub filter_enabled: RwSignal<bool>,
+    pub filter_band_mode: RwSignal<u8>,
+    pub filter_set_from_selection: RwSignal<bool>,
+    pub filter_freq_low: RwSignal<f64>,
+    pub filter_freq_high: RwSignal<f64>,
+    pub filter_db_below: RwSignal<f64>,
+    pub filter_db_selected: RwSignal<f64>,
+    pub filter_db_harmonics: RwSignal<f64>,
+    pub filter_db_above: RwSignal<f64>,
+    pub filter_hovering_band: RwSignal<Option<u8>>,
 }
 
 impl AppState {
@@ -107,6 +119,16 @@ impl AppState {
             label_hover_opacity: RwSignal::new(0.0),
             follow_cursor: RwSignal::new(true),
             pre_play_scroll: RwSignal::new(0.0),
+            filter_enabled: RwSignal::new(false),
+            filter_band_mode: RwSignal::new(2),
+            filter_set_from_selection: RwSignal::new(false),
+            filter_freq_low: RwSignal::new(20_000.0),
+            filter_freq_high: RwSignal::new(60_000.0),
+            filter_db_below: RwSignal::new(-60.0),
+            filter_db_selected: RwSignal::new(0.0),
+            filter_db_harmonics: RwSignal::new(0.0),
+            filter_db_above: RwSignal::new(0.0),
+            filter_hovering_band: RwSignal::new(None),
         }
     }
 

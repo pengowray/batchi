@@ -1,3 +1,123 @@
+use realfft::RealFftPlanner;
+
+/// Apply a multi-band EQ filter in the frequency domain using overlap-add FFT processing.
+///
+/// Bands are defined relative to the "selected" frequency range [freq_low, freq_high]:
+/// - Below: 0 to freq_low
+/// - Selected: freq_low to freq_high
+/// - Harmonics: freq_high to freq_high*2 (only band_mode==4 and selection < 1 octave)
+/// - Above: everything above (band_mode >= 3)
+///
+/// In 2-band mode, everything at or above freq_low uses db_selected.
+pub fn apply_eq_filter(
+    samples: &[f32],
+    sample_rate: u32,
+    freq_low: f64,
+    freq_high: f64,
+    db_below: f64,
+    db_selected: f64,
+    db_harmonics: f64,
+    db_above: f64,
+    band_mode: u8,
+) -> Vec<f32> {
+    if samples.is_empty() {
+        return Vec::new();
+    }
+
+    let fft_size = 4096;
+    let hop_size = fft_size / 2;
+    let len = samples.len();
+
+    // Hann window
+    let window: Vec<f32> = (0..fft_size)
+        .map(|i| {
+            0.5 * (1.0 - (2.0 * std::f32::consts::PI * i as f32 / (fft_size - 1) as f32).cos())
+        })
+        .collect();
+
+    // Build per-bin gain table
+    let num_bins = fft_size / 2 + 1;
+    let freq_per_bin = sample_rate as f64 / fft_size as f64;
+    let harmonics_active = band_mode >= 4 && freq_high > 0.0 && freq_low > 0.0 && freq_high / freq_low < 2.0;
+    let harmonics_upper = freq_high * 2.0;
+
+    let gains: Vec<f32> = (0..num_bins)
+        .map(|i| {
+            let freq = i as f64 * freq_per_bin;
+            let db = if freq < freq_low {
+                db_below
+            } else if freq <= freq_high {
+                db_selected
+            } else if band_mode <= 2 {
+                // 2-band: everything above uses selected
+                db_selected
+            } else if harmonics_active && freq <= harmonics_upper {
+                db_harmonics
+            } else {
+                // 3-band or 4-band above region
+                db_above
+            };
+            10.0_f64.powf(db / 20.0) as f32
+        })
+        .collect();
+
+    let mut planner = RealFftPlanner::<f32>::new();
+    let fft_fwd = planner.plan_fft_forward(fft_size);
+    let fft_inv = planner.plan_fft_inverse(fft_size);
+
+    // Overlap-add output buffer
+    let mut output = vec![0.0f32; len];
+    let mut window_sum = vec![0.0f32; len];
+
+    let mut pos = 0;
+    while pos < len {
+        // Extract frame, zero-pad if needed
+        let mut frame = vec![0.0f32; fft_size];
+        for (i, &w) in window.iter().enumerate() {
+            if pos + i < len {
+                frame[i] = samples[pos + i] * w;
+            }
+        }
+
+        // Forward FFT
+        let mut spectrum = fft_fwd.make_output_vec();
+        fft_fwd.process(&mut frame, &mut spectrum).expect("FFT forward failed");
+
+        // Apply per-bin gains
+        for (bin, gain) in gains.iter().enumerate() {
+            if bin < spectrum.len() {
+                spectrum[bin] *= *gain;
+            }
+        }
+
+        // Inverse FFT
+        let mut time_out = fft_inv.make_output_vec();
+        fft_inv.process(&mut spectrum, &mut time_out).expect("FFT inverse failed");
+
+        // Normalize (realfft inverse doesn't normalize)
+        let norm = 1.0 / fft_size as f32;
+
+        // Overlap-add with window
+        for i in 0..fft_size {
+            if pos + i < len {
+                output[pos + i] += time_out[i] * norm * window[i];
+                window_sum[pos + i] += window[i] * window[i];
+            }
+        }
+
+        pos += hop_size;
+    }
+
+    // Normalize by window sum to avoid amplitude changes
+    for i in 0..len {
+        if window_sum[i] > 1e-6 {
+            output[i] /= window_sum[i];
+        }
+    }
+
+    output
+}
+
 /// Simple single-pole IIR low-pass filter (first-order exponential moving average).
 ///
 /// Transfer function: y[n] = alpha * x[n] + (1 - alpha) * y[n-1]

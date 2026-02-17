@@ -5,7 +5,7 @@ use crate::state::{AppState, Selection, PlaybackMode};
 use crate::dsp::heterodyne::heterodyne_mix;
 use crate::dsp::pitch_shift::pitch_shift_realtime;
 use crate::dsp::zc_divide::zc_divide;
-use crate::dsp::filters::lowpass_filter;
+use crate::dsp::filters::{lowpass_filter, apply_eq_filter};
 use std::cell::RefCell;
 
 thread_local! {
@@ -105,8 +105,18 @@ pub fn play(state: &AppState) {
 
     let (samples, sample_rate) = extract_selection(&file.audio, selection);
 
-    // Apply bandpass if selection has frequency bounds (Normal/TE modes)
-    let samples = if let Some(sel) = selection {
+    // Apply EQ filter if enabled, otherwise fall back to selection-based bandpass
+    let filter_enabled = state.filter_enabled.get_untracked();
+    let samples = if filter_enabled {
+        let freq_low = state.filter_freq_low.get_untracked();
+        let freq_high = state.filter_freq_high.get_untracked();
+        let db_below = state.filter_db_below.get_untracked();
+        let db_selected = state.filter_db_selected.get_untracked();
+        let db_harmonics = state.filter_db_harmonics.get_untracked();
+        let db_above = state.filter_db_above.get_untracked();
+        let band_mode = state.filter_band_mode.get_untracked();
+        apply_eq_filter(&samples, sample_rate, freq_low, freq_high, db_below, db_selected, db_harmonics, db_above, band_mode)
+    } else if let Some(sel) = selection {
         if matches!(mode, PlaybackMode::Normal | PlaybackMode::TimeExpansion | PlaybackMode::PitchShift | PlaybackMode::ZeroCrossing)
             && (sel.freq_low > 0.0 || sel.freq_high < (sample_rate as f64 / 2.0))
         {

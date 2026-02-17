@@ -120,6 +120,8 @@ pub fn Spectrogram() -> impl IntoView {
         let mouse_freq = state.mouse_freq.get();
         let mouse_cx = state.mouse_canvas_x.get();
         let label_opacity = state.label_hover_opacity.get();
+        let filter_hovering = state.filter_hovering_band.get();
+        let filter_enabled = state.filter_enabled.get();
         let _pre = pre_rendered.track();
 
         let Some(canvas_el) = canvas_ref.get() else { return };
@@ -223,6 +225,22 @@ pub fn Spectrogram() -> impl IntoView {
                             scroll,
                             time_res,
                             zoom,
+                            display_w as f64,
+                            display_h as f64,
+                        );
+                    }
+                }
+
+                // Draw filter band overlay when hovering a slider
+                if filter_enabled {
+                    if let Some(band) = filter_hovering {
+                        spectrogram_renderer::draw_filter_overlay(
+                            &ctx,
+                            band,
+                            state.filter_freq_low.get_untracked(),
+                            state.filter_freq_high.get_untracked(),
+                            state.filter_band_mode.get_untracked(),
+                            max_freq,
                             display_w as f64,
                             display_h as f64,
                         );
