@@ -1,9 +1,20 @@
+use crate::audio::guano::GuanoMetadata;
+
+#[derive(Clone, Debug)]
+pub struct FileMetadata {
+    pub file_size: usize,
+    pub format: &'static str,
+    pub bits_per_sample: u16,
+    pub guano: Option<GuanoMetadata>,
+}
+
 #[derive(Clone, Debug)]
 pub struct AudioData {
     pub samples: Vec<f32>,
     pub sample_rate: u32,
     pub channels: u32,
     pub duration_secs: f64,
+    pub metadata: FileMetadata,
 }
 
 #[derive(Clone, Debug)]

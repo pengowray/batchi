@@ -41,6 +41,7 @@ pub enum SidebarTab {
     Spectrogram,
     Selection,
     Filter,
+    Metadata,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Default)]

@@ -1,4 +1,5 @@
-use crate::types::AudioData;
+use crate::audio::guano::parse_guano;
+use crate::types::{AudioData, FileMetadata};
 use std::io::Cursor;
 
 /// Load audio from raw file bytes. Detects WAV or FLAC by header magic bytes.
@@ -20,6 +21,7 @@ fn load_wav(bytes: &[u8]) -> Result<AudioData, String> {
     let spec = reader.spec();
     let sample_rate = spec.sample_rate;
     let channels = spec.channels as u32;
+    let bits_per_sample = spec.bits_per_sample;
 
     let all_samples: Vec<f32> = match spec.sample_format {
         hound::SampleFormat::Float => reader
@@ -27,8 +29,7 @@ fn load_wav(bytes: &[u8]) -> Result<AudioData, String> {
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| format!("WAV sample error: {e}"))?,
         hound::SampleFormat::Int => {
-            let bits = spec.bits_per_sample;
-            let max_val = (1u32 << (bits - 1)) as f32;
+            let max_val = (1u32 << (bits_per_sample - 1)) as f32;
             reader
                 .into_samples::<i32>()
                 .collect::<Result<Vec<_>, _>>()
@@ -39,6 +40,8 @@ fn load_wav(bytes: &[u8]) -> Result<AudioData, String> {
         }
     };
 
+    let guano = parse_guano(bytes);
+
     let samples = mix_to_mono(&all_samples, channels);
     let duration_secs = samples.len() as f64 / sample_rate as f64;
 
@@ -47,6 +50,12 @@ fn load_wav(bytes: &[u8]) -> Result<AudioData, String> {
         sample_rate,
         channels,
         duration_secs,
+        metadata: FileMetadata {
+            file_size: bytes.len(),
+            format: "WAV",
+            bits_per_sample,
+            guano,
+        },
     })
 }
 
@@ -73,6 +82,12 @@ fn load_flac(bytes: &[u8]) -> Result<AudioData, String> {
         sample_rate,
         channels,
         duration_secs,
+        metadata: FileMetadata {
+            file_size: bytes.len(),
+            format: "FLAC",
+            bits_per_sample: bits as u16,
+            guano: None,
+        },
     })
 }
 

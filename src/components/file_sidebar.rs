@@ -41,12 +41,19 @@ pub fn FileSidebar() -> impl IntoView {
                 >
                     "Filter"
                 </button>
+                <button
+                    class=move || if state.sidebar_tab.get() == SidebarTab::Metadata { "sidebar-tab active" } else { "sidebar-tab" }
+                    on:click=move |_| state.sidebar_tab.set(SidebarTab::Metadata)
+                >
+                    "Info"
+                </button>
             </div>
             {move || match state.sidebar_tab.get() {
                 SidebarTab::Files => view! { <FilesPanel /> }.into_any(),
                 SidebarTab::Spectrogram => view! { <SpectrogramSettingsPanel /> }.into_any(),
                 SidebarTab::Selection => view! { <SelectionPanel /> }.into_any(),
                 SidebarTab::Filter => view! { <FilterPanel /> }.into_any(),
+                SidebarTab::Metadata => view! { <MetadataPanel /> }.into_any(),
             }}
         </div>
     }
@@ -676,6 +683,98 @@ fn FilterPanel() -> impl IntoView {
                 }.into_any()
             }}
         </div>
+    }
+}
+
+#[component]
+fn MetadataPanel() -> impl IntoView {
+    let state = expect_context::<AppState>();
+
+    view! {
+        <div class="sidebar-panel">
+            {move || {
+                let files = state.files.get();
+                let idx = state.current_file_index.get();
+                let file = idx.and_then(|i| files.get(i));
+
+                match file {
+                    None => view! {
+                        <div class="sidebar-panel-empty">"No file selected"</div>
+                    }.into_any(),
+                    Some(f) => {
+                        let meta = &f.audio.metadata;
+                        let size_str = format_file_size(meta.file_size);
+                        let guano_fields: Vec<_> = meta.guano.as_ref()
+                            .map(|g| g.fields.clone())
+                            .unwrap_or_default();
+                        let has_guano = !guano_fields.is_empty();
+
+                        view! {
+                            <div class="setting-group">
+                                <div class="setting-group-title">"File"</div>
+                                <div class="setting-row">
+                                    <span class="setting-label">"Name"</span>
+                                    <span class="setting-value metadata-value" title=f.name.clone()>{f.name.clone()}</span>
+                                </div>
+                                <div class="setting-row">
+                                    <span class="setting-label">"Format"</span>
+                                    <span class="setting-value">{meta.format}</span>
+                                </div>
+                                <div class="setting-row">
+                                    <span class="setting-label">"Duration"</span>
+                                    <span class="setting-value">{format!("{:.3} s", f.audio.duration_secs)}</span>
+                                </div>
+                                <div class="setting-row">
+                                    <span class="setting-label">"Sample rate"</span>
+                                    <span class="setting-value">{format!("{} kHz", f.audio.sample_rate / 1000)}</span>
+                                </div>
+                                <div class="setting-row">
+                                    <span class="setting-label">"Channels"</span>
+                                    <span class="setting-value">{f.audio.channels.to_string()}</span>
+                                </div>
+                                <div class="setting-row">
+                                    <span class="setting-label">"Bit depth"</span>
+                                    <span class="setting-value">{format!("{}-bit", meta.bits_per_sample)}</span>
+                                </div>
+                                <div class="setting-row">
+                                    <span class="setting-label">"File size"</span>
+                                    <span class="setting-value">{size_str}</span>
+                                </div>
+                            </div>
+                            {if has_guano {
+                                let rows: Vec<_> = guano_fields.into_iter().map(|(k, v)| {
+                                    let title = v.clone();
+                                    view! {
+                                        <div class="setting-row">
+                                            <span class="setting-label">{k}</span>
+                                            <span class="setting-value metadata-value" title=title>{v}</span>
+                                        </div>
+                                    }
+                                }).collect();
+                                view! {
+                                    <div class="setting-group">
+                                        <div class="setting-group-title">"GUANO"</div>
+                                        {rows}
+                                    </div>
+                                }.into_any()
+                            } else {
+                                view! { <span></span> }.into_any()
+                            }}
+                        }.into_any()
+                    }
+                }
+            }}
+        </div>
+    }
+}
+
+fn format_file_size(bytes: usize) -> String {
+    if bytes < 1024 {
+        format!("{} B", bytes)
+    } else if bytes < 1024 * 1024 {
+        format!("{:.1} KB", bytes as f64 / 1024.0)
+    } else {
+        format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
     }
 }
 
