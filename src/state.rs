@@ -24,6 +24,28 @@ pub enum PlaybackMode {
     PitchShift,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Default)]
+pub enum SpectrogramDisplay {
+    #[default]
+    Normal,
+    MovementCentroid,
+    MovementGradient,
+    MovementFlow,
+}
+
+impl SpectrogramDisplay {
+    pub fn is_active(self) -> bool {
+        !matches!(self, Self::Normal)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Default)]
+pub enum SidebarTab {
+    #[default]
+    Files,
+    Spectrogram,
+}
+
 #[derive(Clone, Copy)]
 pub struct AppState {
     pub files: RwSignal<Vec<LoadedFile>>,
@@ -42,6 +64,11 @@ pub struct AppState {
     pub ps_factor: RwSignal<f64>,
     pub het_interacting: RwSignal<bool>,
     pub is_dragging: RwSignal<bool>,
+    pub spectrogram_display: RwSignal<SpectrogramDisplay>,
+    pub sidebar_tab: RwSignal<SidebarTab>,
+    pub mv_threshold: RwSignal<f32>,
+    pub mv_opacity: RwSignal<f32>,
+    pub max_display_freq: RwSignal<Option<f64>>,
 }
 
 impl AppState {
@@ -63,6 +90,11 @@ impl AppState {
             ps_factor: RwSignal::new(10.0),
             het_interacting: RwSignal::new(false),
             is_dragging: RwSignal::new(false),
+            spectrogram_display: RwSignal::new(SpectrogramDisplay::Normal),
+            sidebar_tab: RwSignal::new(SidebarTab::Files),
+            mv_threshold: RwSignal::new(20.0),
+            mv_opacity: RwSignal::new(0.5),
+            max_display_freq: RwSignal::new(None),
         }
     }
 

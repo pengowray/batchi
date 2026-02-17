@@ -28,6 +28,32 @@ pub fn freq_marker_color(freq_hz: f64) -> [u8; 3] {
     }
 }
 
+/// Map a greyscale base value and a frequency-shift amount to an RGB triple.
+/// `shift` > 0 → energy moving upward in frequency → red tint.
+/// `shift` < 0 → energy moving downward in frequency → blue tint.
+/// `threshold` — minimum greyscale value to apply color (below this, stays grey).
+/// `opacity` — 0.0–1.0 multiplier on color intensity.
+pub fn movement_rgb(grey: u8, shift: f32, threshold: u8, opacity: f32) -> [u8; 3] {
+    if grey < threshold {
+        return [grey, grey, grey];
+    }
+    let gain: f32 = 4.0;
+    let s = (shift * gain * opacity).clamp(-1.0, 1.0);
+    let g = grey as f32;
+    if s > 0.0 {
+        // Upward shift → red
+        let r = (g + s * (255.0 - g)).min(255.0) as u8;
+        let gb = (g * (1.0 - 0.5 * s)).max(0.0) as u8;
+        [r, gb, gb]
+    } else {
+        // Downward shift → blue
+        let a = -s;
+        let b = (g + a * (255.0 - g)).min(255.0) as u8;
+        let rg = (g * (1.0 - 0.5 * a)).max(0.0) as u8;
+        [rg, rg, b]
+    }
+}
+
 /// Label for a frequency marker.
 pub fn freq_marker_label(freq_hz: f64) -> String {
     format!("{} kHz", (freq_hz / 1000.0).round() as u32)

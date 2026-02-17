@@ -1,4 +1,4 @@
-use crate::canvas::colors::{freq_marker_color, freq_marker_label, magnitude_to_greyscale};
+use crate::canvas::colors::{freq_marker_color, freq_marker_label, magnitude_to_greyscale, movement_rgb};
 use crate::state::Selection;
 use crate::types::SpectrogramData;
 use wasm_bindgen::JsCast;
@@ -55,6 +55,195 @@ pub fn pre_render(data: &SpectrogramData) -> PreRendered {
         height,
         pixels,
     }
+}
+
+/// Algorithm selector for movement detection.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum MovementAlgo {
+    Centroid,
+    Gradient,
+    Flow,
+}
+
+/// Pre-render spectrogram with frequency-movement color overlay.
+/// Greyscale base with red (upward shift) / blue (downward shift) tint.
+pub fn pre_render_movement(
+    data: &SpectrogramData,
+    algo: MovementAlgo,
+    threshold: u8,
+    opacity: f32,
+) -> PreRendered {
+    if data.columns.is_empty() {
+        return PreRendered {
+            width: 0,
+            height: 0,
+            pixels: Vec::new(),
+        };
+    }
+
+    let width = data.columns.len() as u32;
+    let height = data.columns[0].magnitudes.len() as u32;
+    let h = height as usize;
+
+    let max_mag = data
+        .columns
+        .iter()
+        .flat_map(|c| c.magnitudes.iter())
+        .copied()
+        .fold(0.0f32, f32::max);
+
+    let mut pixels = vec![0u8; (width * height * 4) as usize];
+
+    for (col_idx, col) in data.columns.iter().enumerate() {
+        // Get previous column magnitudes (or None for first column)
+        let prev = if col_idx > 0 {
+            Some(&data.columns[col_idx - 1].magnitudes)
+        } else {
+            None
+        };
+
+        for (bin_idx, &mag) in col.magnitudes.iter().enumerate() {
+            let grey = magnitude_to_greyscale(mag, max_mag);
+
+            let shift = match prev {
+                None => 0.0,
+                Some(prev_mags) => match algo {
+                    MovementAlgo::Centroid => {
+                        compute_centroid_shift(prev_mags, &col.magnitudes, bin_idx, h)
+                    }
+                    MovementAlgo::Gradient => {
+                        compute_gradient_shift(prev_mags, &col.magnitudes, bin_idx, h)
+                    }
+                    MovementAlgo::Flow => {
+                        compute_flow_shift(prev_mags, &col.magnitudes, bin_idx, h)
+                    }
+                },
+            };
+
+            let [r, g, b] = movement_rgb(grey, shift, threshold, opacity);
+
+            let y = height as usize - 1 - bin_idx;
+            let pixel_idx = (y * width as usize + col_idx) * 4;
+            pixels[pixel_idx] = r;
+            pixels[pixel_idx + 1] = g;
+            pixels[pixel_idx + 2] = b;
+            pixels[pixel_idx + 3] = 255;
+        }
+    }
+
+    PreRendered {
+        width,
+        height,
+        pixels,
+    }
+}
+
+/// Spectral centroid shift: compute local weighted centroid in a ±radius window
+/// around `bin` for both prev and current column, return the difference.
+fn compute_centroid_shift(prev: &[f32], curr: &[f32], bin: usize, h: usize) -> f32 {
+    let radius: usize = 3;
+    let lo = bin.saturating_sub(radius);
+    let hi = (bin + radius + 1).min(h);
+
+    let centroid = |mags: &[f32]| -> f32 {
+        let mut sum_w = 0.0f32;
+        let mut sum_wf = 0.0f32;
+        for i in lo..hi {
+            let w = mags[i] * mags[i]; // weight by energy
+            sum_w += w;
+            sum_wf += w * i as f32;
+        }
+        if sum_w > 0.0 {
+            sum_wf / sum_w
+        } else {
+            bin as f32
+        }
+    };
+
+    let c_prev = centroid(prev);
+    let c_curr = centroid(curr);
+    // Normalize by radius so result is roughly in [-1, 1]
+    (c_curr - c_prev) / radius as f32
+}
+
+/// Vertical gradient of temporal difference.
+fn compute_gradient_shift(prev: &[f32], curr: &[f32], bin: usize, h: usize) -> f32 {
+    // diff at neighboring bins
+    let diff_above = if bin + 1 < h {
+        curr[bin + 1] - prev[bin + 1]
+    } else {
+        0.0
+    };
+    let diff_below = if bin > 0 {
+        curr[bin - 1] - prev[bin - 1]
+    } else {
+        0.0
+    };
+    let max_energy = curr[bin].max(prev[bin]).max(1e-10);
+    // Positive gradient means energy is appearing above & disappearing below → upward shift
+    (diff_above - diff_below) / (2.0 * max_energy)
+}
+
+/// 1D vertical optical flow via cross-correlation in a small window.
+/// Returns fractional bin displacement (positive = upward shift).
+fn compute_flow_shift(prev: &[f32], curr: &[f32], bin: usize, h: usize) -> f32 {
+    let radius: usize = 3;
+    let max_disp: isize = 2;
+
+    let lo = bin.saturating_sub(radius);
+    let hi = (bin + radius + 1).min(h);
+
+    // Check there's enough energy to bother
+    let energy: f32 = (lo..hi).map(|i| curr[i]).sum();
+    if energy < 1e-8 {
+        return 0.0;
+    }
+
+    let mut best_corr = f32::NEG_INFINITY;
+    let mut best_d: isize = 0;
+
+    for d in -max_disp..=max_disp {
+        let mut corr = 0.0f32;
+        for i in lo..hi {
+            let j = (i as isize + d) as usize;
+            if j < h {
+                corr += curr[i] * prev[j];
+            }
+        }
+        if corr > best_corr {
+            best_corr = corr;
+            best_d = d;
+        }
+    }
+
+    // Sub-pixel refinement using parabolic interpolation
+    if best_d.abs() < max_disp {
+        let c0 = {
+            let d = best_d - 1;
+            (lo..hi)
+                .map(|i| {
+                    let j = (i as isize + d) as usize;
+                    if j < h { curr[i] * prev[j] } else { 0.0 }
+                })
+                .sum::<f32>()
+        };
+        let c2 = {
+            let d = best_d + 1;
+            (lo..hi)
+                .map(|i| {
+                    let j = (i as isize + d) as usize;
+                    if j < h { curr[i] * prev[j] } else { 0.0 }
+                })
+                .sum::<f32>()
+        };
+        let denom = 2.0 * (2.0 * best_corr - c0 - c2);
+        if denom.abs() > 1e-10 {
+            let sub = (c0 - c2) / denom;
+            return (best_d as f32 + sub) / max_disp as f32;
+        }
+    }
+
+    best_d as f32 / max_disp as f32
 }
 
 /// Blit the pre-rendered spectrogram to a visible canvas, handling scroll and zoom.

@@ -1,8 +1,8 @@
 use leptos::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement, MouseEvent};
-use crate::canvas::spectrogram_renderer::{self, FreqShiftMode, PreRendered};
-use crate::state::{AppState, PlaybackMode, Selection};
+use crate::canvas::spectrogram_renderer::{self, FreqShiftMode, MovementAlgo, PreRendered};
+use crate::state::{AppState, PlaybackMode, Selection, SpectrogramDisplay};
 
 #[component]
 pub fn Spectrogram() -> impl IntoView {
@@ -14,13 +14,34 @@ pub fn Spectrogram() -> impl IntoView {
     // Drag state for selection
     let drag_start = RwSignal::new((0.0f64, 0.0f64));
 
-    // Re-compute pre-render when current file changes
+    // Re-compute pre-render when current file, display mode, or mv settings change
     Effect::new(move || {
         let files = state.files.get();
         let idx = state.current_file_index.get();
+        let display = state.spectrogram_display.get();
+        let threshold = state.mv_threshold.get() as u8;
+        let opacity = state.mv_opacity.get();
         if let Some(i) = idx {
             if let Some(file) = files.get(i) {
-                let rendered = spectrogram_renderer::pre_render(&file.spectrogram);
+                let rendered = match display {
+                    SpectrogramDisplay::Normal => {
+                        spectrogram_renderer::pre_render(&file.spectrogram)
+                    }
+                    _ => {
+                        let algo = match display {
+                            SpectrogramDisplay::MovementCentroid => MovementAlgo::Centroid,
+                            SpectrogramDisplay::MovementGradient => MovementAlgo::Gradient,
+                            SpectrogramDisplay::MovementFlow => MovementAlgo::Flow,
+                            _ => unreachable!(),
+                        };
+                        spectrogram_renderer::pre_render_movement(
+                            &file.spectrogram,
+                            algo,
+                            threshold,
+                            opacity,
+                        )
+                    }
+                };
                 pre_rendered.set(Some(rendered));
             }
         } else {
@@ -41,6 +62,7 @@ pub fn Spectrogram() -> impl IntoView {
         let te_factor = state.te_factor.get();
         let ps_factor = state.ps_factor.get();
         let playback_mode = state.playback_mode.get();
+        let max_display_freq = state.max_display_freq.get();
         let _pre = pre_rendered.track();
 
         let Some(canvas_el) = canvas_ref.get() else { return };
@@ -76,10 +98,11 @@ pub fn Spectrogram() -> impl IntoView {
 
                 spectrogram_renderer::blit_viewport(&ctx, rendered, canvas, scroll_col, zoom);
 
-                let max_freq = idx
+                let file_max_freq = idx
                     .and_then(|i| files.get(i))
                     .map(|f| f.spectrogram.max_freq)
                     .unwrap_or(96_000.0);
+                let max_freq = max_display_freq.unwrap_or(file_max_freq).min(file_max_freq);
                 // Determine frequency shift mode for marker labels
                 let show_het = het_interacting
                     || (playback_mode == PlaybackMode::Heterodyne && is_playing);
@@ -172,7 +195,10 @@ pub fn Spectrogram() -> impl IntoView {
         let idx = state.current_file_index.get_untracked()?;
         let file = files.get(idx)?;
         let time_res = file.spectrogram.time_resolution;
-        let max_freq = file.spectrogram.max_freq;
+        let file_max_freq = file.spectrogram.max_freq;
+        let max_freq = state.max_display_freq.get_untracked()
+            .unwrap_or(file_max_freq)
+            .min(file_max_freq);
         let scroll = state.scroll_offset.get_untracked();
         let zoom = state.zoom_level.get_untracked();
 
