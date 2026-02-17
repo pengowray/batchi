@@ -33,6 +33,62 @@ pub fn stop(state: &AppState) {
     state.is_playing.set(false);
 }
 
+/// Resume HET playback from the current playhead position with the new frequency.
+pub fn replay_het(state: &AppState) {
+    let current_time = state.playhead_time.get_untracked();
+    // Stop audio without resetting scroll
+    cancel_playhead();
+    CURRENT_SOURCE.with(|s| {
+        if let Some(source) = s.borrow_mut().take() {
+            #[allow(deprecated)]
+            let _ = source.stop();
+        }
+    });
+    CURRENT_CTX.with(|c| {
+        if let Some(ctx) = c.borrow_mut().take() {
+            let _ = ctx.close();
+        }
+    });
+
+    let files = state.files.get_untracked();
+    let idx = state.current_file_index.get_untracked();
+    let Some(file) = idx.and_then(|i| files.get(i)) else { return };
+
+    let selection = state.selection.get_untracked();
+    let het_freq = state.het_frequency.get_untracked();
+
+    // Extract remaining samples from current_time to selection end (or file end)
+    let sr = file.audio.sample_rate;
+    let sel_end = selection.map(|s| s.time_end).unwrap_or(file.audio.duration_secs);
+    let start_sample = (current_time * sr as f64) as usize;
+    let end_sample = (sel_end * sr as f64) as usize;
+    let start_sample = start_sample.min(file.audio.samples.len());
+    let end_sample = end_sample.min(file.audio.samples.len());
+
+    if end_sample <= start_sample {
+        state.is_playing.set(false);
+        return;
+    }
+
+    let samples = file.audio.samples[start_sample..end_sample].to_vec();
+    let remaining_duration = (end_sample - start_sample) as f64 / sr as f64;
+
+    let effective_lo = if let Some(sel) = selection {
+        if sel.freq_low > 0.0 || sel.freq_high > 0.0 {
+            (sel.freq_low + sel.freq_high) / 2.0
+        } else {
+            het_freq
+        }
+    } else {
+        het_freq
+    };
+    let processed = heterodyne_mix(&samples, sr, effective_lo);
+    play_samples(&processed, sr);
+
+    // Continue playhead from current position
+    start_playhead(state.clone(), current_time, remaining_duration, 1.0);
+}
+
 pub fn play(state: &AppState) {
     stop(state);
 

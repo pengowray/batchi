@@ -37,11 +37,11 @@ pub fn Toolbar() -> impl IntoView {
                 val
             };
             state.het_frequency.set(freq_khz * 1000.0);
-            // Restart playback live if currently playing in HET mode
+            // Re-render HET audio from current position if playing
             if state.is_playing.get_untracked()
                 && state.playback_mode.get_untracked() == PlaybackMode::Heterodyne
             {
-                playback::play(&state);
+                playback::replay_het(&state);
             }
         }
     };
@@ -98,24 +98,28 @@ pub fn Toolbar() -> impl IntoView {
                 <button
                     class=move || if current_mode() == PlaybackMode::Heterodyne { "mode-btn active" } else { "mode-btn" }
                     on:click=move |_| set_mode(PlaybackMode::Heterodyne)
+                    title="Heterodyne — mix with a local oscillator to shift ultrasonic frequencies into audible range"
                 >
                     "HET"
                 </button>
                 <button
                     class=move || if current_mode() == PlaybackMode::TimeExpansion { "mode-btn active" } else { "mode-btn" }
                     on:click=move |_| set_mode(PlaybackMode::TimeExpansion)
+                    title="Time Expansion — slow down playback to lower pitch proportionally"
                 >
                     "TE"
                 </button>
                 <button
                     class=move || if current_mode() == PlaybackMode::PitchShift { "mode-btn active" } else { "mode-btn" }
                     on:click=move |_| set_mode(PlaybackMode::PitchShift)
+                    title="Pitch Shift — lower pitch while preserving original duration"
                 >
                     "PS"
                 </button>
                 <button
                     class=move || if current_mode() == PlaybackMode::ZeroCrossing { "mode-btn active" } else { "mode-btn" }
                     on:click=move |_| set_mode(PlaybackMode::ZeroCrossing)
+                    title="Zero Crossing — frequency division via zero-crossing detection"
                 >
                     "ZC"
                 </button>
