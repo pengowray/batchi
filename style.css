@@ -222,6 +222,26 @@ body.sidebar-resizing {
     text-align: center;
     color: #666;
     font-style: italic;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+}
+
+.upload-btn {
+    padding: 6px 16px;
+    background: #333;
+    color: #ccc;
+    border: 1px solid #555;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+    font-style: normal;
+}
+
+.upload-btn:hover {
+    background: #444;
+    color: #fff;
 }
 
 .file-list {

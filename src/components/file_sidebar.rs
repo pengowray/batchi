@@ -4,33 +4,41 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen::{Clamped, JsCast};
 use js_sys;
 use wasm_bindgen_futures::JsFuture;
-use web_sys::{CanvasRenderingContext2d, DragEvent, File, FileReader, HtmlCanvasElement, ImageData};
+use web_sys::{CanvasRenderingContext2d, DragEvent, File, FileReader, HtmlCanvasElement, HtmlInputElement, ImageData};
 use crate::audio::loader::load_audio;
 use crate::dsp::fft::{compute_preview, compute_spectrogram};
 use crate::dsp::zero_crossing::zero_crossing_frequency;
 use crate::state::{AppState, LoadedFile, SidebarTab, SpectrogramDisplay};
 use crate::types::{PreviewImage, SpectrogramData};
 
-fn format_guano_key(key: &str) -> String {
-    match key {
-        "GUANO|Version" => "GUANO Version".into(),
-        "BatGizmo|App|DeviceModel" => "Device Model".into(),
-        "BatGizmo|App|Version" => "BatGizmo Version".into(),
-        "BatGizmo|App|TriggerType" => "Trigger Type".into(),
-        "BatGizmo|App|PretriggerS" => "PretriggerS".into(),
-        "BatGizmo|App|PosttriggerS" => "PosttriggerS".into(),
-        "BatGizmo|App|MaxFileTimeS" => "MaxFileTimeS".into(),
-        "Loc|Lat" => "Latitude".into(),
-        "Loc|Lon" => "Longitude".into(),
-        "Loc|Elev" => "Elevation".into(),
-        "Filter|HP" => "High-pass Filter".into(),
-        "Filter|LP" => "Low-pass Filter".into(),
-        "Species|Auto" => "Species (Auto)".into(),
-        "Species|Manual" => "Species (Manual)".into(),
-        "TE" => "Time Expansion".into(),
-        "Samplerate" => "Sample Rate".into(),
-        "Length" => "Length".into(),
-        _ => key.replace('|', " "),
+/// Returns (section, display_key) for a GUANO field.
+/// Known fields return "GUANO" as section; unknown pipe-separated keys
+/// return the prefix (e.g. "BatGizmo App") as section and the last segment as display key.
+fn categorize_guano_key(key: &str) -> (String, String) {
+    let known = match key {
+        "GUANO|Version" => Some("GUANO Version"),
+        "Loc|Lat" => Some("Latitude"),
+        "Loc|Lon" => Some("Longitude"),
+        "Loc|Elev" => Some("Elevation"),
+        "Filter|HP" => Some("High-pass Filter"),
+        "Filter|LP" => Some("Low-pass Filter"),
+        "Species|Auto" => Some("Species (Auto)"),
+        "Species|Manual" => Some("Species (Manual)"),
+        "TE" => Some("Time Expansion"),
+        "Samplerate" => Some("Sample Rate"),
+        "Length" => Some("Length"),
+        _ => None,
+    };
+    if let Some(display) = known {
+        return ("GUANO".into(), display.into());
+    }
+    // Unknown key: split on last pipe to get section prefix and short name
+    if let Some(pos) = key.rfind('|') {
+        let prefix = &key[..pos];
+        let short = &key[pos + 1..];
+        (prefix.replace('|', " "), short.into())
+    } else {
+        ("GUANO".into(), key.into())
     }
 }
 
@@ -144,6 +152,38 @@ fn FilesPanel() -> impl IntoView {
         drag_over.set(false);
     };
 
+    let file_input_ref = NodeRef::<leptos::html::Input>::new();
+
+    let state_for_upload = state.clone();
+    let on_upload_click = move |_: web_sys::MouseEvent| {
+        if let Some(input) = file_input_ref.get() {
+            let el: &HtmlInputElement = input.as_ref();
+            el.click();
+        }
+    };
+
+    let on_file_input_change = move |ev: web_sys::Event| {
+        let target = ev.target().unwrap();
+        let input: HtmlInputElement = target.unchecked_into();
+        let Some(file_list) = input.files() else { return };
+
+        for i in 0..file_list.length() {
+            let Some(file) = file_list.get(i) else { continue };
+            let state = state_for_upload.clone();
+            state.loading_count.update(|c| *c += 1);
+            spawn_local(async move {
+                match read_and_load_file(file, state.clone()).await {
+                    Ok(()) => {}
+                    Err(e) => log::error!("Failed to load file: {e}"),
+                }
+                state.loading_count.update(|c| *c = c.saturating_sub(1));
+            });
+        }
+
+        // Reset the input so the same file can be re-selected
+        input.set_value("");
+    };
+
     let state_for_drop = state.clone();
     let on_drop = move |ev: DragEvent| {
         ev.prevent_default();
@@ -173,12 +213,23 @@ fn FilesPanel() -> impl IntoView {
             on:dragleave=on_dragleave
             on:drop=on_drop
         >
+            <input
+                node_ref=file_input_ref
+                type="file"
+                accept=".wav,.flac"
+                multiple=true
+                style="display:none"
+                on:change=on_file_input_change
+            />
             {move || {
                 let file_vec = files.get();
                 let lc = loading_count.get();
                 if file_vec.is_empty() && lc == 0 {
                     view! {
-                        <div class="drop-hint">"Drop WAV/FLAC files here"</div>
+                        <div class="drop-hint">
+                            "Drop WAV/FLAC files here"
+                            <button class="upload-btn" on:click=on_upload_click>"Browse files"</button>
+                        </div>
                     }.into_any()
                 } else {
                     let items: Vec<_> = file_vec.iter().enumerate().map(|(i, f)| {
@@ -810,21 +861,29 @@ fn MetadataPanel() -> impl IntoView {
                                 </div>
                             </div>
                             {if has_guano {
-                                let rows: Vec<_> = guano_fields.into_iter().map(|(k, v)| {
-                                    let display_key = format_guano_key(&k);
-                                    let label_title = k.clone();
+                                let mut items: Vec<leptos::tachys::view::any_view::AnyView> = Vec::new();
+                                let mut current_section: Option<String> = None;
+                                for (k, v) in guano_fields {
+                                    let (section, display_key) = categorize_guano_key(&k);
+                                    if current_section.as_ref() != Some(&section) {
+                                        let heading = section.clone();
+                                        items.push(view! {
+                                            <div class="setting-group-title">{heading}</div>
+                                        }.into_any());
+                                        current_section = Some(section);
+                                    }
+                                    let label_title = k;
                                     let value_title = v.clone();
-                                    view! {
+                                    items.push(view! {
                                         <div class="setting-row">
                                             <span class="setting-label" title=label_title>{display_key}</span>
                                             <span class="setting-value metadata-value" title=value_title>{v}</span>
                                         </div>
-                                    }
-                                }).collect();
+                                    }.into_any());
+                                }
                                 view! {
                                     <div class="setting-group">
-                                        <div class="setting-group-title">"GUANO"</div>
-                                        {rows}
+                                        {items}
                                     </div>
                                 }.into_any()
                             } else {
