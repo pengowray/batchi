@@ -1244,7 +1244,7 @@ fn AnalysisPanel() -> impl IntoView {
                             let note = if xc_letter == computed {
                                 "(matches)".to_string()
                             } else {
-                                format!("(computed: {})", computed)
+                                format!("(estimated: {})", computed)
                             };
                             (xc_letter, xc_badge_class.to_string(), note)
                         });
@@ -1266,7 +1266,7 @@ fn AnalysisPanel() -> impl IntoView {
                                     <div class="wsnr-detail">{noise_text}</div>
                                     {xc_comparison.map(|(letter, badge_class, note)| view! {
                                         <div class="wsnr-comparison">
-                                            "XC quality: "
+                                            "XC assessment: "
                                             <span class=badge_class>{letter}</span>
                                             " " {note}
                                         </div>
