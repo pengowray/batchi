@@ -38,7 +38,7 @@ pub fn apply_eq_filter(
     // Build per-bin gain table
     let num_bins = fft_size / 2 + 1;
     let freq_per_bin = sample_rate as f64 / fft_size as f64;
-    let harmonics_active = band_mode >= 4 && freq_high > 0.0 && freq_low > 0.0 && freq_high / freq_low < 2.0;
+    let harmonics_active = band_mode >= 4 && freq_high > 0.0;
     let harmonics_upper = freq_high * 2.0;
 
     let gains: Vec<f32> = (0..num_bins)
@@ -138,7 +138,7 @@ pub fn apply_eq_filter_fast(
 
     let gain_below = 10.0_f64.powf(db_below / 20.0) as f32;
     let gain_selected = 10.0_f64.powf(db_selected / 20.0) as f32;
-    let harmonics_active = band_mode >= 4 && freq_low > 0.0 && freq_high / freq_low < 2.0;
+    let harmonics_active = band_mode >= 4 && freq_high > 0.0;
     let gain_harmonics = if harmonics_active { 10.0_f64.powf(db_harmonics / 20.0) as f32 } else { 0.0 };
     let gain_above = if band_mode >= 3 { 10.0_f64.powf(db_above / 20.0) as f32 } else { gain_selected };
 

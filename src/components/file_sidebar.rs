@@ -598,12 +598,7 @@ fn FilterPanel() -> impl IntoView {
 
     let has_selection = move || state.selection.get().is_some();
     let band_mode = move || state.filter_band_mode.get();
-    let selection_under_octave = move || {
-        let low = state.filter_freq_low.get();
-        let high = state.filter_freq_high.get();
-        low > 0.0 && high / low < 2.0
-    };
-    let show_harmonics = move || band_mode() >= 4 && selection_under_octave();
+    let show_harmonics = move || band_mode() >= 4;
     let show_above = move || band_mode() >= 3;
 
     let quality = move || state.filter_quality.get();
