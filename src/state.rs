@@ -42,7 +42,30 @@ pub enum SidebarTab {
     Spectrogram,
     Selection,
     PreProcessing,
+    Analysis,
     Metadata,
+}
+
+impl SidebarTab {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Files => "Files",
+            Self::Spectrogram => "Display",
+            Self::Selection => "Selection",
+            Self::PreProcessing => "EQ",
+            Self::Analysis => "Analysis",
+            Self::Metadata => "Info",
+        }
+    }
+
+    pub const ALL: &'static [SidebarTab] = &[
+        Self::Files,
+        Self::Spectrogram,
+        Self::Selection,
+        Self::PreProcessing,
+        Self::Analysis,
+        Self::Metadata,
+    ];
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
@@ -98,6 +121,7 @@ pub struct AppState {
     pub het_cutoff: RwSignal<f64>,
     pub sidebar_collapsed: RwSignal<bool>,
     pub sidebar_width: RwSignal<f64>,
+    pub sidebar_dropdown_open: RwSignal<bool>,
 }
 
 impl AppState {
@@ -146,6 +170,7 @@ impl AppState {
             het_cutoff: RwSignal::new(15_000.0),
             sidebar_collapsed: RwSignal::new(false),
             sidebar_width: RwSignal::new(220.0),
+            sidebar_dropdown_open: RwSignal::new(false),
         }
     }
 

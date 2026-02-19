@@ -9,6 +9,7 @@ use crate::audio::loader::load_audio;
 use crate::dsp::fft::{compute_preview, compute_spectrogram};
 use crate::dsp::zero_crossing::zero_crossing_frequency;
 use crate::audio::playback;
+use crate::dsp::bit_analysis::{self, BitCaution};
 use crate::state::{AppState, LoadedFile, PlaybackMode, SidebarTab, SpectrogramDisplay};
 use crate::types::{PreviewImage, SpectrogramData};
 
@@ -80,6 +81,35 @@ pub fn FileSidebar() -> impl IntoView {
         if state.sidebar_collapsed.get() { "sidebar collapsed" } else { "sidebar" }
     };
 
+    let dropdown_open = state.sidebar_dropdown_open;
+
+    let on_dropdown_toggle = move |_: web_sys::MouseEvent| {
+        if state.sidebar_collapsed.get_untracked() {
+            state.sidebar_collapsed.set(false);
+        } else {
+            dropdown_open.update(|v| *v = !*v);
+        }
+    };
+
+    let select_tab = move |tab: SidebarTab| {
+        state.sidebar_collapsed.set(false);
+        state.sidebar_tab.set(tab);
+        dropdown_open.set(false);
+    };
+
+    // Close dropdown when clicking outside
+    let on_dropdown_blur = move |_: web_sys::FocusEvent| {
+        // Small delay to allow click on menu items to register first
+        let handle = wasm_bindgen::closure::Closure::once(move || {
+            dropdown_open.set(false);
+        });
+        let _ = web_sys::window().unwrap().set_timeout_with_callback_and_timeout_and_arguments_0(
+            handle.as_ref().unchecked_ref(),
+            150,
+        );
+        handle.forget();
+    };
+
     view! {
         <div class=sidebar_class>
             <div class="sidebar-tabs">
@@ -87,47 +117,49 @@ pub fn FileSidebar() -> impl IntoView {
                     class="sidebar-tab sidebar-collapse-btn"
                     on:click=move |_| {
                         state.sidebar_collapsed.update(|c| *c = !*c);
+                        dropdown_open.set(false);
                     }
                     title=move || if state.sidebar_collapsed.get() { "Show sidebar" } else { "Hide sidebar" }
                 >
                     {move || if state.sidebar_collapsed.get() { "\u{25B6}" } else { "\u{25C0}" }}
                 </button>
-                <button
-                    class=move || if state.sidebar_tab.get() == SidebarTab::Files { "sidebar-tab active" } else { "sidebar-tab" }
-                    on:click=move |_| { state.sidebar_collapsed.set(false); state.sidebar_tab.set(SidebarTab::Files); }
-                >
-                    "Files"
-                </button>
-                <button
-                    class=move || if state.sidebar_tab.get() == SidebarTab::Spectrogram { "sidebar-tab active" } else { "sidebar-tab" }
-                    on:click=move |_| { state.sidebar_collapsed.set(false); state.sidebar_tab.set(SidebarTab::Spectrogram); }
-                >
-                    "Display"
-                </button>
-                <button
-                    class=move || if state.sidebar_tab.get() == SidebarTab::Selection { "sidebar-tab active" } else { "sidebar-tab" }
-                    on:click=move |_| { state.sidebar_collapsed.set(false); state.sidebar_tab.set(SidebarTab::Selection); }
-                >
-                    "Selection"
-                </button>
-                <button
-                    class=move || if state.sidebar_tab.get() == SidebarTab::PreProcessing { "sidebar-tab active" } else { "sidebar-tab" }
-                    on:click=move |_| { state.sidebar_collapsed.set(false); state.sidebar_tab.set(SidebarTab::PreProcessing); }
-                >
-                    "EQ"
-                </button>
-                <button
-                    class=move || if state.sidebar_tab.get() == SidebarTab::Metadata { "sidebar-tab active" } else { "sidebar-tab" }
-                    on:click=move |_| { state.sidebar_collapsed.set(false); state.sidebar_tab.set(SidebarTab::Metadata); }
-                >
-                    "Info"
-                </button>
+                <div class="sidebar-tab-dropdown-wrap" tabindex="-1" on:focusout=on_dropdown_blur>
+                    <button class="sidebar-tab-dropdown" on:click=on_dropdown_toggle>
+                        {move || state.sidebar_tab.get().label()}
+                        <span class="dropdown-arrow">{move || if dropdown_open.get() { "\u{25B4}" } else { "\u{25BE}" }}</span>
+                    </button>
+                    {move || {
+                        if dropdown_open.get() {
+                            let items: Vec<_> = SidebarTab::ALL.iter().map(|&tab| {
+                                let is_active = move || state.sidebar_tab.get() == tab;
+                                let label = tab.label();
+                                view! {
+                                    <button
+                                        class=move || if is_active() { "sidebar-tab-option active" } else { "sidebar-tab-option" }
+                                        on:mousedown=move |ev: web_sys::MouseEvent| {
+                                            ev.prevent_default();
+                                            select_tab(tab);
+                                        }
+                                    >
+                                        {label}
+                                    </button>
+                                }
+                            }).collect();
+                            view! {
+                                <div class="sidebar-tab-menu">{items}</div>
+                            }.into_any()
+                        } else {
+                            view! { <span></span> }.into_any()
+                        }
+                    }}
+                </div>
             </div>
             {move || match state.sidebar_tab.get() {
                 SidebarTab::Files => view! { <FilesPanel /> }.into_any(),
                 SidebarTab::Spectrogram => view! { <SpectrogramSettingsPanel /> }.into_any(),
                 SidebarTab::Selection => view! { <SelectionPanel /> }.into_any(),
                 SidebarTab::PreProcessing => view! { <FilterPanel /> }.into_any(),
+                SidebarTab::Analysis => view! { <AnalysisPanel /> }.into_any(),
                 SidebarTab::Metadata => view! { <MetadataPanel /> }.into_any(),
             }}
             <div class="sidebar-resize-handle" on:mousedown=on_resize_start></div>
@@ -830,6 +862,143 @@ fn FilterPanel() -> impl IntoView {
                         }.into_any()
                     }
                     _ => view! { <span></span> }.into_any(),
+                }
+            }}
+        </div>
+    }
+}
+
+#[component]
+fn AnalysisPanel() -> impl IntoView {
+    let state = expect_context::<AppState>();
+
+    let analysis = Memo::new(move |_| {
+        let files = state.files.get();
+        let idx = state.current_file_index.get();
+        idx.and_then(|i| files.get(i).cloned()).map(|file| {
+            let meta = &file.audio.metadata;
+            bit_analysis::analyze_bits(
+                &file.audio.samples,
+                meta.bits_per_sample,
+                meta.is_float,
+                file.audio.duration_secs,
+            )
+        })
+    });
+
+    view! {
+        <div class="sidebar-panel">
+            {move || {
+                match analysis.get().as_ref() {
+                    None => view! {
+                        <div class="sidebar-panel-empty">"No file selected"</div>
+                    }.into_any(),
+                    Some(a) => {
+                        let bits = a.bits_per_sample as usize;
+                        let cols = 4usize;
+                        let rows = (bits + cols - 1) / cols;
+                        let total = a.total_samples;
+                        let summary = a.summary.clone();
+                        let warnings = a.warnings.clone();
+
+                        let grid_cells: Vec<_> = (0..rows).flat_map(|row| {
+                            (0..cols).map(move |col| {
+                                let idx = row * cols + col;
+                                (row, col, idx)
+                            })
+                        }).filter(|&(_, _, idx)| idx < bits)
+                        .map(|(_, _, idx)| {
+                            let stat = &a.bit_stats[idx];
+                            let cautions = &a.bit_cautions[idx];
+                            let label = bit_analysis::bit_label(idx, a.bits_per_sample, a.is_float);
+                            let count = stat.count;
+                            let used = count > 0;
+                            let expected = bit_analysis::is_expected_used(idx, a.bits_per_sample, a.is_float, a.effective_bits);
+
+                            let cell_class = if used {
+                                if cautions.iter().any(|c| matches!(c, BitCaution::OnlyInFade | BitCaution::VeryLowUsage)) {
+                                    "bit-cell used caution"
+                                } else if cautions.iter().any(|c| matches!(c, BitCaution::Always1)) {
+                                    "bit-cell used always1"
+                                } else {
+                                    "bit-cell used"
+                                }
+                            } else if expected {
+                                "bit-cell unused-expected"
+                            } else {
+                                "bit-cell unused"
+                            };
+
+                            let value_text = if count == 0 {
+                                "\u{2013}".to_string() // em-dash
+                            } else if total > 0 {
+                                let pct = count as f64 / total as f64 * 100.0;
+                                if pct >= 1.0 {
+                                    format!("{:.0}%", pct)
+                                } else if count > 99 {
+                                    "99+".into()
+                                } else {
+                                    format!("{}", count)
+                                }
+                            } else {
+                                "\u{2013}".to_string()
+                            };
+
+                            let mut tooltip = format!("Bit {}: {} / {} samples", label, count, total);
+                            if let Some(fi) = stat.first_index {
+                                tooltip.push_str(&format!("\nFirst: sample {}", fi));
+                            }
+                            if let Some(li) = stat.last_index {
+                                tooltip.push_str(&format!("\nLast: sample {}", li));
+                            }
+                            for c in cautions {
+                                match c {
+                                    BitCaution::OnlyInFade => tooltip.push_str("\n\u{26A0} Only used in fade regions"),
+                                    BitCaution::Always1 => tooltip.push_str("\n\u{26A0} Always 1 (100%)"),
+                                    BitCaution::VeryLowUsage => tooltip.push_str("\n\u{26A0} Very low usage"),
+                                }
+                            }
+
+                            view! {
+                                <div class=cell_class title=tooltip>
+                                    <span class="bit-label">{label}</span>
+                                    <span class="bit-value">{value_text}</span>
+                                </div>
+                            }
+                        }).collect();
+
+                        // Float region labels
+                        let region_labels = if a.is_float && a.bits_per_sample == 32 {
+                            view! {
+                                <div class="bit-region-labels">
+                                    <span class="bit-region sign">"S"</span>
+                                    <span class="bit-region exponent">"Exponent"</span>
+                                    <span class="bit-region mantissa">"Mantissa"</span>
+                                </div>
+                            }.into_any()
+                        } else {
+                            view! { <span></span> }.into_any()
+                        };
+
+                        let warning_items: Vec<_> = warnings.iter().map(|w| {
+                            let w = w.clone();
+                            view! { <div class="bit-warning">{w}</div> }
+                        }).collect();
+
+                        view! {
+                            <div class="setting-group">
+                                <div class="setting-group-title">"Bit Usage"</div>
+                                {region_labels}
+                                <div class="bit-grid" style=format!("grid-template-columns: repeat({}, 1fr);", cols)>
+                                    {grid_cells}
+                                </div>
+                            </div>
+                            <div class="setting-group">
+                                <div class="bit-summary">{summary}</div>
+                                {warning_items}
+                            </div>
+                        }.into_any()
+                    }
                 }
             }}
         </div>

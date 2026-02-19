@@ -1,3 +1,4 @@
+pub mod bit_analysis;
 pub mod fft;
 pub mod filters;
 pub mod heterodyne;

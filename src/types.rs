@@ -5,6 +5,7 @@ pub struct FileMetadata {
     pub file_size: usize,
     pub format: &'static str,
     pub bits_per_sample: u16,
+    pub is_float: bool,
     pub guano: Option<GuanoMetadata>,
 }
 

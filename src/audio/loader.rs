@@ -23,6 +23,7 @@ fn load_wav(bytes: &[u8]) -> Result<AudioData, String> {
     let channels = spec.channels as u32;
     let bits_per_sample = spec.bits_per_sample;
 
+    let is_float = matches!(spec.sample_format, hound::SampleFormat::Float);
     let all_samples: Vec<f32> = match spec.sample_format {
         hound::SampleFormat::Float => reader
             .into_samples::<f32>()
@@ -54,6 +55,7 @@ fn load_wav(bytes: &[u8]) -> Result<AudioData, String> {
             file_size: bytes.len(),
             format: "WAV",
             bits_per_sample,
+            is_float,
             guano,
         },
     })
@@ -86,6 +88,7 @@ fn load_flac(bytes: &[u8]) -> Result<AudioData, String> {
             file_size: bytes.len(),
             format: "FLAC",
             bits_per_sample: bits as u16,
+            is_float: false,
             guano: None,
         },
     })
