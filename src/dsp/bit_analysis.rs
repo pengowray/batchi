@@ -29,6 +29,14 @@ pub struct BitAnalysis {
     pub effective_bits: u16,
     pub summary: String,
     pub warnings: Vec<String>,
+    /// Per-bit counts for positive samples only (sign bit = 0)
+    pub positive_counts: Vec<usize>,
+    /// Per-bit counts for negative samples only (sign bit = 1)
+    pub negative_counts: Vec<usize>,
+    pub positive_total: usize,
+    pub negative_total: usize,
+    /// Adjacent non-overlapping bit pair analysis: pair_counts[p] = [count_00, count_01, count_10, count_11]
+    pub pair_counts: Vec<[usize; 4]>,
 }
 
 /// Bit label for display in the grid.
@@ -58,15 +66,23 @@ pub fn analyze_bits(
 ) -> BitAnalysis {
     let n_bits = bits_per_sample as usize;
     let total = samples.len();
+    let n_pairs = n_bits / 2;
 
     let mut counts = vec![0usize; n_bits];
     let mut first = vec![None::<usize>; n_bits];
     let mut last = vec![None::<usize>; n_bits];
+    let mut pos_counts = vec![0usize; n_bits];
+    let mut neg_counts = vec![0usize; n_bits];
+    let mut pos_total = 0usize;
+    let mut neg_total = 0usize;
+    let mut pair_counts = vec![[0usize; 4]; n_pairs];
 
     if is_float && bits_per_sample == 32 {
-        analyze_float_bits(samples, &mut counts, &mut first, &mut last);
+        analyze_float_bits(samples, &mut counts, &mut first, &mut last,
+            &mut pos_counts, &mut neg_counts, &mut pos_total, &mut neg_total, &mut pair_counts);
     } else {
-        analyze_int_bits(samples, bits_per_sample, &mut counts, &mut first, &mut last);
+        analyze_int_bits(samples, bits_per_sample, &mut counts, &mut first, &mut last,
+            &mut pos_counts, &mut neg_counts, &mut pos_total, &mut neg_total, &mut pair_counts);
     }
 
     let bit_stats: Vec<BitStat> = (0..n_bits)
@@ -104,6 +120,11 @@ pub fn analyze_bits(
         effective_bits,
         summary,
         warnings,
+        positive_counts: pos_counts,
+        negative_counts: neg_counts,
+        positive_total: pos_total,
+        negative_total: neg_total,
+        pair_counts,
     }
 }
 
@@ -113,25 +134,50 @@ fn analyze_int_bits(
     counts: &mut [usize],
     first: &mut [Option<usize>],
     last: &mut [Option<usize>],
+    pos_counts: &mut [usize],
+    neg_counts: &mut [usize],
+    pos_total: &mut usize,
+    neg_total: &mut usize,
+    pair_counts: &mut [[usize; 4]],
 ) {
     let n_bits = bits_per_sample as usize;
     let max_val = (1u32 << (bits_per_sample - 1)) as f64;
     let mask_bits = bits_per_sample as u32;
+    let n_pairs = n_bits / 2;
 
     for (idx, &s) in samples.iter().enumerate() {
         let int_val = (s as f64 * max_val).round() as i32;
-        // Reinterpret as unsigned for bit inspection
         let bits = int_val as u32;
+        let is_negative = bits & (1 << (mask_bits - 1)) != 0;
+        if is_negative {
+            *neg_total += 1;
+        } else {
+            *pos_total += 1;
+        }
         for b in 0..n_bits {
-            // bit_index 0 = MSB (sign bit), bit_index n-1 = LSB
             let bit_pos = mask_bits as usize - 1 - b;
             if bits & (1 << bit_pos) != 0 {
                 counts[b] += 1;
+                if is_negative {
+                    neg_counts[b] += 1;
+                } else {
+                    pos_counts[b] += 1;
+                }
                 if first[b].is_none() {
                     first[b] = Some(idx);
                 }
                 last[b] = Some(idx);
             }
+        }
+        for p in 0..n_pairs {
+            let b0 = 2 * p;
+            let b1 = 2 * p + 1;
+            let bit_pos0 = mask_bits as usize - 1 - b0;
+            let bit_pos1 = mask_bits as usize - 1 - b1;
+            let v0 = ((bits >> bit_pos0) & 1) as usize;
+            let v1 = ((bits >> bit_pos1) & 1) as usize;
+            let combo = v0 * 2 + v1; // 00=0, 01=1, 10=2, 11=3
+            pair_counts[p][combo] += 1;
         }
     }
 }
@@ -141,19 +187,45 @@ fn analyze_float_bits(
     counts: &mut [usize],
     first: &mut [Option<usize>],
     last: &mut [Option<usize>],
+    pos_counts: &mut [usize],
+    neg_counts: &mut [usize],
+    pos_total: &mut usize,
+    neg_total: &mut usize,
+    pair_counts: &mut [[usize; 4]],
 ) {
+    let n_pairs = 16; // 32 bits / 2
     for (idx, &s) in samples.iter().enumerate() {
         let bits = s.to_bits();
+        let is_negative = bits & (1 << 31) != 0;
+        if is_negative {
+            *neg_total += 1;
+        } else {
+            *pos_total += 1;
+        }
         for b in 0..32usize {
-            // bit_index 0 = bit 31 (sign), bit_index 31 = bit 0 (LSB mantissa)
             let bit_pos = 31 - b;
             if bits & (1 << bit_pos) != 0 {
                 counts[b] += 1;
+                if is_negative {
+                    neg_counts[b] += 1;
+                } else {
+                    pos_counts[b] += 1;
+                }
                 if first[b].is_none() {
                     first[b] = Some(idx);
                 }
                 last[b] = Some(idx);
             }
+        }
+        for p in 0..n_pairs {
+            let b0 = 2 * p;
+            let b1 = 2 * p + 1;
+            let bit_pos0 = 31 - b0;
+            let bit_pos1 = 31 - b1;
+            let v0 = ((bits >> bit_pos0) & 1) as usize;
+            let v1 = ((bits >> bit_pos1) & 1) as usize;
+            let combo = v0 * 2 + v1;
+            pair_counts[p][combo] += 1;
         }
     }
 }

@@ -1127,6 +1127,79 @@ fn AnalysisPanel() -> impl IntoView {
                             view! { <div class="bit-warning">{w}</div> }
                         }).collect();
 
+                        // Positive/negative split grids
+                        let pos_total = a.positive_total;
+                        let neg_total = a.negative_total;
+                        let pos_counts = a.positive_counts.clone();
+                        let neg_counts = a.negative_counts.clone();
+                        let bits_per_sample = a.bits_per_sample;
+                        let is_float = a.is_float;
+                        let effective_bits = a.effective_bits;
+
+                        let make_sign_grid = |sign_counts: &[usize], sign_total: usize| -> Vec<_> {
+                            (0..bits).map(|idx| {
+                                let count = sign_counts[idx];
+                                let label = bit_analysis::bit_label(idx, bits_per_sample, is_float);
+                                let used = count > 0;
+                                let expected = bit_analysis::is_expected_used(idx, bits_per_sample, is_float, effective_bits);
+                                let cell_class = if used {
+                                    "bit-cell used"
+                                } else if expected {
+                                    "bit-cell unused-expected"
+                                } else {
+                                    "bit-cell unused"
+                                };
+                                let value_text = if count == 0 {
+                                    "\u{2013}".to_string()
+                                } else if sign_total > 0 {
+                                    let pct = count as f64 / sign_total as f64 * 100.0;
+                                    if pct >= 1.0 { format!("{:.0}%", pct) }
+                                    else if count > 99 { "99+".into() }
+                                    else { format!("{}", count) }
+                                } else {
+                                    "\u{2013}".to_string()
+                                };
+                                view! {
+                                    <div class=cell_class>
+                                        <span class="bit-label">{label}</span>
+                                        <span class="bit-value">{value_text}</span>
+                                    </div>
+                                }
+                            }).collect()
+                        };
+
+                        let pos_grid = make_sign_grid(&pos_counts, pos_total);
+                        let neg_grid = make_sign_grid(&neg_counts, neg_total);
+
+                        // Pair analysis: find lowest-% combo per pair, show notable ones
+                        let pair_items: Vec<_> = a.pair_counts.iter().enumerate().filter_map(|(p, counts)| {
+                            let pair_total: usize = counts.iter().sum();
+                            if pair_total == 0 { return None; }
+                            let (min_idx, &min_count) = counts.iter().enumerate()
+                                .min_by_key(|(_, c)| **c).unwrap();
+                            let min_pct = min_count as f64 / pair_total as f64 * 100.0;
+                            // Skip if all combos are reasonably balanced (lowest > 15%)
+                            if min_pct > 15.0 { return None; }
+                            let b0 = 2 * p;
+                            let b1 = 2 * p + 1;
+                            let label0 = bit_analysis::bit_label(b0, bits_per_sample, is_float);
+                            let label1 = bit_analysis::bit_label(b1, bits_per_sample, is_float);
+                            let combo_str = match min_idx {
+                                0 => "00",
+                                1 => "01",
+                                2 => "10",
+                                3 => "11",
+                                _ => unreachable!(),
+                            };
+                            let notable_class = if min_count == 0 { "pair-item pair-zero" } else { "pair-item" };
+                            let text = if min_count == 0 {
+                                format!("{}+{}: {} \u{2192} 0%", label0, label1, combo_str)
+                            } else {
+                                format!("{}+{}: {} \u{2192} {:.1}%", label0, label1, combo_str, min_pct)
+                            };
+                            Some(view! { <div class=notable_class>{text}</div> })
+                        }).collect();
+
                         view! {
                             <div class="setting-group">
                                 <div class="setting-group-title">"Bit Usage"</div>
@@ -1139,6 +1212,37 @@ fn AnalysisPanel() -> impl IntoView {
                                 <div class="bit-summary">{summary}</div>
                                 {warning_items}
                             </div>
+                            <details class="bit-details">
+                                <summary class="bit-details-summary">"Bit Details"</summary>
+                                <div class="setting-group">
+                                    <div class="bit-sign-split">
+                                        <div class="bit-sign-col">
+                                            <div class="bit-sign-header">{format!("+ ({})", pos_total)}</div>
+                                            <div class="bit-grid bit-grid-mini" style=format!("grid-template-columns: repeat({}, 1fr);", cols)>
+                                                {pos_grid}
+                                            </div>
+                                        </div>
+                                        <div class="bit-sign-col">
+                                            <div class="bit-sign-header">{format!("\u{2212} ({})", neg_total)}</div>
+                                            <div class="bit-grid bit-grid-mini" style=format!("grid-template-columns: repeat({}, 1fr);", cols)>
+                                                {neg_grid}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                {if !pair_items.is_empty() {
+                                    view! {
+                                        <div class="setting-group">
+                                            <div class="setting-group-title">"Bit Pairs (lowest combo)"</div>
+                                            <div class="bit-pair-list">
+                                                {pair_items}
+                                            </div>
+                                        </div>
+                                    }.into_any()
+                                } else {
+                                    view! { <span></span> }.into_any()
+                                }}
+                            </details>
                         }.into_any()
                     }
                 }
