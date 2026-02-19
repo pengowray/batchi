@@ -33,7 +33,7 @@ html, body {
     border-right: none;
 }
 
-.sidebar.collapsed .sidebar-tab:not(.sidebar-collapse-btn) {
+.sidebar.collapsed .sidebar-tab-dropdown-wrap {
     display: none;
 }
 
@@ -115,6 +115,228 @@ body.sidebar-resizing {
 .sidebar-tab.active {
     color: #eee;
     border-bottom-color: #4a8;
+}
+
+/* Tab dropdown */
+.sidebar-tab-dropdown-wrap {
+    flex: 1;
+    position: relative;
+}
+
+.sidebar-tab-dropdown {
+    width: 100%;
+    padding: 10px 8px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #eee;
+    background: #111;
+    border: none;
+    border-bottom: 2px solid #4a8;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 4px;
+}
+
+.sidebar-tab-dropdown:hover {
+    background: #1a1a1a;
+}
+
+.dropdown-arrow {
+    font-size: 9px;
+    color: #777;
+}
+
+.sidebar-tab-menu {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: #1a1a1a;
+    border: 1px solid #333;
+    border-top: none;
+    z-index: 50;
+    display: flex;
+    flex-direction: column;
+}
+
+.sidebar-tab-option {
+    padding: 8px 12px;
+    font-size: 11px;
+    font-weight: 500;
+    color: #999;
+    background: none;
+    border: none;
+    cursor: pointer;
+    text-align: left;
+    border-left: 2px solid transparent;
+}
+
+.sidebar-tab-option:hover {
+    background: #222;
+    color: #ccc;
+}
+
+.sidebar-tab-option.active {
+    color: #eee;
+    border-left-color: #4a8;
+    background: #1f2f25;
+}
+
+/* Bit analysis grid */
+.bit-grid {
+    display: grid;
+    gap: 2px;
+    padding: 4px 12px;
+}
+
+.bit-cell {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 3px 2px;
+    border-radius: 3px;
+    font-size: 9px;
+    min-height: 34px;
+    cursor: default;
+}
+
+.bit-cell.used {
+    background: #1a3a25;
+    color: #8fc;
+}
+
+.bit-cell.used.caution {
+    background: #3a3a1a;
+    color: #fc8;
+}
+
+.bit-cell.used.always1 {
+    background: #1a2a3a;
+    color: #8cf;
+}
+
+.bit-cell.unused-expected {
+    background: #3a1a1a;
+    color: #f88;
+}
+
+.bit-cell.unused {
+    background: #1a1a1a;
+    color: #555;
+}
+
+.bit-label {
+    font-size: 8px;
+    opacity: 0.7;
+    font-weight: 600;
+}
+
+.bit-value {
+    font-size: 10px;
+    font-weight: 600;
+}
+
+.bit-summary {
+    padding: 4px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #ccc;
+}
+
+.bit-warning {
+    padding: 2px 12px;
+    font-size: 10px;
+    color: #fc8;
+}
+
+.bit-region-labels {
+    display: flex;
+    gap: 4px;
+    padding: 2px 12px 4px;
+    font-size: 9px;
+}
+
+.bit-region {
+    padding: 1px 4px;
+    border-radius: 2px;
+    font-weight: 600;
+}
+
+.bit-region.sign {
+    color: #c8f;
+    background: #2a1a2a;
+}
+
+.bit-region.exponent {
+    color: #8cf;
+    background: #1a2a3a;
+}
+
+.bit-region.mantissa {
+    color: #8fc;
+    background: #1a3a25;
+}
+
+/* wSNR recording quality */
+.wsnr-result {
+    padding: 4px 12px;
+}
+
+.wsnr-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 6px;
+}
+
+.wsnr-grade {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    font-size: 20px;
+    font-weight: 700;
+    flex-shrink: 0;
+}
+
+.wsnr-grade-a { background: #1a3a25; color: #6f6; }
+.wsnr-grade-b { background: #1a3a3a; color: #6cf; }
+.wsnr-grade-c { background: #3a3a1a; color: #fc6; }
+.wsnr-grade-d { background: #3a2a1a; color: #f96; }
+.wsnr-grade-e { background: #3a1a1a; color: #f66; }
+
+.wsnr-snr {
+    font-size: 14px;
+    font-weight: 600;
+    color: #ccc;
+}
+
+.wsnr-detail {
+    font-size: 11px;
+    color: #888;
+    padding: 1px 0;
+}
+
+.wsnr-comparison {
+    font-size: 11px;
+    color: #aaf;
+    padding: 4px 0 2px;
+    font-weight: 600;
+}
+
+.wsnr-warnings {
+    margin-top: 4px;
+}
+
+.wsnr-warning {
+    padding: 2px 0;
+    font-size: 10px;
+    color: #fc8;
 }
 
 /* Settings panel */
