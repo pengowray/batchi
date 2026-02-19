@@ -959,8 +959,133 @@ fn AnalysisPanel() -> impl IntoView {
             })
     });
 
+    let report_text = Memo::new(move |_| {
+        let files = state.files.get();
+        let idx = state.current_file_index.get();
+        let file = idx.and_then(|i| files.get(i).cloned());
+
+        let mut report = "=== Audio Analysis ===\n".to_string();
+
+        if let Some(ref f) = file {
+            let meta = &f.audio.metadata;
+            let sr = f.audio.sample_rate;
+            let sr_text = if sr % 1000 == 0 {
+                format!("{} kHz", sr / 1000)
+            } else {
+                format!("{:.1} kHz", sr as f64 / 1000.0)
+            };
+            let ch_text = match f.audio.channels {
+                1 => "Mono".to_string(),
+                2 => "Stereo".to_string(),
+                n => format!("{} ch", n),
+            };
+            let bit_text = if meta.is_float {
+                format!("{}-bit float", meta.bits_per_sample)
+            } else {
+                format!("{}-bit", meta.bits_per_sample)
+            };
+            let total_samples = f.audio.samples.len();
+            let dur_text = format!("{:.3} s", f.audio.duration_secs);
+            report.push_str(&format!(
+                "\nFile\n  Sample rate: {}\n  Channels: {}\n  Bit depth: {}\n  Duration: {}\n  Samples: {}\n",
+                sr_text, ch_text, bit_text, dur_text, total_samples
+            ));
+
+            // Signal stats
+            let smp = &f.audio.samples;
+            let len = smp.len();
+            if len > 0 {
+                let mut smin = f32::INFINITY;
+                let mut smax = f32::NEG_INFINITY;
+                let mut sum = 0.0f64;
+                let mut sum_sq = 0.0f64;
+                for &s in smp.iter() {
+                    if s < smin { smin = s; }
+                    if s > smax { smax = s; }
+                    sum += s as f64;
+                    sum_sq += (s as f64) * (s as f64);
+                }
+                let dc_bias = sum / len as f64;
+                let rms = (sum_sq / len as f64).sqrt();
+                let min_db = if smin.abs() > 0.0 { format!("{:.1} dB", 20.0 * (smin.abs() as f64).log10()) } else { "-\u{221e} dB".into() };
+                let max_db = if smax.abs() > 0.0 { format!("{:.1} dB", 20.0 * (smax.abs() as f64).log10()) } else { "-\u{221e} dB".into() };
+                let rms_db = if rms > 0.0 { format!("{:.1} dB", 20.0 * rms.log10()) } else { "-\u{221e} dB".into() };
+                let dc_db = if dc_bias.abs() > 0.0 { format!("{:.1} dB", 20.0 * dc_bias.abs().log10()) } else { "-\u{221e} dB".into() };
+                let precision_str = analysis.get()
+                    .map(|a| format!("~{:.1} bits", a.effective_bits_f64))
+                    .unwrap_or_else(|| "—".into());
+                report.push_str(&format!(
+                    "\nSignal\n  Min: {:.4} ({})\n  Max: {:.4} ({})\n  RMS: {}\n  DC bias: {}\n  Precision: {}\n",
+                    smin, min_db, smax, max_db, rms_db, dc_db, precision_str
+                ));
+            }
+        }
+
+        // wSNR
+        if let Some(ref w) = wsnr_result.get() {
+            let grade = w.grade.label();
+            report.push_str(&format!(
+                "\nRecording Quality (wSNR): {}\n  SNR: {:.1} dB(ISO/ITU)\n  Signal: {:.1} dB (ISO 226)\n  Noise: {:.1} dB (ITU-R 468)\n",
+                grade, w.snr_db, w.signal_db, w.noise_db
+            ));
+            if let Some(xc) = xc_quality.get() {
+                report.push_str(&format!("  XC quality: {}\n", xc.trim()));
+            }
+            for msg in &w.warnings {
+                report.push_str(&format!("  \u{26a0} {}\n", msg));
+            }
+        }
+
+        // Bit analysis
+        if let Some(ref a) = analysis.get() {
+            report.push_str(&format!("\nBit Usage\n  {}\n", a.summary));
+            for w in &a.warnings {
+                report.push_str(&format!("  \u{26a0} {}\n", w));
+            }
+            let caution_list: Vec<String> = a.bit_cautions.iter().enumerate()
+                .filter(|(_, cs)| !cs.is_empty())
+                .map(|(i, cs)| {
+                    let label = bit_analysis::bit_label(i, a.bits_per_sample, a.is_float);
+                    let names: Vec<&str> = cs.iter().map(|c| match c {
+                        BitCaution::SignBitSkewed => "SignBitSkewed",
+                        BitCaution::Always1 => "Always1",
+                        BitCaution::OnlyInFade => "OnlyInFade",
+                        BitCaution::VeryLowUsage => "VeryLowUsage",
+                    }).collect();
+                    format!("{} ({})", label, names.join(", "))
+                })
+                .collect();
+            if !caution_list.is_empty() {
+                report.push_str(&format!("  Cautions: {}\n", caution_list.join("; ")));
+            }
+        }
+
+        report
+    });
+
     view! {
         <div class="sidebar-panel">
+            // Copy report button
+            {move || {
+                let has_file = {
+                    let files = state.files.get();
+                    let idx = state.current_file_index.get();
+                    idx.and_then(|i| files.get(i)).is_some()
+                };
+                if has_file {
+                    let text = report_text.get();
+                    let on_copy = move |_: web_sys::MouseEvent| {
+                        copy_to_clipboard(&text);
+                    };
+                    view! {
+                        <div class="copy-report-row">
+                            <button class="copy-report-btn" on:click=on_copy title="Copy full analysis report to clipboard">"Copy report"</button>
+                        </div>
+                    }.into_any()
+                } else {
+                    view! { <span></span> }.into_any()
+                }
+            }}
             // File info + signal stats
             {move || {
                 let files = state.files.get();
@@ -1017,22 +1142,14 @@ fn AnalysisPanel() -> impl IntoView {
                         let dc_raw_tooltip = format!("{:.6} (raw)", dc_bias);
                         // DC relative to RMS: gives perceptual sense of DC severity
                         let dc_rms_ratio = if rms > 0.0 { dc_bias.abs() / rms } else { 0.0 };
-                        // Pos/neg asymmetry from bit analysis (already computed)
-                        let (pos_pct_sig, neg_pct_sig, pos_neg_tooltip) = analysis.get()
+                        // Fractional bit depth estimate from bit analysis
+                        let (precision_text, precision_tooltip) = analysis.get()
                             .map(|a| {
-                                let ns = a.positive_total + a.negative_total;
-                                if ns > 0 {
-                                    let pp = a.positive_total as f64 / ns as f64 * 100.0;
-                                    let np = a.negative_total as f64 / ns as f64 * 100.0;
-                                    let tip = format!("{} positive / {} negative (of {} non-silent)",
-                                        a.positive_total, a.negative_total, ns);
-                                    (format!("+{:.0}%", pp), format!("-{:.0}%", np), tip)
-                                } else {
-                                    ("—".into(), "—".into(), "No non-silent samples".into())
-                                }
+                                let text = format!("~{:.1}", a.effective_bits_f64);
+                                let tip = format!("Estimated effective bit depth (entropy-based); nominal: {}-bit", a.bits_per_sample);
+                                (text, tip)
                             })
-                            .unwrap_or_else(|| ("—".into(), "—".into(), String::new()));
-                        let posneg_text = format!("{} / {}", pos_pct_sig, neg_pct_sig);
+                            .unwrap_or_else(|| ("—".into(), String::new()));
                         // Warning: notable DC if |dc| > 1% of full scale OR dc/rms > 5%, gated on N
                         let dc_notable = len > 10_000 && (dc_bias.abs() > 0.01 || dc_rms_ratio > 0.05);
                         let dc_warning = if dc_notable {
@@ -1087,8 +1204,8 @@ fn AnalysisPanel() -> impl IntoView {
                                         <span class="analysis-stat-label" title=dc_raw_tooltip>"DC bias"</span>
                                     </div>
                                     <div class="analysis-stat">
-                                        <span class="analysis-stat-value">{posneg_text}</span>
-                                        <span class="analysis-stat-label" title=pos_neg_tooltip>"Pos/Neg"</span>
+                                        <span class="analysis-stat-value">{precision_text}</span>
+                                        <span class="analysis-stat-label" title=precision_tooltip>"Precision"</span>
                                     </div>
                                 </div>
                                 {dc_warning.map(|w| view! { <div class="analysis-warning">{w}</div> })}
@@ -1272,7 +1389,7 @@ fn AnalysisPanel() -> impl IntoView {
                         let is_float = a.is_float;
                         let effective_bits = a.effective_bits;
 
-                        let make_sign_grid = |sign_counts: &[usize], sign_total: usize| -> Vec<_> {
+                        let make_sign_grid = |sign_counts: &[usize], sign_total: usize, polarity: &str| -> Vec<_> {
                             (0..bits).map(|idx| {
                                 let count = sign_counts[idx];
                                 let label = bit_analysis::bit_label(idx, bits_per_sample, is_float);
@@ -1284,8 +1401,13 @@ fn AnalysisPanel() -> impl IntoView {
                                     } else {
                                         "0%".to_string()
                                     };
+                                    let sign_tooltip = if polarity == "positive" {
+                                        "Sign bit: always 0 for positive samples".to_string()
+                                    } else {
+                                        "Sign bit: always 1 for negative samples".to_string()
+                                    };
                                     return view! {
-                                        <div class="bit-cell unused">
+                                        <div class="bit-cell unused" title=sign_tooltip>
                                             <span class="bit-label">{label}</span>
                                             <span class="bit-value">{value_text}</span>
                                         </div>
@@ -1310,8 +1432,14 @@ fn AnalysisPanel() -> impl IntoView {
                                 } else {
                                     "\u{2013}".to_string()
                                 };
+                                let tooltip = if sign_total > 0 {
+                                    let pct = count as f64 / sign_total as f64 * 100.0;
+                                    format!("Bit {}: {} / {} {} samples ({:.1}%)", label, count, sign_total, polarity, pct)
+                                } else {
+                                    format!("Bit {}: no {} samples", label, polarity)
+                                };
                                 view! {
-                                    <div class=cell_class>
+                                    <div class=cell_class title=tooltip>
                                         <span class="bit-label">{label}</span>
                                         <span class="bit-value">{value_text}</span>
                                     </div>
@@ -1319,8 +1447,8 @@ fn AnalysisPanel() -> impl IntoView {
                             }).collect()
                         };
 
-                        let pos_grid = make_sign_grid(&pos_counts, pos_total);
-                        let neg_grid = make_sign_grid(&neg_counts, neg_total);
+                        let pos_grid = make_sign_grid(&pos_counts, pos_total, "positive");
+                        let neg_grid = make_sign_grid(&neg_counts, neg_total, "negative");
 
                         let pos_pct = if total > 0 { format!("{:.0}%", pos_total as f64 / total as f64 * 100.0) } else { "0%".into() };
                         let neg_pct = if total > 0 { format!("{:.0}%", neg_total as f64 / total as f64 * 100.0) } else { "0%".into() };

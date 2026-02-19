@@ -29,6 +29,8 @@ pub struct BitAnalysis {
     pub bit_stats: Vec<BitStat>,
     pub bit_cautions: Vec<Vec<BitCaution>>,
     pub effective_bits: u16,
+    /// Fractional effective bit depth estimated via Shannon entropy sum
+    pub effective_bits_f64: f64,
     pub summary: String,
     pub warnings: Vec<String>,
     /// Per-bit counts for positive samples only (sign bit = 0)
@@ -99,6 +101,7 @@ pub fn analyze_bits(
         .collect();
 
     let effective_bits = detect_effective_bits(&bit_stats, bits_per_sample, is_float);
+    let effective_bits_f64 = estimate_fractional_bits(&bit_stats, bits_per_sample, is_float, total);
 
     let bit_cautions = compute_cautions(
         &bit_stats,
@@ -125,6 +128,7 @@ pub fn analyze_bits(
         bit_stats,
         bit_cautions,
         effective_bits,
+        effective_bits_f64,
         summary,
         warnings,
         positive_counts: pos_counts,
@@ -245,6 +249,40 @@ fn analyze_float_bits(
             pair_counts[p][combo] += 1;
         }
     }
+}
+
+fn entropy_bit(p: f64) -> f64 {
+    if p <= 0.0 || p >= 1.0 { 0.0 }
+    else { -(p * p.log2() + (1.0 - p) * (1.0 - p).log2()) }
+}
+
+/// Estimate effective bit depth as a fractional value using Shannon entropy.
+/// Each bit's contribution = entropy of its usage probability.
+/// For float: uses sign bit + mantissa bits (skipping exponent bits).
+/// For integer: sums entropy across all N bits.
+fn estimate_fractional_bits(
+    stats: &[BitStat],
+    bits_per_sample: u16,
+    is_float: bool,
+    total: usize,
+) -> f64 {
+    if total == 0 { return 0.0; }
+    let total_f = total as f64;
+    let result = if is_float && bits_per_sample == 32 {
+        // Sign bit (index 0) + mantissa bits (indices 9..32)
+        // Exponent bits (1..9) skipped — their usage patterns reflect value range, not precision
+        let sign_h = entropy_bit(stats[0].count as f64 / total_f);
+        let mantissa_h: f64 = (9..32)
+            .map(|i| entropy_bit(stats[i].count as f64 / total_f))
+            .sum();
+        sign_h + mantissa_h
+    } else {
+        stats[..bits_per_sample as usize]
+            .iter()
+            .map(|s| entropy_bit(s.count as f64 / total_f))
+            .sum()
+    };
+    result.min(bits_per_sample as f64)
 }
 
 fn detect_effective_bits(
