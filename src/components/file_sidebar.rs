@@ -929,13 +929,21 @@ fn AnalysisPanel() -> impl IntoView {
                         let noise_text = format!("Noise: {:.1} dB (ITU-R 468)", w.noise_db);
 
                         let xc_comparison = xc_quality.get().map(|xc_q| {
-                            let xc_q = xc_q.to_uppercase();
+                            let xc_letter = xc_q.trim().to_uppercase();
+                            let xc_badge_class = match xc_letter.as_str() {
+                                "A" => "wsnr-grade-sm wsnr-grade-a",
+                                "B" => "wsnr-grade-sm wsnr-grade-b",
+                                "C" => "wsnr-grade-sm wsnr-grade-c",
+                                "D" => "wsnr-grade-sm wsnr-grade-d",
+                                _ => "wsnr-grade-sm wsnr-grade-e",
+                            };
                             let computed = grade_label.clone();
-                            if xc_q == computed {
-                                format!("XC quality: {} (matches)", xc_q)
+                            let note = if xc_letter == computed {
+                                "(matches)".to_string()
                             } else {
-                                format!("XC quality: {} (computed: {})", xc_q, computed)
-                            }
+                                format!("(computed: {})", computed)
+                            };
+                            (xc_letter, xc_badge_class.to_string(), note)
                         });
 
                         let warnings: Vec<_> = w.warnings.iter().map(|msg| {
@@ -953,8 +961,12 @@ fn AnalysisPanel() -> impl IntoView {
                                     </div>
                                     <div class="wsnr-detail">{signal_text}</div>
                                     <div class="wsnr-detail">{noise_text}</div>
-                                    {xc_comparison.map(|text| view! {
-                                        <div class="wsnr-comparison">{text}</div>
+                                    {xc_comparison.map(|(letter, badge_class, note)| view! {
+                                        <div class="wsnr-comparison">
+                                            "XC quality: "
+                                            <span class=badge_class>{letter}</span>
+                                            " " {note}
+                                        </div>
                                     })}
                                     {if !warnings.is_empty() {
                                         view! { <div class="wsnr-warnings">{warnings}</div> }.into_any()
