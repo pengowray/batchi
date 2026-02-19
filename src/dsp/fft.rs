@@ -1,6 +1,30 @@
 use crate::canvas::colors::magnitude_to_greyscale;
 use crate::types::{AudioData, PreviewImage, SpectrogramColumn, SpectrogramData};
 use realfft::RealFftPlanner;
+use std::cell::RefCell;
+use std::collections::HashMap;
+
+thread_local! {
+    static FFT_PLANNER: RefCell<RealFftPlanner<f32>> = RefCell::new(RealFftPlanner::new());
+    static HANN_CACHE: RefCell<HashMap<usize, Vec<f32>>> = RefCell::new(HashMap::new());
+}
+
+fn hann_window(size: usize) -> Vec<f32> {
+    HANN_CACHE.with(|cache| {
+        cache
+            .borrow_mut()
+            .entry(size)
+            .or_insert_with(|| {
+                (0..size)
+                    .map(|i| {
+                        0.5 * (1.0
+                            - (2.0 * std::f32::consts::PI * i as f32 / (size - 1) as f32).cos())
+                    })
+                    .collect()
+            })
+            .clone()
+    })
+}
 
 /// Compute a spectrogram from audio data using a Short-Time Fourier Transform (STFT).
 ///
@@ -10,27 +34,26 @@ pub fn compute_spectrogram(
     fft_size: usize,
     hop_size: usize,
 ) -> SpectrogramData {
-    let mut planner = RealFftPlanner::<f32>::new();
-    let fft = planner.plan_fft_forward(fft_size);
+    let fft = FFT_PLANNER.with(|p| p.borrow_mut().plan_fft_forward(fft_size));
 
     let mut columns = Vec::new();
 
-    // Hann window
-    let window: Vec<f32> = (0..fft_size)
-        .map(|i| {
-            0.5 * (1.0 - (2.0 * std::f32::consts::PI * i as f32 / (fft_size - 1) as f32).cos())
-        })
-        .collect();
+    let window = hann_window(fft_size);
+
+    // Pre-allocate FFT buffers once and reuse across frames
+    let mut input = fft.make_input_vec();
+    let mut spectrum = fft.make_output_vec();
 
     let mut pos = 0;
     while pos + fft_size <= audio.samples.len() {
-        let mut input: Vec<f32> = audio.samples[pos..pos + fft_size]
-            .iter()
-            .zip(window.iter())
-            .map(|(&s, &w)| s * w)
-            .collect();
+        // Fill input in-place (no allocation per frame)
+        for (inp, (&s, &w)) in input
+            .iter_mut()
+            .zip(audio.samples[pos..pos + fft_size].iter().zip(window.iter()))
+        {
+            *inp = s * w;
+        }
 
-        let mut spectrum = fft.make_output_vec();
         fft.process(&mut input, &mut spectrum).expect("FFT failed");
 
         let magnitudes: Vec<f32> = spectrum.iter().map(|c| c.norm()).collect();
@@ -122,7 +145,23 @@ pub fn compute_preview(audio: &AudioData, target_width: u32, target_height: u32)
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::AudioData;
+    use crate::types::{AudioData, FileMetadata};
+
+    fn test_audio(samples: Vec<f32>, sample_rate: u32) -> AudioData {
+        AudioData {
+            duration_secs: samples.len() as f64 / sample_rate as f64,
+            samples,
+            sample_rate,
+            channels: 1,
+            metadata: FileMetadata {
+                file_size: 0,
+                format: "test",
+                bits_per_sample: 32,
+                is_float: true,
+                guano: None,
+            },
+        }
+    }
 
     #[test]
     fn test_spectrogram_basic() {
@@ -137,12 +176,7 @@ mod tests {
             })
             .collect();
 
-        let audio = AudioData {
-            samples,
-            sample_rate,
-            channels: 1,
-            duration_secs: num_samples as f64 / sample_rate as f64,
-        };
+        let audio = test_audio(samples, sample_rate);
 
         let result = compute_spectrogram(&audio, 1024, 512);
         assert!(!result.columns.is_empty());

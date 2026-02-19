@@ -5,7 +5,7 @@ use crate::state::{AppState, Selection, PlaybackMode, FilterQuality};
 use crate::dsp::heterodyne::heterodyne_mix;
 use crate::dsp::pitch_shift::pitch_shift_realtime;
 use crate::dsp::zc_divide::zc_divide;
-use crate::dsp::filters::{lowpass_filter, apply_eq_filter, apply_eq_filter_fast};
+use crate::dsp::filters::{apply_eq_filter, apply_eq_filter_fast};
 use std::cell::RefCell;
 
 thread_local! {
@@ -118,11 +118,14 @@ pub fn play(state: &AppState) {
     let ps_factor = state.ps_factor.get_untracked();
     let zc_factor = state.zc_factor.get_untracked();
 
-    let (samples, sample_rate) = extract_selection(&file.audio, selection);
+    // extract_selection returns a slice to avoid cloning unless mutation is needed
+    let (samples_ref, sample_rate) = extract_selection(&file.audio, selection);
 
-    // Apply EQ filter if enabled, otherwise fall back to selection-based bandpass
+    // Apply EQ filter if enabled, otherwise fall back to selection-based bandpass.
+    // DSP functions take &[f32] and allocate their own output; passthrough cases
+    // clone only here, so we avoid a full-audio clone when DSP is applied.
     let filter_enabled = state.filter_enabled.get_untracked();
-    let samples = if filter_enabled {
+    let samples: Vec<f32> = if filter_enabled {
         let freq_low = state.filter_freq_low.get_untracked();
         let freq_high = state.filter_freq_high.get_untracked();
         let db_below = state.filter_db_below.get_untracked();
@@ -132,19 +135,19 @@ pub fn play(state: &AppState) {
         let band_mode = state.filter_band_mode.get_untracked();
         let quality = state.filter_quality.get_untracked();
         match quality {
-            FilterQuality::Fast => apply_eq_filter_fast(&samples, sample_rate, freq_low, freq_high, db_below, db_selected, db_harmonics, db_above, band_mode),
-            FilterQuality::HQ => apply_eq_filter(&samples, sample_rate, freq_low, freq_high, db_below, db_selected, db_harmonics, db_above, band_mode),
+            FilterQuality::Fast => apply_eq_filter_fast(samples_ref, sample_rate, freq_low, freq_high, db_below, db_selected, db_harmonics, db_above, band_mode),
+            FilterQuality::HQ => apply_eq_filter(samples_ref, sample_rate, freq_low, freq_high, db_below, db_selected, db_harmonics, db_above, band_mode),
         }
     } else if let Some(sel) = selection {
         if matches!(mode, PlaybackMode::Normal | PlaybackMode::TimeExpansion | PlaybackMode::PitchShift | PlaybackMode::ZeroCrossing)
             && (sel.freq_low > 0.0 || sel.freq_high < (sample_rate as f64 / 2.0))
         {
-            apply_bandpass(&samples, sample_rate, sel.freq_low, sel.freq_high)
+            apply_bandpass(samples_ref, sample_rate, sel.freq_low, sel.freq_high)
         } else {
-            samples
+            samples_ref.to_vec()
         }
     } else {
-        samples
+        samples_ref.to_vec()
     };
 
     // Determine playback start time (in the original audio timeline)
@@ -208,7 +211,7 @@ pub fn play(state: &AppState) {
     start_playhead(state.clone(), play_start_time, play_duration_orig, playback_speed);
 }
 
-fn extract_selection(audio: &AudioData, selection: Option<Selection>) -> (Vec<f32>, u32) {
+fn extract_selection<'a>(audio: &'a AudioData, selection: Option<Selection>) -> (&'a [f32], u32) {
     let sr = audio.sample_rate;
     if let Some(sel) = selection {
         let start = (sel.time_start * sr as f64) as usize;
@@ -216,10 +219,10 @@ fn extract_selection(audio: &AudioData, selection: Option<Selection>) -> (Vec<f3
         let start = start.min(audio.samples.len());
         let end = end.min(audio.samples.len());
         if end > start {
-            return (audio.samples[start..end].to_vec(), sr);
+            return (&audio.samples[start..end], sr);
         }
     }
-    (audio.samples.clone(), sr)
+    (&audio.samples, sr)
 }
 
 fn apply_bandpass(samples: &[f32], sample_rate: u32, freq_low: f64, freq_high: f64) -> Vec<f32> {
@@ -236,10 +239,25 @@ fn apply_bandpass(samples: &[f32], sample_rate: u32, freq_low: f64, freq_high: f
     result
 }
 
+fn lowpass_filter_inplace(buf: &mut [f32], cutoff_hz: f64, sample_rate: u32) {
+    if buf.is_empty() {
+        return;
+    }
+    let dt = 1.0 / sample_rate as f64;
+    let rc = 1.0 / (2.0 * std::f64::consts::PI * cutoff_hz);
+    let alpha = (dt / (rc + dt)) as f32;
+    let mut prev = buf[0];
+    for s in buf[1..].iter_mut() {
+        let y = alpha * *s + (1.0 - alpha) * prev;
+        *s = y;
+        prev = y;
+    }
+}
+
 fn cascaded_lowpass(samples: &[f32], cutoff: f64, sample_rate: u32, passes: usize) -> Vec<f32> {
     let mut result = samples.to_vec();
     for _ in 0..passes {
-        result = lowpass_filter(&result, cutoff, sample_rate);
+        lowpass_filter_inplace(&mut result, cutoff, sample_rate);
     }
     result
 }

@@ -1,4 +1,28 @@
 use realfft::RealFftPlanner;
+use std::cell::RefCell;
+use std::collections::HashMap;
+
+thread_local! {
+    static FFT_PLANNER: RefCell<RealFftPlanner<f32>> = RefCell::new(RealFftPlanner::new());
+    static HANN_CACHE: RefCell<HashMap<usize, Vec<f32>>> = RefCell::new(HashMap::new());
+}
+
+fn hann_window(size: usize) -> Vec<f32> {
+    HANN_CACHE.with(|cache| {
+        cache
+            .borrow_mut()
+            .entry(size)
+            .or_insert_with(|| {
+                (0..size)
+                    .map(|i| {
+                        0.5 * (1.0
+                            - (2.0 * std::f32::consts::PI * i as f32 / (size - 1) as f32).cos())
+                    })
+                    .collect()
+            })
+            .clone()
+    })
+}
 
 /// Apply a multi-band EQ filter in the frequency domain using overlap-add FFT processing.
 ///
@@ -28,12 +52,7 @@ pub fn apply_eq_filter(
     let hop_size = fft_size / 2;
     let len = samples.len();
 
-    // Hann window
-    let window: Vec<f32> = (0..fft_size)
-        .map(|i| {
-            0.5 * (1.0 - (2.0 * std::f32::consts::PI * i as f32 / (fft_size - 1) as f32).cos())
-        })
-        .collect();
+    let window = hann_window(fft_size);
 
     // Build per-bin gain table
     let num_bins = fft_size / 2 + 1;
@@ -61,18 +80,24 @@ pub fn apply_eq_filter(
         })
         .collect();
 
-    let mut planner = RealFftPlanner::<f32>::new();
-    let fft_fwd = planner.plan_fft_forward(fft_size);
-    let fft_inv = planner.plan_fft_inverse(fft_size);
+    let (fft_fwd, fft_inv) = FFT_PLANNER.with(|p| {
+        let mut p = p.borrow_mut();
+        (p.plan_fft_forward(fft_size), p.plan_fft_inverse(fft_size))
+    });
 
     // Overlap-add output buffer
     let mut output = vec![0.0f32; len];
     let mut window_sum = vec![0.0f32; len];
 
+    // Pre-allocate FFT buffers once and reuse across frames
+    let mut frame = fft_fwd.make_input_vec();
+    let mut spectrum = fft_fwd.make_output_vec();
+    let mut time_out = fft_inv.make_output_vec();
+
     let mut pos = 0;
     while pos < len {
-        // Extract frame, zero-pad if needed
-        let mut frame = vec![0.0f32; fft_size];
+        // Zero and fill frame in-place (no allocation)
+        frame.fill(0.0);
         for (i, &w) in window.iter().enumerate() {
             if pos + i < len {
                 frame[i] = samples[pos + i] * w;
@@ -80,7 +105,6 @@ pub fn apply_eq_filter(
         }
 
         // Forward FFT
-        let mut spectrum = fft_fwd.make_output_vec();
         fft_fwd.process(&mut frame, &mut spectrum).expect("FFT forward failed");
 
         // Apply per-bin gains
@@ -91,7 +115,6 @@ pub fn apply_eq_filter(
         }
 
         // Inverse FFT
-        let mut time_out = fft_inv.make_output_vec();
         fft_inv.process(&mut spectrum, &mut time_out).expect("FFT inverse failed");
 
         // Normalize (realfft inverse doesn't normalize)
@@ -148,7 +171,6 @@ pub fn apply_eq_filter_fast(
 
     // Split rest at freq_high: selected vs upper
     let lp_high = cascaded_lowpass(&hp_low, freq_high, sample_rate, 4);
-    let hp_high: Vec<f32> = hp_low.iter().zip(lp_high.iter()).map(|(s, l)| s - l).collect();
 
     let len = samples.len();
     let mut output = vec![0.0f32; len];
@@ -164,31 +186,43 @@ pub fn apply_eq_filter_fast(
     }
 
     if harmonics_active {
-        // Split upper at harmonics boundary
+        // hp_high = hp_low - lp_high; split upper at harmonics boundary
         let harmonics_upper = freq_high * 2.0;
+        let hp_high: Vec<f32> = hp_low.iter().zip(lp_high.iter()).map(|(s, l)| s - l).collect();
         let lp_harm = cascaded_lowpass(&hp_high, harmonics_upper, sample_rate, 4);
-        let hp_harm: Vec<f32> = hp_high.iter().zip(lp_harm.iter()).map(|(s, l)| s - l).collect();
-
+        // hp_harm = hp_high - lp_harm; inline into output to avoid extra Vec
         for i in 0..len {
-            output[i] += lp_harm[i] * gain_harmonics;
-        }
-        for i in 0..len {
-            output[i] += hp_harm[i] * gain_above;
+            output[i] += lp_harm[i] * gain_harmonics + (hp_high[i] - lp_harm[i]) * gain_above;
         }
     } else {
-        // Above band (or selected dB in 2-band mode)
+        // Above band (or selected dB in 2-band mode): hp_high = hp_low - lp_high; inline
         for i in 0..len {
-            output[i] += hp_high[i] * gain_above;
+            output[i] += (hp_low[i] - lp_high[i]) * gain_above;
         }
     }
 
     output
 }
 
+fn lowpass_filter_inplace(buf: &mut [f32], cutoff_hz: f64, sample_rate: u32) {
+    if buf.is_empty() {
+        return;
+    }
+    let dt = 1.0 / sample_rate as f64;
+    let rc = 1.0 / (2.0 * std::f64::consts::PI * cutoff_hz);
+    let alpha = (dt / (rc + dt)) as f32;
+    let mut prev = buf[0];
+    for s in buf[1..].iter_mut() {
+        let y = alpha * *s + (1.0 - alpha) * prev;
+        *s = y;
+        prev = y;
+    }
+}
+
 fn cascaded_lowpass(samples: &[f32], cutoff: f64, sample_rate: u32, passes: usize) -> Vec<f32> {
     let mut result = samples.to_vec();
     for _ in 0..passes {
-        result = lowpass_filter(&result, cutoff, sample_rate);
+        lowpass_filter_inplace(&mut result, cutoff, sample_rate);
     }
     result
 }
