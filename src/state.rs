@@ -122,6 +122,9 @@ pub struct AppState {
     pub sidebar_collapsed: RwSignal<bool>,
     pub sidebar_width: RwSignal<f64>,
     pub sidebar_dropdown_open: RwSignal<bool>,
+    // Gain
+    pub gain_db: RwSignal<f64>,
+    pub auto_gain: RwSignal<bool>,
 }
 
 impl AppState {
@@ -171,6 +174,8 @@ impl AppState {
             sidebar_collapsed: RwSignal::new(false),
             sidebar_width: RwSignal::new(220.0),
             sidebar_dropdown_open: RwSignal::new(false),
+            gain_db: RwSignal::new(0.0),
+            auto_gain: RwSignal::new(false),
         }
     }
 

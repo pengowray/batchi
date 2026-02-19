@@ -70,6 +70,22 @@ pub fn Toolbar() -> impl IntoView {
         }
     };
 
+    let on_gain_change = move |ev: web_sys::Event| {
+        let target = ev.target().unwrap();
+        let input: web_sys::HtmlInputElement = target.unchecked_into();
+        if let Ok(val) = input.value().parse::<f64>() {
+            state.gain_db.set(val);
+        }
+    };
+
+    let on_auto_gain_toggle = move |_| {
+        state.auto_gain.update(|v| *v = !*v);
+    };
+
+    let on_gain_reset = move |_: web_sys::MouseEvent| {
+        state.gain_db.set(0.0);
+    };
+
     view! {
         <div class="toolbar"
             on:keydown=move |ev: web_sys::KeyboardEvent| {
@@ -213,6 +229,42 @@ pub fn Toolbar() -> impl IntoView {
                     }
                 }
             }}
+
+            <div class="toolbar-sep"></div>
+
+            // Gain controls
+            <label class="mode-param gain-control">
+                <span
+                    class="mode-param-value gain-label"
+                    title="Double-click to reset to 0 dB"
+                    on:dblclick=on_gain_reset
+                >
+                    {move || {
+                        let db = state.gain_db.get();
+                        if db > 0.0 {
+                            format!("+{:.1} dB", db)
+                        } else {
+                            format!("{:.1} dB", db)
+                        }
+                    }}
+                </span>
+                <input
+                    type="range"
+                    min="-30"
+                    max="30"
+                    step="0.5"
+                    prop:value=move || state.gain_db.get().to_string()
+                    on:input=on_gain_change
+                    disabled=move || state.auto_gain.get()
+                />
+            </label>
+            <button
+                class=move || if state.auto_gain.get() { "mode-btn active" } else { "mode-btn" }
+                on:click=on_auto_gain_toggle
+                title="Auto-gain: normalize playback to -3 dB peak"
+            >
+                "Auto"
+            </button>
         </div>
     }
 }

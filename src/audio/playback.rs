@@ -83,7 +83,13 @@ pub fn replay_het(state: &AppState) {
         het_freq
     };
     let het_cutoff = state.het_cutoff.get_untracked();
-    let processed = heterodyne_mix(&samples, sr, effective_lo, het_cutoff);
+    let mut processed = heterodyne_mix(&samples, sr, effective_lo, het_cutoff);
+    let gain = if state.auto_gain.get_untracked() {
+        auto_gain_db(&processed)
+    } else {
+        state.gain_db.get_untracked()
+    };
+    apply_gain(&mut processed, gain);
     play_samples(&processed, sr);
 
     // Continue playhead from current position
@@ -145,9 +151,9 @@ pub fn play(state: &AppState) {
     let play_start_time = selection.map(|s| s.time_start).unwrap_or(0.0);
     let play_duration_orig = samples.len() as f64 / sample_rate as f64;
 
-    match mode {
+    let (mut final_samples, final_rate) = match mode {
         PlaybackMode::Normal => {
-            play_samples(&samples, sample_rate);
+            (samples, sample_rate)
         }
         PlaybackMode::Heterodyne => {
             let effective_lo = if let Some(sel) = selection {
@@ -161,27 +167,31 @@ pub fn play(state: &AppState) {
             };
             let het_cutoff = state.het_cutoff.get_untracked();
             let processed = heterodyne_mix(&samples, sample_rate, effective_lo, het_cutoff);
-            play_samples(&processed, sample_rate);
+            (processed, sample_rate)
         }
         PlaybackMode::TimeExpansion => {
-            // TE: play at reduced sample rate = original_rate / factor
-            // This stretches time by the factor, shifting frequencies down
             let te_rate = (sample_rate as f64 / te_factor) as u32;
             let te_rate = te_rate.max(8000); // browser minimum
-            play_samples(&samples, te_rate);
+            (samples, te_rate)
         }
         PlaybackMode::PitchShift => {
-            // PS: pitch shift down by factor while preserving original duration
             let shifted = pitch_shift_realtime(&samples, ps_factor);
-            play_samples(&shifted, sample_rate);
+            (shifted, sample_rate)
         }
         PlaybackMode::ZeroCrossing => {
-            // ZC: frequency division via zero-crossing detection
-            // When EQ is enabled, skip the internal bandpass (EQ replaces it)
             let processed = zc_divide(&samples, sample_rate, zc_factor as u32, filter_enabled);
-            play_samples(&processed, sample_rate);
+            (processed, sample_rate)
         }
-    }
+    };
+
+    // Apply gain
+    let gain = if state.auto_gain.get_untracked() {
+        auto_gain_db(&final_samples)
+    } else {
+        state.gain_db.get_untracked()
+    };
+    apply_gain(&mut final_samples, gain);
+    play_samples(&final_samples, final_rate);
 
     // Start playhead animation
     let playback_speed = match mode {
@@ -232,6 +242,25 @@ fn cascaded_lowpass(samples: &[f32], cutoff: f64, sample_rate: u32, passes: usiz
         result = lowpass_filter(&result, cutoff, sample_rate);
     }
     result
+}
+
+fn apply_gain(samples: &mut [f32], gain_db: f64) {
+    if gain_db.abs() < 0.001 {
+        return;
+    }
+    let gain_linear = 10.0_f64.powf(gain_db / 20.0) as f32;
+    for s in samples.iter_mut() {
+        *s *= gain_linear;
+    }
+}
+
+fn auto_gain_db(samples: &[f32]) -> f64 {
+    let peak = samples.iter().map(|s| s.abs()).fold(0.0f32, f32::max);
+    if peak < 1e-10 {
+        return 0.0;
+    }
+    let peak_db = 20.0 * (peak as f64).log10();
+    -3.0 - peak_db
 }
 
 fn play_samples(samples: &[f32], sample_rate: u32) {
