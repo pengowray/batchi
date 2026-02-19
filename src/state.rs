@@ -41,7 +41,7 @@ pub enum SidebarTab {
     Files,
     Spectrogram,
     Selection,
-    Filter,
+    PreProcessing,
     Metadata,
 }
 
@@ -133,7 +133,7 @@ impl AppState {
             follow_cursor: RwSignal::new(true),
             pre_play_scroll: RwSignal::new(0.0),
             filter_enabled: RwSignal::new(false),
-            filter_band_mode: RwSignal::new(2),
+            filter_band_mode: RwSignal::new(3),
             filter_set_from_selection: RwSignal::new(false),
             filter_freq_low: RwSignal::new(20_000.0),
             filter_freq_high: RwSignal::new(60_000.0),

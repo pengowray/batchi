@@ -38,12 +38,16 @@ fn adaptive_threshold(filtered: &[f32]) -> (f32, f32) {
 ///
 /// The output amplitude tracks the input envelope so that louder bat calls
 /// produce louder clicks, matching the behavior of analog FD detectors.
-pub fn zc_divide(samples: &[f32], sample_rate: u32, division_factor: u32) -> Vec<f32> {
+pub fn zc_divide(samples: &[f32], sample_rate: u32, division_factor: u32, skip_bandpass: bool) -> Vec<f32> {
     if samples.len() < 2 || division_factor == 0 {
         return vec![0.0; samples.len()];
     }
 
-    let filtered = bandpass_ultrasonic(samples, sample_rate);
+    let filtered = if skip_bandpass {
+        samples.to_vec()
+    } else {
+        bandpass_ultrasonic(samples, sample_rate)
+    };
 
     // Envelope follower (~1ms window)
     let env_samples = ((sample_rate as f64 * 0.001) as usize).max(1);
@@ -60,7 +64,7 @@ pub fn zc_divide(samples: &[f32], sample_rate: u32, division_factor: u32) -> Vec
 
     // Click duration: ~0.15ms
     let click_len = ((sample_rate as f64 * 0.00015) as usize).max(2);
-    let output_gain: f32 = 0.3;
+    let output_gain: f32 = 0.01;
 
     for i in 1..filtered.len() {
         let env = envelope[i];
@@ -205,12 +209,12 @@ mod tests {
             .iter()
             .map(|s| s * 0.8)
             .collect();
-        let output = zc_divide(&input, sr, 10);
+        let output = zc_divide(&input, sr, 10, false);
         assert_eq!(output.len(), input.len());
 
         let peak = output.iter().map(|s| s.abs()).fold(0.0f32, f32::max);
-        assert!(peak > 0.01, "Should produce audible clicks, peak={peak}");
-        assert!(peak < 0.5, "Should not be too loud, peak={peak}");
+        assert!(peak > 0.001, "Should produce audible clicks, peak={peak}");
+        assert!(peak < 0.1, "Should not be too loud, peak={peak}");
     }
 
     #[test]
@@ -221,7 +225,7 @@ mod tests {
             .iter()
             .map(|s| s * 0.005)
             .collect();
-        let output = zc_divide(&input, sr, 8);
+        let output = zc_divide(&input, sr, 8, false);
         let peak = output.iter().map(|s| s.abs()).fold(0.0f32, f32::max);
         assert!(peak > 0.001, "Quiet bat calls should still produce clicks, peak={peak}");
     }
@@ -229,21 +233,21 @@ mod tests {
     #[test]
     fn test_silence_produces_no_output() {
         let input = vec![0.0f32; 19200];
-        let output = zc_divide(&input, 192_000, 10);
+        let output = zc_divide(&input, 192_000, 10, false);
         let peak = output.iter().map(|s| s.abs()).fold(0.0f32, f32::max);
         assert!(peak < 0.001, "Silence should produce no clicks");
     }
 
     #[test]
     fn test_empty_input() {
-        let output = zc_divide(&[], 192_000, 10);
+        let output = zc_divide(&[], 192_000, 10, false);
         assert!(output.is_empty());
     }
 
     #[test]
     fn test_dc_signal_no_clicks() {
         let input = vec![1.0f32; 1000];
-        let output = zc_divide(&input, 44100, 10);
+        let output = zc_divide(&input, 44100, 10, false);
         assert!(output.iter().all(|&s| s.abs() < 0.001));
     }
 

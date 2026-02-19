@@ -8,7 +8,8 @@ use web_sys::{CanvasRenderingContext2d, DragEvent, File, FileReader, HtmlCanvasE
 use crate::audio::loader::load_audio;
 use crate::dsp::fft::{compute_preview, compute_spectrogram};
 use crate::dsp::zero_crossing::zero_crossing_frequency;
-use crate::state::{AppState, LoadedFile, SidebarTab, SpectrogramDisplay};
+use crate::audio::playback;
+use crate::state::{AppState, LoadedFile, PlaybackMode, SidebarTab, SpectrogramDisplay};
 use crate::types::{PreviewImage, SpectrogramData};
 
 /// Returns (section, display_key) for a GUANO field.
@@ -110,10 +111,10 @@ pub fn FileSidebar() -> impl IntoView {
                     "Selection"
                 </button>
                 <button
-                    class=move || if state.sidebar_tab.get() == SidebarTab::Filter { "sidebar-tab active" } else { "sidebar-tab" }
-                    on:click=move |_| { state.sidebar_collapsed.set(false); state.sidebar_tab.set(SidebarTab::Filter); }
+                    class=move || if state.sidebar_tab.get() == SidebarTab::PreProcessing { "sidebar-tab active" } else { "sidebar-tab" }
+                    on:click=move |_| { state.sidebar_collapsed.set(false); state.sidebar_tab.set(SidebarTab::PreProcessing); }
                 >
-                    "Filter"
+                    "Pre-proc"
                 </button>
                 <button
                     class=move || if state.sidebar_tab.get() == SidebarTab::Metadata { "sidebar-tab active" } else { "sidebar-tab" }
@@ -126,7 +127,7 @@ pub fn FileSidebar() -> impl IntoView {
                 SidebarTab::Files => view! { <FilesPanel /> }.into_any(),
                 SidebarTab::Spectrogram => view! { <SpectrogramSettingsPanel /> }.into_any(),
                 SidebarTab::Selection => view! { <SelectionPanel /> }.into_any(),
-                SidebarTab::Filter => view! { <FilterPanel /> }.into_any(),
+                SidebarTab::PreProcessing => view! { <FilterPanel /> }.into_any(),
                 SidebarTab::Metadata => view! { <MetadataPanel /> }.into_any(),
             }}
             <div class="sidebar-resize-handle" on:mousedown=on_resize_start></div>
@@ -536,14 +537,26 @@ fn SelectionPanel() -> impl IntoView {
 fn FilterPanel() -> impl IntoView {
     let state = expect_context::<AppState>();
 
+    // Replay ZC audio when EQ settings change during playback
+    let maybe_replay_zc = move || {
+        if state.is_playing.get_untracked()
+            && state.playback_mode.get_untracked() == PlaybackMode::ZeroCrossing
+            && state.filter_enabled.get_untracked()
+        {
+            playback::replay(&state);
+        }
+    };
+
     let on_enable_change = move |ev: web_sys::Event| {
         let target = ev.target().unwrap();
         let input: web_sys::HtmlInputElement = target.unchecked_into();
         state.filter_enabled.set(input.checked());
+        maybe_replay_zc();
     };
 
     let set_band_mode = move |mode: u8| {
         state.filter_band_mode.set(mode);
+        maybe_replay_zc();
     };
 
     let on_set_from_selection = move |_: web_sys::MouseEvent| {
@@ -552,6 +565,7 @@ fn FilterPanel() -> impl IntoView {
                 state.filter_freq_low.set(sel.freq_low);
                 state.filter_freq_high.set(sel.freq_high);
                 state.filter_set_from_selection.set(true);
+                maybe_replay_zc();
             }
         }
     };
@@ -562,6 +576,7 @@ fn FilterPanel() -> impl IntoView {
             let input: web_sys::HtmlInputElement = target.unchecked_into();
             if let Ok(val) = input.value().parse::<f64>() {
                 signal.set(val);
+                maybe_replay_zc();
             }
         }
     };
@@ -594,6 +609,7 @@ fn FilterPanel() -> impl IntoView {
     let quality = move || state.filter_quality.get();
     let set_quality = move |q: crate::state::FilterQuality| {
         state.filter_quality.set(q);
+        maybe_replay_zc();
     };
 
     let on_het_cutoff_change = move |ev: web_sys::Event| {
@@ -608,7 +624,7 @@ fn FilterPanel() -> impl IntoView {
         <div class="sidebar-panel filter-panel">
             <div class="setting-group">
                 <div class="setting-row">
-                    <span class="setting-label">"Enable EQ"</span>
+                    <span class="setting-label">"Enable pre-processing"</span>
                     <input
                         type="checkbox"
                         class="setting-checkbox"
@@ -627,10 +643,6 @@ fn FilterPanel() -> impl IntoView {
                     <div class="setting-group">
                         <div class="setting-group-title">"Bands"</div>
                         <div class="filter-band-mode">
-                            <button
-                                class=move || if band_mode() == 2 { "mode-btn active" } else { "mode-btn" }
-                                on:click=move |_| set_band_mode(2)
-                            >"2"</button>
                             <button
                                 class=move || if band_mode() == 3 { "mode-btn active" } else { "mode-btn" }
                                 on:click=move |_| set_band_mode(3)
@@ -676,7 +688,7 @@ fn FilterPanel() -> impl IntoView {
                     </div>
 
                     <div class="setting-group">
-                        <div class="setting-group-title">"EQ"</div>
+                        <div class="setting-group-title">"Pre-processing EQ"</div>
 
                         // Above slider (3+ band) — top, highest freq
                         {move || {
@@ -775,44 +787,55 @@ fn FilterPanel() -> impl IntoView {
                         </div>
                     </div>
 
-                    // Mode-specific filter chain
-                    <div class="setting-group">
-                        <div class="setting-group-title">"Mode filters"</div>
-                        {move || {
-                            let mode = state.playback_mode.get();
-                            match mode {
-                                crate::state::PlaybackMode::Heterodyne => {
-                                    view! {
-                                        <div class="setting-row"
-                                            on:mouseenter=move |_| state.het_interacting.set(true)
-                                            on:mouseleave=move |_| state.het_interacting.set(false)
-                                        >
-                                            <span class="setting-label">"HET LP"</span>
-                                            <div class="setting-slider-row">
-                                                <input
-                                                    type="range"
-                                                    class="setting-range"
-                                                    min="1"
-                                                    max="30"
-                                                    step="1"
-                                                    prop:value=move || (state.het_cutoff.get() / 1000.0).to_string()
-                                                    on:input=on_het_cutoff_change
-                                                />
-                                                <span class="setting-value">{move || format!("{:.0} kHz", state.het_cutoff.get() / 1000.0)}</span>
-                                            </div>
-                                        </div>
-                                    }.into_any()
-                                }
-                                crate::state::PlaybackMode::ZeroCrossing => {
-                                    view! {
-                                        <div class="filter-mode-info">"ZC: bandpass 15\u{2013}150 kHz"</div>
-                                    }.into_any()
-                                }
-                                _ => view! { <span></span> }.into_any(),
-                            }
-                        }}
-                    </div>
                 }.into_any()
+            }}
+
+            // Mode-specific filter chain (always visible, not gated by EQ enable)
+            {move || {
+                let mode = state.playback_mode.get();
+                match mode {
+                    crate::state::PlaybackMode::Heterodyne => {
+                        view! {
+                            <div class="setting-group">
+                                <div class="setting-group-title">"Mode filters"</div>
+                                <div class="setting-row"
+                                    on:mouseenter=move |_| state.het_interacting.set(true)
+                                    on:mouseleave=move |_| state.het_interacting.set(false)
+                                >
+                                    <span class="setting-label">"HET LP"</span>
+                                    <div class="setting-slider-row">
+                                        <input
+                                            type="range"
+                                            class="setting-range"
+                                            min="1"
+                                            max="30"
+                                            step="1"
+                                            prop:value=move || (state.het_cutoff.get() / 1000.0).to_string()
+                                            on:input=on_het_cutoff_change
+                                        />
+                                        <span class="setting-value">{move || format!("{:.0} kHz", state.het_cutoff.get() / 1000.0)}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        }.into_any()
+                    }
+                    crate::state::PlaybackMode::ZeroCrossing => {
+                        let filter_on = state.filter_enabled.get();
+                        view! {
+                            <div class="setting-group">
+                                <div class="setting-group-title">"Mode filters"</div>
+                                <div class="filter-mode-info">
+                                    {if filter_on {
+                                        "ZC: using pre-processing EQ"
+                                    } else {
+                                        "ZC: bandpass 15\u{2013}150 kHz"
+                                    }}
+                                </div>
+                            </div>
+                        }.into_any()
+                    }
+                    _ => view! { <span></span> }.into_any(),
+                }
             }}
         </div>
     }

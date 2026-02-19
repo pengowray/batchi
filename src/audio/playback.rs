@@ -90,6 +90,14 @@ pub fn replay_het(state: &AppState) {
     start_playhead(state.clone(), current_time, remaining_duration, 1.0);
 }
 
+/// Restart playback from the beginning of the current selection.
+/// Used when filter/EQ settings change during ZC playback.
+pub fn replay(state: &AppState) {
+    if state.is_playing.get_untracked() {
+        play(state);
+    }
+}
+
 pub fn play(state: &AppState) {
     stop(state);
 
@@ -169,7 +177,8 @@ pub fn play(state: &AppState) {
         }
         PlaybackMode::ZeroCrossing => {
             // ZC: frequency division via zero-crossing detection
-            let processed = zc_divide(&samples, sample_rate, zc_factor as u32);
+            // When EQ is enabled, skip the internal bandpass (EQ replaces it)
+            let processed = zc_divide(&samples, sample_rate, zc_factor as u32, filter_enabled);
             play_samples(&processed, sample_rate);
         }
     }
