@@ -114,7 +114,7 @@ pub fn FileSidebar() -> impl IntoView {
                     class=move || if state.sidebar_tab.get() == SidebarTab::PreProcessing { "sidebar-tab active" } else { "sidebar-tab" }
                     on:click=move |_| { state.sidebar_collapsed.set(false); state.sidebar_tab.set(SidebarTab::PreProcessing); }
                 >
-                    "Pre-proc"
+                    "EQ"
                 </button>
                 <button
                     class=move || if state.sidebar_tab.get() == SidebarTab::Metadata { "sidebar-tab active" } else { "sidebar-tab" }
