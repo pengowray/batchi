@@ -682,9 +682,6 @@ body.sidebar-resizing {
     padding: 8px 16px;
     cursor: pointer;
     border-bottom: 1px solid #222;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
 }
 
 .file-item:hover {
@@ -884,11 +881,42 @@ body.sidebar-resizing {
 }
 
 /* File item details */
+.file-item-header {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+}
+
 .file-item-name {
     font-size: 13px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    flex: 1;
+    min-width: 0;
+}
+
+.file-item-close {
+    flex-shrink: 0;
+    background: none;
+    border: none;
+    color: #555;
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1;
+    padding: 1px 4px;
+    border-radius: 2px;
+    visibility: hidden;
+}
+
+.file-item:hover .file-item-close {
+    visibility: visible;
+}
+
+.file-item-close:hover {
+    background: #444;
+    color: #ccc;
 }
 
 .file-item-info {

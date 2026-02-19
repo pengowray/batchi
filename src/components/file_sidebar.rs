@@ -4,7 +4,7 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen::{Clamped, JsCast};
 use js_sys;
 use wasm_bindgen_futures::JsFuture;
-use web_sys::{CanvasRenderingContext2d, DragEvent, File, FileReader, HtmlCanvasElement, HtmlInputElement, ImageData};
+use web_sys::{CanvasRenderingContext2d, DragEvent, File, FileReader, HtmlCanvasElement, HtmlInputElement, ImageData, MouseEvent};
 use crate::audio::loader::load_audio;
 use crate::dsp::fft::{compute_preview, compute_spectrogram};
 use crate::dsp::zero_crossing::zero_crossing_frequency;
@@ -340,13 +340,35 @@ fn FilesPanel() -> impl IntoView {
                         let on_click = move |_| {
                             current_idx.set(Some(i));
                         };
+                        let on_close = move |ev: MouseEvent| {
+                            ev.stop_propagation();
+                            if state.is_playing.get_untracked() && state.current_file_index.get_untracked() == Some(i) {
+                                playback::stop(&state);
+                            }
+                            state.files.update(|files| { files.remove(i); });
+                            state.current_file_index.update(|idx| {
+                                *idx = match *idx {
+                                    Some(cur) if cur == i => {
+                                        let new_len = state.files.get_untracked().len();
+                                        if new_len == 0 { None }
+                                        else if i > 0 { Some(i - 1) }
+                                        else { Some(0) }
+                                    },
+                                    Some(cur) if cur > i => Some(cur - 1),
+                                    other => other,
+                                };
+                            });
+                        };
                         view! {
                             <div
                                 class=move || if is_active() { "file-item active" } else { "file-item" }
                                 on:click=on_click
                             >
                                 {preview.map(|pv| view! { <PreviewCanvas preview=pv /> })}
-                                <div class="file-item-name">{name}</div>
+                                <div class="file-item-header">
+                                    <div class="file-item-name">{name}</div>
+                                    <button class="file-item-close" on:click=on_close>"×"</button>
+                                </div>
                                 <div class="file-item-info">
                                     {format!("{:.1}s  {}kHz", dur, sr / 1000)}
                                 </div>
