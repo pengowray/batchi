@@ -3,6 +3,16 @@ use wasm_bindgen::JsCast;
 use crate::state::{AppState, PlaybackMode};
 use crate::audio::playback;
 
+fn compute_auto_gain(state: &AppState) -> f64 {
+    let files = state.files.get();
+    let idx = state.current_file_index.get();
+    let Some(file) = idx.and_then(|i| files.get(i)) else { return 0.0 };
+    let peak = file.audio.samples.iter().map(|s| s.abs()).fold(0.0f32, f32::max);
+    if peak < 1e-10 { return 0.0; }
+    let peak_db = 20.0 * (peak as f64).log10();
+    -3.0 - peak_db
+}
+
 #[component]
 pub fn Toolbar() -> impl IntoView {
     let state = expect_context::<AppState>();
@@ -240,7 +250,11 @@ pub fn Toolbar() -> impl IntoView {
                     on:dblclick=on_gain_reset
                 >
                     {move || {
-                        let db = state.gain_db.get();
+                        let db = if state.auto_gain.get() {
+                            compute_auto_gain(&state)
+                        } else {
+                            state.gain_db.get()
+                        };
                         if db > 0.0 {
                             format!("+{:.1} dB", db)
                         } else {
@@ -253,7 +267,13 @@ pub fn Toolbar() -> impl IntoView {
                     min="-30"
                     max="30"
                     step="0.5"
-                    prop:value=move || state.gain_db.get().to_string()
+                    prop:value=move || {
+                        if state.auto_gain.get() {
+                            compute_auto_gain(&state).to_string()
+                        } else {
+                            state.gain_db.get().to_string()
+                        }
+                    }
                     on:input=on_gain_change
                     disabled=move || state.auto_gain.get()
                 />
