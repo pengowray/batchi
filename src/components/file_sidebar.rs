@@ -217,18 +217,33 @@ fn FilesPanel() -> impl IntoView {
         input.set_value("");
     };
 
-    let state_for_demo = state.clone();
+    let demo_entries: RwSignal<Vec<DemoEntry>> = RwSignal::new(Vec::new());
+    let demo_picker_open = RwSignal::new(false);
+    let demo_loading = RwSignal::new(false);
+
     let on_demo_click = move |_: web_sys::MouseEvent| {
-        let state = state_for_demo.clone();
-        state.loading_count.update(|c| *c += 1);
+        if demo_picker_open.get_untracked() {
+            demo_picker_open.set(false);
+            return;
+        }
+        if !demo_entries.get_untracked().is_empty() {
+            demo_picker_open.set(true);
+            return;
+        }
+        // Fetch the index
+        demo_loading.set(true);
         spawn_local(async move {
-            match load_demo_sounds(state.clone()).await {
-                Ok(()) => {}
-                Err(e) => log::error!("Failed to load demo sounds: {e}"),
+            match fetch_demo_index().await {
+                Ok(entries) => {
+                    demo_entries.set(entries);
+                    demo_picker_open.set(true);
+                }
+                Err(e) => log::error!("Failed to fetch demo index: {e}"),
             }
-            state.loading_count.update(|c| *c = c.saturating_sub(1));
+            demo_loading.set(false);
         });
     };
+
 
     let state_for_drop = state.clone();
     let on_drop = move |ev: DragEvent| {
@@ -275,7 +290,44 @@ fn FilesPanel() -> impl IntoView {
                         <div class="drop-hint">
                             "Drop WAV/FLAC files here"
                             <button class="upload-btn" on:click=on_upload_click>"Browse files"</button>
-                            <button class="upload-btn demo-btn" on:click=on_demo_click>"Load demo"</button>
+                            <button class="upload-btn demo-btn" on:click=on_demo_click>
+                                {move || if demo_loading.get() { "Loading..." } else { "Load demo" }}
+                            </button>
+                            {move || {
+                                if demo_picker_open.get() {
+                                    let entries = demo_entries.get();
+                                    let items: Vec<_> = entries.iter().map(|entry| {
+                                        let entry_clone = entry.clone();
+                                        let display_name = entry.filename
+                                            .trim_end_matches(".wav")
+                                            .trim_end_matches(".flac")
+                                            .to_string();
+                                        view! {
+                                            <button
+                                                class="demo-item"
+                                                on:click=move |_| {
+                                                    let entry = entry_clone.clone();
+                                                    state.loading_count.update(|c| *c += 1);
+                                                    spawn_local(async move {
+                                                        match load_single_demo(&entry, state).await {
+                                                            Ok(()) => {}
+                                                            Err(e) => log::error!("Failed to load demo sound: {e}"),
+                                                        }
+                                                        state.loading_count.update(|c| *c = c.saturating_sub(1));
+                                                    });
+                                                }
+                                            >
+                                                {display_name}
+                                            </button>
+                                        }
+                                    }).collect();
+                                    view! {
+                                        <div class="demo-picker">{items}</div>
+                                    }.into_any()
+                                } else {
+                                    view! { <span></span> }.into_any()
+                                }
+                            }}
                         </div>
                     }.into_any()
                 } else {
@@ -1404,7 +1456,13 @@ fn parse_xc_metadata(json: &serde_json::Value) -> Vec<(String, String)> {
     fields
 }
 
-async fn load_demo_sounds(state: AppState) -> Result<(), String> {
+#[derive(Clone, Debug)]
+struct DemoEntry {
+    filename: String,
+    metadata_file: Option<String>,
+}
+
+async fn fetch_demo_index() -> Result<Vec<DemoEntry>, String> {
     let index_url = format!("{}/index.json", DEMO_SOUNDS_BASE);
     let index_text = fetch_text(&index_url).await?;
     let index: serde_json::Value =
@@ -1414,50 +1472,55 @@ async fn load_demo_sounds(state: AppState) -> Result<(), String> {
         .as_array()
         .ok_or("No sounds array in index")?;
 
-    for sound in sounds {
-        let filename = sound["filename"]
-            .as_str()
-            .ok_or("Missing filename in index entry")?;
+    let entries = sounds
+        .iter()
+        .filter_map(|sound| {
+            let filename = sound["filename"].as_str()?.to_string();
+            let metadata_file = sound["metadata"].as_str().map(|s| s.to_string());
+            Some(DemoEntry { filename, metadata_file })
+        })
+        .collect();
 
-        // Fetch XC metadata sidecar if available
-        let xc_metadata = if let Some(meta_file) = sound["metadata"].as_str() {
-            let encoded = js_sys::encode_uri_component(meta_file);
-            let meta_url = format!(
-                "{}/sounds/{}",
-                DEMO_SOUNDS_BASE,
-                encoded.as_string().unwrap_or_default()
-            );
-            match fetch_text(&meta_url).await {
-                Ok(text) => {
-                    match serde_json::from_str::<serde_json::Value>(&text) {
-                        Ok(json) => Some(parse_xc_metadata(&json)),
-                        Err(e) => {
-                            log::warn!("Failed to parse XC metadata for {}: {}", filename, e);
-                            None
-                        }
-                    }
-                }
-                Err(e) => {
-                    log::warn!("Failed to fetch XC metadata for {}: {}", filename, e);
-                    None
-                }
-            }
-        } else {
-            None
-        };
+    Ok(entries)
+}
 
-        let encoded = js_sys::encode_uri_component(filename);
-        let audio_url = format!(
+async fn load_single_demo(entry: &DemoEntry, state: AppState) -> Result<(), String> {
+    // Fetch XC metadata sidecar if available
+    let xc_metadata = if let Some(meta_file) = &entry.metadata_file {
+        let encoded = js_sys::encode_uri_component(meta_file);
+        let meta_url = format!(
             "{}/sounds/{}",
             DEMO_SOUNDS_BASE,
             encoded.as_string().unwrap_or_default()
         );
-        log::info!("Fetching demo: {}", filename);
-        let bytes = fetch_bytes(&audio_url).await?;
-        load_named_bytes(filename.to_string(), &bytes, xc_metadata, state.clone()).await?;
-    }
+        match fetch_text(&meta_url).await {
+            Ok(text) => {
+                match serde_json::from_str::<serde_json::Value>(&text) {
+                    Ok(json) => Some(parse_xc_metadata(&json)),
+                    Err(e) => {
+                        log::warn!("Failed to parse XC metadata for {}: {}", entry.filename, e);
+                        None
+                    }
+                }
+            }
+            Err(e) => {
+                log::warn!("Failed to fetch XC metadata for {}: {}", entry.filename, e);
+                None
+            }
+        }
+    } else {
+        None
+    };
 
-    Ok(())
+    let encoded = js_sys::encode_uri_component(&entry.filename);
+    let audio_url = format!(
+        "{}/sounds/{}",
+        DEMO_SOUNDS_BASE,
+        encoded.as_string().unwrap_or_default()
+    );
+    log::info!("Fetching demo: {}", entry.filename);
+    let bytes = fetch_bytes(&audio_url).await?;
+    load_named_bytes(entry.filename.clone(), &bytes, xc_metadata, state).await
 }
 
 async fn read_file_bytes(file: &File) -> Result<Vec<u8>, String> {
