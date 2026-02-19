@@ -564,6 +564,28 @@ body.sidebar-resizing {
     display: block;
 }
 
+.copy-report-row {
+    display: flex;
+    justify-content: flex-end;
+    padding: 6px 12px 0;
+}
+
+.copy-report-btn {
+    font-size: 10px;
+    padding: 2px 8px;
+    background: #2a2a2a;
+    color: #888;
+    border: 1px solid #444;
+    border-radius: 3px;
+    cursor: pointer;
+}
+
+.copy-report-btn:hover {
+    color: #ccc;
+    background: #333;
+    border-color: #666;
+}
+
 .metadata-source-badge {
     font-size: 9px;
     color: #666;
