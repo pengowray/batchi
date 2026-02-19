@@ -280,6 +280,65 @@ body.sidebar-resizing {
     background: #1a3a25;
 }
 
+/* wSNR recording quality */
+.wsnr-result {
+    padding: 4px 12px;
+}
+
+.wsnr-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 6px;
+}
+
+.wsnr-grade {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    font-size: 20px;
+    font-weight: 700;
+    flex-shrink: 0;
+}
+
+.wsnr-grade-a { background: #1a3a25; color: #6f6; }
+.wsnr-grade-b { background: #1a3a3a; color: #6cf; }
+.wsnr-grade-c { background: #3a3a1a; color: #fc6; }
+.wsnr-grade-d { background: #3a2a1a; color: #f96; }
+.wsnr-grade-e { background: #3a1a1a; color: #f66; }
+
+.wsnr-snr {
+    font-size: 14px;
+    font-weight: 600;
+    color: #ccc;
+}
+
+.wsnr-detail {
+    font-size: 11px;
+    color: #888;
+    padding: 1px 0;
+}
+
+.wsnr-comparison {
+    font-size: 11px;
+    color: #aaf;
+    padding: 4px 0 2px;
+    font-weight: 600;
+}
+
+.wsnr-warnings {
+    margin-top: 4px;
+}
+
+.wsnr-warning {
+    padding: 2px 0;
+    font-size: 10px;
+    color: #fc8;
+}
+
 /* Settings panel */
 .sidebar-panel {
     flex: 1;

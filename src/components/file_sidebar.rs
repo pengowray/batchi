@@ -10,6 +10,7 @@ use crate::dsp::fft::{compute_preview, compute_spectrogram};
 use crate::dsp::zero_crossing::zero_crossing_frequency;
 use crate::audio::playback;
 use crate::dsp::bit_analysis::{self, BitCaution};
+use crate::dsp::wsnr;
 use crate::state::{AppState, LoadedFile, PlaybackMode, SidebarTab, SpectrogramDisplay};
 use crate::types::{PreviewImage, SpectrogramData};
 
@@ -886,13 +887,90 @@ fn AnalysisPanel() -> impl IntoView {
         })
     });
 
+    let wsnr_result = Memo::new(move |_| {
+        let files = state.files.get();
+        let idx = state.current_file_index.get();
+        idx.and_then(|i| files.get(i).cloned()).map(|file| {
+            wsnr::analyze_wsnr(&file.audio.samples, file.audio.sample_rate)
+        })
+    });
+
+    let xc_quality = Memo::new(move |_| {
+        let files = state.files.get();
+        let idx = state.current_file_index.get();
+        idx.and_then(|i| files.get(i).cloned())
+            .and_then(|file| file.xc_metadata)
+            .and_then(|meta| {
+                meta.iter()
+                    .find(|(k, _)| k == "Quality")
+                    .map(|(_, v)| v.clone())
+            })
+    });
+
     view! {
         <div class="sidebar-panel">
+            // wSNR section
             {move || {
-                match analysis.get().as_ref() {
+                match wsnr_result.get().as_ref() {
                     None => view! {
                         <div class="sidebar-panel-empty">"No file selected"</div>
                     }.into_any(),
+                    Some(w) => {
+                        let grade_class = match w.grade {
+                            wsnr::WsnrGrade::A => "wsnr-grade wsnr-grade-a",
+                            wsnr::WsnrGrade::B => "wsnr-grade wsnr-grade-b",
+                            wsnr::WsnrGrade::C => "wsnr-grade wsnr-grade-c",
+                            wsnr::WsnrGrade::D => "wsnr-grade wsnr-grade-d",
+                            wsnr::WsnrGrade::E => "wsnr-grade wsnr-grade-e",
+                        };
+                        let grade_label = w.grade.label().to_string();
+                        let snr_text = format!("{:.1} dB(ISO/ITU)", w.snr_db);
+                        let signal_text = format!("Signal: {:.1} dB (ISO 226)", w.signal_db);
+                        let noise_text = format!("Noise: {:.1} dB (ITU-R 468)", w.noise_db);
+
+                        let xc_comparison = xc_quality.get().map(|xc_q| {
+                            let xc_q = xc_q.to_uppercase();
+                            let computed = grade_label.clone();
+                            if xc_q == computed {
+                                format!("XC quality: {} (matches)", xc_q)
+                            } else {
+                                format!("XC quality: {} (computed: {})", xc_q, computed)
+                            }
+                        });
+
+                        let warnings: Vec<_> = w.warnings.iter().map(|msg| {
+                            let msg = msg.clone();
+                            view! { <div class="wsnr-warning">{msg}</div> }
+                        }).collect();
+
+                        view! {
+                            <div class="setting-group">
+                                <div class="setting-group-title">"Recording Quality (wSNR)"</div>
+                                <div class="wsnr-result">
+                                    <div class="wsnr-header">
+                                        <span class=grade_class>{grade_label}</span>
+                                        <span class="wsnr-snr">{snr_text}</span>
+                                    </div>
+                                    <div class="wsnr-detail">{signal_text}</div>
+                                    <div class="wsnr-detail">{noise_text}</div>
+                                    {xc_comparison.map(|text| view! {
+                                        <div class="wsnr-comparison">{text}</div>
+                                    })}
+                                    {if !warnings.is_empty() {
+                                        view! { <div class="wsnr-warnings">{warnings}</div> }.into_any()
+                                    } else {
+                                        view! { <span></span> }.into_any()
+                                    }}
+                                </div>
+                            </div>
+                        }.into_any()
+                    }
+                }
+            }}
+            // Bit analysis section
+            {move || {
+                match analysis.get().as_ref() {
+                    None => view! { <span></span> }.into_any(),
                     Some(a) => {
                         let bits = a.bits_per_sample as usize;
                         let cols = 4usize;
