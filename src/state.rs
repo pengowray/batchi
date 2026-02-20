@@ -43,6 +43,7 @@ pub enum SidebarTab {
     Selection,
     PreProcessing,
     Analysis,
+    Harmonics,
     Metadata,
 }
 
@@ -54,6 +55,7 @@ impl SidebarTab {
             Self::Selection => "Selection",
             Self::PreProcessing => "EQ",
             Self::Analysis => "Analysis",
+            Self::Harmonics => "Harmonics (beta)",
             Self::Metadata => "Info",
         }
     }
@@ -64,6 +66,7 @@ impl SidebarTab {
         Self::Selection,
         Self::PreProcessing,
         Self::Analysis,
+        Self::Harmonics,
         Self::Metadata,
     ];
 }

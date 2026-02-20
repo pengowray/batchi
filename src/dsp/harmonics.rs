@@ -1,0 +1,566 @@
+use realfft::num_complex::Complex;
+use realfft::RealFftPlanner;
+use crate::types::{AudioData, SpectrogramData, SpectrogramColumn};
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::f32::consts::PI;
+
+type Complex32 = Complex<f32>;
+
+thread_local! {
+    static HARM_FFT_PLANNER: RefCell<RealFftPlanner<f32>> = RefCell::new(RealFftPlanner::new());
+    static HARM_HANN_CACHE: RefCell<HashMap<usize, Vec<f32>>> = RefCell::new(HashMap::new());
+}
+
+fn hann_window(size: usize) -> Vec<f32> {
+    HARM_HANN_CACHE.with(|cache| {
+        cache
+            .borrow_mut()
+            .entry(size)
+            .or_insert_with(|| {
+                (0..size)
+                    .map(|i| {
+                        0.5 * (1.0
+                            - (2.0 * PI * i as f32 / (size - 1) as f32).cos())
+                    })
+                    .collect()
+            })
+            .clone()
+    })
+}
+
+#[derive(Clone)]
+pub struct HarmonicsAnalysis {
+    // --- Phase Coherence ---
+    /// Per-bin average phase coherence [0,1], indexed by FFT bin.
+    pub phase_coherence: Vec<f32>,
+    /// Mean phase coherence across all active bins.
+    pub phase_coherence_mean: f32,
+    /// Ratio of coherence at harmonic bins vs. mean (>1 = harmonics more coherent).
+    pub harmonic_coherence_ratio: f32,
+
+    // --- Harmonic Decay Profile ---
+    /// Detected fundamental frequency in Hz (None if not found).
+    pub fundamental_freq: Option<f32>,
+    /// Amplitudes at 1f, 2f, 3f, ... normalised so A1=1.0.
+    pub harmonic_amplitudes: Vec<f32>,
+    /// Best-fit power-law exponent α where A_n ≈ 1/n^α.
+    pub decay_exponent: f32,
+    /// True if each successive harmonic is strictly weaker.
+    pub decay_is_monotonic: bool,
+    /// Harmonic indices (0-based) where amplitude anomalously exceeds the prior harmonic.
+    pub decay_anomaly_indices: Vec<usize>,
+
+    // --- Spectral Flux ---
+    /// Half-wave-rectified onset flux, one value per spectrogram frame transition.
+    pub flux_per_frame: Vec<f32>,
+    pub flux_mean: f32,
+    pub flux_peak: f32,
+    /// Number of frames with significant flux immediately before an onset (pre-ringing).
+    pub preringing_count: usize,
+    /// [0,1]: fraction of active transitions where peak bin is stuck (staircasing).
+    pub staircasing_score: f32,
+
+    // --- Summary ---
+    pub artifact_indicators: Vec<String>,
+}
+
+impl PartialEq for HarmonicsAnalysis {
+    fn eq(&self, other: &Self) -> bool {
+        // Cheap comparison — if the same file produced both, these will be identical.
+        self.phase_coherence_mean == other.phase_coherence_mean
+            && self.fundamental_freq == other.fundamental_freq
+            && self.flux_per_frame.len() == other.flux_per_frame.len()
+            && self.phase_coherence.len() == other.phase_coherence.len()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Public entry points
+// ---------------------------------------------------------------------------
+
+/// Compute the harmonics analysis summary for sidebar display.
+/// Does not return 2-D per-frame coherence (call `compute_coherence_frames` for the heatmap).
+pub fn analyze_harmonics(audio: &AudioData, spectrogram: &SpectrogramData) -> HarmonicsAnalysis {
+    let fft_size = derive_fft_size(audio.sample_rate, spectrogram.freq_resolution);
+    let hop_size = derive_hop_size(audio.sample_rate, spectrogram.time_resolution);
+
+    // Spectral flux (cheap — reuses existing SpectrogramData).
+    let flux_per_frame = compute_spectral_flux_frames(&spectrogram.columns);
+    let flux_mean = mean_f32(&flux_per_frame);
+    let flux_peak = flux_per_frame.iter().copied().fold(0.0f32, f32::max);
+    let preringing_count = count_preringing(&flux_per_frame, flux_peak);
+    let staircasing_score = compute_staircasing_score(&spectrogram.columns, &flux_per_frame, flux_peak);
+
+    // Harmonic decay (cheap — uses existing SpectrogramData).
+    let avg_spectrum = compute_avg_spectrum(&spectrogram.columns);
+    let fundamental_bin = detect_fundamental_hps(&avg_spectrum);
+    let fundamental_freq = fundamental_bin
+        .map(|b| b as f32 * spectrogram.freq_resolution as f32);
+    let (harmonic_amplitudes, decay_exponent, decay_is_monotonic, decay_anomaly_indices) =
+        if let Some(f_bin) = fundamental_bin {
+            compute_harmonic_decay(
+                &avg_spectrum,
+                f_bin,
+                spectrogram.max_freq,
+                spectrogram.freq_resolution,
+            )
+        } else {
+            (vec![], 1.0, true, vec![])
+        };
+
+    // Phase coherence (requires a new STFT pass to keep complex output).
+    let (phase_coherence, _) = if audio.samples.len() >= fft_size {
+        let frames = compute_complex_stft(audio, fft_size, hop_size);
+        compute_phase_coherence_summary(&frames, fft_size, hop_size)
+    } else {
+        let n = fft_size / 2 + 1;
+        (vec![0.5f32; n], Vec::new())
+    };
+
+    let n_active = phase_coherence.iter().filter(|&&c| c > 0.0).count().max(1);
+    let phase_coherence_mean = phase_coherence.iter().copied().sum::<f32>() / n_active as f32;
+    let harmonic_coherence_ratio =
+        compute_harmonic_coherence_ratio(&phase_coherence, fundamental_bin);
+
+    // Build human-readable artifact indicators.
+    let mut indicators = Vec::new();
+    if phase_coherence_mean < 0.35 {
+        indicators.push(
+            "Low mean phase coherence — significant phase drift suggests heavy processing"
+                .to_string(),
+        );
+    } else if phase_coherence_mean < 0.55 {
+        indicators.push(
+            "Moderate phase drift — possible processing artifacts".to_string(),
+        );
+    }
+    if harmonic_coherence_ratio < 0.7 && fundamental_freq.is_some() {
+        indicators.push(
+            "Harmonic bins show reduced phase coherence vs. noise floor — suggests synthetic harmonics"
+                .to_string(),
+        );
+    }
+    for &i in &decay_anomaly_indices {
+        indicators.push(format!(
+            "H{} ({:.1} kHz) amplitude anomaly — violates natural power-law decay",
+            i + 1,
+            fundamental_freq.unwrap_or(0.0) * (i + 1) as f32 / 1000.0
+        ));
+    }
+    if preringing_count > 0 {
+        indicators.push(format!(
+            "{} frame(s) of pre-ringing detected — windowing / STFT artifact",
+            preringing_count
+        ));
+    }
+    if staircasing_score > 0.5 {
+        indicators.push(format!(
+            "High staircasing score ({:.2}) — frequency sweeps show step quantisation",
+            staircasing_score
+        ));
+    }
+    if indicators.is_empty() {
+        indicators.push("No significant artifacts detected".to_string());
+    }
+
+    HarmonicsAnalysis {
+        phase_coherence,
+        phase_coherence_mean,
+        harmonic_coherence_ratio,
+        fundamental_freq,
+        harmonic_amplitudes,
+        decay_exponent,
+        decay_is_monotonic,
+        decay_anomaly_indices,
+        flux_per_frame,
+        flux_mean,
+        flux_peak,
+        preringing_count,
+        staircasing_score,
+        artifact_indicators: indicators,
+    }
+}
+
+/// Compute per-frame, per-bin phase coherence for the heatmap visualisation.
+/// Returns shape `[num_frame_transitions][num_bins]`, values in [0, 1].
+pub fn compute_coherence_frames(
+    audio: &AudioData,
+    spectrogram: &SpectrogramData,
+) -> Vec<Vec<f32>> {
+    let fft_size = derive_fft_size(audio.sample_rate, spectrogram.freq_resolution);
+    let hop_size = derive_hop_size(audio.sample_rate, spectrogram.time_resolution);
+    if audio.samples.len() < fft_size {
+        return Vec::new();
+    }
+    let frames = compute_complex_stft(audio, fft_size, hop_size);
+    let (_, coherence_frames) = compute_phase_coherence_summary(&frames, fft_size, hop_size);
+    coherence_frames
+}
+
+// ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
+
+fn derive_fft_size(sample_rate: u32, freq_resolution: f64) -> usize {
+    let n = (sample_rate as f64 / freq_resolution).round() as usize;
+    n.max(64)
+}
+
+fn derive_hop_size(sample_rate: u32, time_resolution: f64) -> usize {
+    let h = (time_resolution * sample_rate as f64).round() as usize;
+    h.max(1)
+}
+
+fn compute_complex_stft(
+    audio: &AudioData,
+    fft_size: usize,
+    hop_size: usize,
+) -> Vec<Vec<Complex32>> {
+    let fft = HARM_FFT_PLANNER.with(|p| p.borrow_mut().plan_fft_forward(fft_size));
+    let window = hann_window(fft_size);
+    let mut frames = Vec::new();
+    let mut input = fft.make_input_vec();
+    let mut spectrum = fft.make_output_vec();
+    let mut pos = 0;
+    while pos + fft_size <= audio.samples.len() {
+        for (inp, (&s, &w)) in input
+            .iter_mut()
+            .zip(audio.samples[pos..pos + fft_size].iter().zip(window.iter()))
+        {
+            *inp = s * w;
+        }
+        fft.process(&mut input, &mut spectrum).expect("FFT failed");
+        frames.push(spectrum.to_vec());
+        pos += hop_size;
+    }
+    frames
+}
+
+/// Returns `(per_bin_coherence, per_frame_coherence_map)`.
+///
+/// `per_bin_coherence`: one [0,1] value per bin — low RMS deviation = high coherence.
+/// `per_frame_coherence_map`: shape [n_frames-1][n_bins].
+fn compute_phase_coherence_summary(
+    frames: &[Vec<Complex32>],
+    fft_size: usize,
+    hop_size: usize,
+) -> (Vec<f32>, Vec<Vec<f32>>) {
+    let n_bins = frames.first().map(|f| f.len()).unwrap_or(fft_size / 2 + 1);
+
+    if frames.len() < 2 {
+        return (vec![0.5f32; n_bins], Vec::new());
+    }
+
+    let mut sum_dev_sq = vec![0.0f64; n_bins];
+    let mut count_dev = vec![0usize; n_bins];
+    let mut coherence_frames: Vec<Vec<f32>> = Vec::with_capacity(frames.len() - 1);
+
+    for t in 0..frames.len() - 1 {
+        let mut frame_coh = vec![0.0f32; n_bins];
+        for k in 0..n_bins {
+            let mag_prev = frames[t][k].norm();
+            let mag_next = frames[t + 1][k].norm();
+            // Gate: skip very quiet bins — phase is undefined there.
+            if mag_prev < 1e-8 || mag_next < 1e-8 {
+                frame_coh[k] = 0.0;
+                continue;
+            }
+            // Expected phase advance at bin k per hop.
+            let expected = 2.0 * PI * k as f32 * hop_size as f32 / fft_size as f32;
+            // Actual phase advance: arg(X[t+1] · conj(X[t])).
+            let cross = frames[t + 1][k] * frames[t][k].conj();
+            let actual = cross.arg();
+            let deviation = wrap_to_pi(actual - expected);
+            // Immediate frame coherence: 1 at zero deviation, 0 at π.
+            frame_coh[k] = 1.0 / (1.0 + deviation.abs() / PI);
+            sum_dev_sq[k] += (deviation * deviation) as f64;
+            count_dev[k] += 1;
+        }
+        coherence_frames.push(frame_coh);
+    }
+
+    // Per-bin coherence from RMS phase deviation over all frame pairs.
+    let per_bin: Vec<f32> = (0..n_bins)
+        .map(|k| {
+            let n = count_dev[k];
+            if n == 0 {
+                return 0.0;
+            }
+            let rms_dev = (sum_dev_sq[k] / n as f64).sqrt() as f32;
+            (1.0 - (rms_dev / PI).min(1.0)).max(0.0)
+        })
+        .collect();
+
+    (per_bin, coherence_frames)
+}
+
+fn wrap_to_pi(x: f32) -> f32 {
+    let tau = 2.0 * PI;
+    let x = x % tau;
+    if x > PI {
+        x - tau
+    } else if x < -PI {
+        x + tau
+    } else {
+        x
+    }
+}
+
+/// Average magnitude spectrum across all spectrogram frames.
+fn compute_avg_spectrum(columns: &[SpectrogramColumn]) -> Vec<f32> {
+    if columns.is_empty() {
+        return Vec::new();
+    }
+    let n = columns[0].magnitudes.len();
+    let mut avg = vec![0.0f32; n];
+    for col in columns {
+        for (a, &m) in avg.iter_mut().zip(col.magnitudes.iter()) {
+            *a += m;
+        }
+    }
+    let count = columns.len() as f32;
+    avg.iter_mut().for_each(|v| *v /= count);
+    avg
+}
+
+/// Harmonic Product Spectrum fundamental frequency detector.
+/// Returns the FFT bin of the detected fundamental (None if detection fails).
+fn detect_fundamental_hps(avg_spectrum: &[f32]) -> Option<usize> {
+    let n = avg_spectrum.len();
+    if n < 8 {
+        return None;
+    }
+    // HPS using 4 harmonics; limit by 4× downsampling.
+    let hps_len = n / 4;
+    if hps_len < 2 {
+        return None;
+    }
+    let mut hps = vec![0.0f32; hps_len];
+    for k in 1..hps_len {
+        let k2 = (k * 2).min(n - 1);
+        let k3 = (k * 3).min(n - 1);
+        let k4 = (k * 4).min(n - 1);
+        hps[k] = avg_spectrum[k]
+            * avg_spectrum[k2]
+            * avg_spectrum[k3]
+            * avg_spectrum[k4];
+    }
+    // Skip first 1 % of bins to avoid DC / subharmonic artefacts.
+    let min_bin = (hps_len / 100).max(1);
+    for k in 0..min_bin {
+        hps[k] = 0.0;
+    }
+    let (peak_k, peak_v) = hps
+        .iter()
+        .enumerate()
+        .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())?;
+    if peak_k == 0 || *peak_v <= 0.0 {
+        None
+    } else {
+        Some(peak_k)
+    }
+}
+
+/// Extract normalised harmonic amplitudes and fit a power-law decay exponent.
+fn compute_harmonic_decay(
+    avg_spectrum: &[f32],
+    fundamental_bin: usize,
+    max_freq: f64,
+    freq_resolution: f64,
+) -> (Vec<f32>, f32, bool, Vec<usize>) {
+    let n = avg_spectrum.len();
+    let mut amplitudes = Vec::new();
+
+    for h in 1..=8usize {
+        let bin = fundamental_bin * h;
+        if bin >= n {
+            break;
+        }
+        let freq = bin as f64 * freq_resolution;
+        if freq > max_freq {
+            break;
+        }
+        // Peak within ±1 bin window for robustness.
+        let lo = bin.saturating_sub(1);
+        let hi = (bin + 1).min(n - 1);
+        let amp = avg_spectrum[lo..=hi]
+            .iter()
+            .copied()
+            .fold(0.0f32, f32::max);
+        amplitudes.push(amp);
+    }
+
+    if amplitudes.is_empty() {
+        return (vec![], 1.0, true, vec![]);
+    }
+
+    let a1 = amplitudes[0].max(1e-10);
+    let normalised: Vec<f32> = amplitudes.iter().map(|&a| a / a1).collect();
+
+    // Least-squares fit of log(A_n / A1) = -α * log(n).
+    let decay_exponent = if normalised.len() >= 2 {
+        let mut num = 0.0f32;
+        let mut den = 0.0f32;
+        for (i, &amp) in normalised.iter().enumerate().skip(1) {
+            let log_n = ((i + 1) as f32).ln();
+            let log_a = amp.max(1e-10).ln();
+            num += -log_a * log_n;
+            den += log_n * log_n;
+        }
+        if den > 0.0 {
+            num / den
+        } else {
+            1.0
+        }
+    } else {
+        1.0
+    };
+
+    // Detect monotonicity anomalies.
+    let mut decay_is_monotonic = true;
+    let mut anomaly_indices = Vec::new();
+    for i in 1..normalised.len() {
+        // Flag if this harmonic has ≥ 95 % of the previous one's energy.
+        if normalised[i] >= normalised[i - 1] * 0.95 {
+            decay_is_monotonic = false;
+            anomaly_indices.push(i);
+        }
+    }
+
+    (normalised, decay_exponent, decay_is_monotonic, anomaly_indices)
+}
+
+/// Coherence ratio: mean coherence at harmonic bins divided by overall mean.
+fn compute_harmonic_coherence_ratio(
+    phase_coherence: &[f32],
+    fundamental_bin: Option<usize>,
+) -> f32 {
+    let Some(f_bin) = fundamental_bin else {
+        return 0.5;
+    };
+    if phase_coherence.is_empty() {
+        return 0.5;
+    }
+    let mean_all = phase_coherence.iter().copied().sum::<f32>() / phase_coherence.len() as f32;
+    if mean_all < 1e-6 {
+        return 0.5;
+    }
+    let n = phase_coherence.len();
+    let mut harmonic_sum = 0.0f32;
+    let mut harmonic_count = 0usize;
+    for h in 1..=5usize {
+        let bin = f_bin * h;
+        if bin >= n {
+            break;
+        }
+        harmonic_sum += phase_coherence[bin];
+        harmonic_count += 1;
+    }
+    if harmonic_count == 0 {
+        return 0.5;
+    }
+    let harmonic_mean = harmonic_sum / harmonic_count as f32;
+    (harmonic_mean / mean_all).clamp(0.0, 2.0)
+}
+
+/// Half-wave-rectified onset spectral flux per frame transition.
+fn compute_spectral_flux_frames(columns: &[SpectrogramColumn]) -> Vec<f32> {
+    if columns.len() < 2 {
+        return Vec::new();
+    }
+    let mut flux = Vec::with_capacity(columns.len() - 1);
+    for t in 1..columns.len() {
+        let prev = &columns[t - 1].magnitudes;
+        let curr = &columns[t].magnitudes;
+        let f: f32 = prev
+            .iter()
+            .zip(curr.iter())
+            .map(|(&p, &c)| {
+                let diff = c - p;
+                if diff > 0.0 {
+                    diff * diff
+                } else {
+                    0.0
+                }
+            })
+            .sum::<f32>()
+            .sqrt();
+        flux.push(f);
+    }
+    flux
+}
+
+/// Count frames where flux is non-trivial but a much larger onset follows shortly after.
+fn count_preringing(flux: &[f32], flux_peak: f32) -> usize {
+    if flux.is_empty() || flux_peak < 1e-10 {
+        return 0;
+    }
+    let onset_threshold = flux_peak * 0.4;
+    let preflux_threshold = flux_peak * 0.12;
+    let look_ahead = 5usize;
+    let mut count = 0usize;
+    for t in 0..flux.len() {
+        if flux[t] < preflux_threshold || flux[t] >= onset_threshold {
+            continue;
+        }
+        let window_end = (t + 1 + look_ahead).min(flux.len());
+        let has_onset_after = flux[t + 1..window_end]
+            .iter()
+            .any(|&f| f > onset_threshold);
+        if has_onset_after {
+            count += 1;
+        }
+    }
+    count
+}
+
+/// Staircasing score: fraction of active transitions where peak bin does not move.
+fn compute_staircasing_score(
+    columns: &[SpectrogramColumn],
+    flux: &[f32],
+    flux_peak: f32,
+) -> f32 {
+    if columns.len() < 2 || flux_peak < 1e-10 {
+        return 0.0;
+    }
+    let flux_threshold = flux_peak * 0.1;
+    let mut stuck = 0usize;
+    let mut total_active = 0usize;
+
+    for t in 1..columns.len() {
+        let f = if t - 1 < flux.len() { flux[t - 1] } else { 0.0 };
+        if f < flux_threshold {
+            continue;
+        }
+        total_active += 1;
+        let prev_peak = peak_bin(&columns[t - 1].magnitudes);
+        let curr_peak = peak_bin(&columns[t].magnitudes);
+        if prev_peak == curr_peak {
+            stuck += 1;
+        }
+    }
+
+    if total_active == 0 {
+        0.0
+    } else {
+        stuck as f32 / total_active as f32
+    }
+}
+
+fn peak_bin(magnitudes: &[f32]) -> usize {
+    magnitudes
+        .iter()
+        .enumerate()
+        .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
+        .map(|(k, _)| k)
+        .unwrap_or(0)
+}
+
+fn mean_f32(v: &[f32]) -> f32 {
+    if v.is_empty() {
+        0.0
+    } else {
+        v.iter().sum::<f32>() / v.len() as f32
+    }
+}

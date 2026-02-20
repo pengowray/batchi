@@ -1,6 +1,7 @@
 pub mod bit_analysis;
 pub mod fft;
 pub mod filters;
+pub mod harmonics;
 pub mod heterodyne;
 pub mod pitch_shift;
 pub mod zc_divide;
