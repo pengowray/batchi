@@ -558,25 +558,30 @@ fn draw_coherence_heatmap(
     }
 }
 
-/// Map a coherence value [0,1] to an RGB colour.
-/// 0.0 → dark red, 0.5 → yellow, 1.0 → green.
+/// Map a coherence value [0,1] to an RGB colour using a viridis-inspired palette.
+/// 0.00 → dark purple (#440154)
+/// 0.33 → navy blue  (#3b528b)
+/// 0.67 → teal       (#21918c)
+/// 1.00 → pale yellow (#fde725)
 fn coherence_to_rgb(c: f32) -> [u8; 3] {
+    // Four colour stops: (r, g, b)
+    const STOPS: [(u8, u8, u8); 4] = [
+        (0x44, 0x01, 0x54), // 0.00 — dark purple
+        (0x3b, 0x52, 0x8b), // 0.33 — navy blue
+        (0x21, 0x91, 0x8c), // 0.67 — teal
+        (0xfd, 0xe7, 0x25), // 1.00 — pale yellow
+    ];
     let c = c.clamp(0.0, 1.0);
-    if c < 0.5 {
-        let t = c * 2.0;
-        [
-            lerp_u8(0xb4, 0xdc, t),
-            lerp_u8(0x00, 0xc8, t),
-            0,
-        ]
-    } else {
-        let t = (c - 0.5) * 2.0;
-        [
-            lerp_u8(0xdc, 0x00, t),
-            lerp_u8(0xc8, 0xdc, t),
-            lerp_u8(0x00, 0x78, t),
-        ]
-    }
+    let scaled = c * (STOPS.len() - 1) as f32;
+    let lo = (scaled as usize).min(STOPS.len() - 2);
+    let t = scaled - lo as f32;
+    let (r0, g0, b0) = STOPS[lo];
+    let (r1, g1, b1) = STOPS[lo + 1];
+    [
+        lerp_u8(r0, r1, t),
+        lerp_u8(g0, g1, t),
+        lerp_u8(b0, b1, t),
+    ]
 }
 
 fn lerp_u8(a: u8, b: u8, t: f32) -> u8 {
