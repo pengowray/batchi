@@ -1433,7 +1433,7 @@ fn AnalysisPanel() -> impl IntoView {
                                     let pct = count as f64 / sign_total as f64 * 100.0;
                                     if count == sign_total {
                                         "100%".to_string()
-                                    } else if pct >= 99.5 {
+                                    } else if pct >= 99.9 {
                                         "~100%".to_string()
                                     } else if pct >= 1.0 {
                                         format!("{:.0}%", pct)
