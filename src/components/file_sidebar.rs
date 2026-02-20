@@ -1424,8 +1424,10 @@ fn AnalysisPanel() -> impl IntoView {
                                 if is_sign_bit {
                                     let value_text = if sign_total > 0 && count == sign_total {
                                         "100%".to_string()
-                                    } else {
+                                    } else if sign_total > 0 {
                                         "0%".to_string()
+                                    } else {
+                                        "\u{2013}".to_string()
                                     };
                                     let sign_tooltip = if polarity == "positive" {
                                         "Sign bit: always 0 for positive samples".to_string()
