@@ -30,9 +30,13 @@ pub fn Toolbar() -> impl IntoView {
     let is_playing = move || state.is_playing.get();
     let current_mode = move || state.playback_mode.get();
 
+    let saved_auto_gain = RwSignal::new(false);
     let set_mode = move |mode: PlaybackMode| {
         if mode == PlaybackMode::ZeroCrossing {
+            saved_auto_gain.set(state.auto_gain.get_untracked());
             state.auto_gain.set(false);
+        } else if state.playback_mode.get_untracked() == PlaybackMode::ZeroCrossing {
+            state.auto_gain.set(saved_auto_gain.get_untracked());
         }
         state.playback_mode.set(mode);
     };
