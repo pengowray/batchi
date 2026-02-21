@@ -131,7 +131,7 @@ fn MainViewButton() -> impl IntoView {
 
     view! {
         <div
-            style="position: absolute; top: 10px; left: 10px; pointer-events: none;"
+            style="position: absolute; bottom: 82px; left: 28px; pointer-events: none;"
             on:click=|ev: web_sys::MouseEvent| ev.stop_propagation()
         >
             <button

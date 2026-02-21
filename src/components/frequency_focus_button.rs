@@ -50,11 +50,10 @@ pub fn FrequencyFocusButton() -> impl IntoView {
     });
 
     view! {
-        // Anchored left-center of main-overlays
-        // z-index: 20 ensures the panel (z-index:30 within this stacking context created by
-        // transform) renders above sibling layer buttons that come later in DOM order.
+        // Stacked above Mode button at bottom-left of main-overlays
+        // z-index: 20 ensures the panel (z-index:30) renders above sibling layer buttons.
         <div
-            style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); pointer-events: none; z-index: 20;"
+            style="position: absolute; left: 28px; bottom: 46px; pointer-events: none; z-index: 20;"
             on:click=|ev: web_sys::MouseEvent| ev.stop_propagation()
         >
             <div style="position: relative; pointer-events: auto;">
@@ -79,7 +78,7 @@ pub fn FrequencyFocusButton() -> impl IntoView {
                 </button>
                 {move || is_open().then(|| {
                     view! {
-                        <div class="layer-panel" style="left: 0; top: 34px;">
+                        <div class="layer-panel" style="left: 0; bottom: 34px;">
                             <div class="layer-panel-title">"Frequency Focus"</div>
                             {FrequencyFocus::ALL.iter().map(|&variant| {
                                 view! {

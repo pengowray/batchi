@@ -108,7 +108,7 @@ pub fn ListenModeButton() -> impl IntoView {
     view! {
         // Anchored bottom-left of main-overlays (above tool button)
         <div
-            style="position: absolute; bottom: 10px; left: 10px; pointer-events: none;"
+            style="position: absolute; bottom: 10px; left: 28px; pointer-events: none;"
             on:click=|ev: web_sys::MouseEvent| ev.stop_propagation()
         >
             <div style="position: relative; pointer-events: auto;">
