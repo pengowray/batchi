@@ -109,6 +109,19 @@ impl FrequencyFocus {
         }
     }
 
+    /// Padded view window for this focus.
+    /// Returns (view_low, view_high) in Hz — ~1/3 larger than the FF range, clamped to [0, nyquist].
+    /// Returns None for FrequencyFocus::None (show everything).
+    pub fn view_range_hz(self, nyquist: f64) -> Option<(f64, f64)> {
+        let (ff_lo, ff_hi) = self.freq_range_hz()?;
+        let ff_hi = ff_hi.min(nyquist);
+        let bandwidth = ff_hi - ff_lo;
+        let padding = bandwidth / 6.0; // 1/6 each side = 1/3 total extra
+        let view_lo = (ff_lo - padding).max(0.0);
+        let view_hi = (ff_hi + padding).min(nyquist);
+        Some((view_lo, view_hi))
+    }
+
     /// Auto listen-mode implied by this focus (used when ListenAdjustment::Auto).
     pub fn auto_listen_mode(self) -> PlaybackMode {
         match self {
@@ -232,6 +245,7 @@ pub struct AppState {
     pub mv_intensity_gate: RwSignal<f32>,
     pub mv_movement_gate: RwSignal<f32>,
     pub mv_opacity: RwSignal<f32>,
+    pub min_display_freq: RwSignal<Option<f64>>,
     pub max_display_freq: RwSignal<Option<f64>>,
     pub mouse_freq: RwSignal<Option<f64>>,
     pub mouse_canvas_x: RwSignal<f64>,
@@ -327,6 +341,7 @@ impl AppState {
             mv_intensity_gate: RwSignal::new(0.5),
             mv_movement_gate: RwSignal::new(0.75),
             mv_opacity: RwSignal::new(0.75),
+            min_display_freq: RwSignal::new(None),
             max_display_freq: RwSignal::new(None),
             mouse_freq: RwSignal::new(None),
             mouse_canvas_x: RwSignal::new(0.0),

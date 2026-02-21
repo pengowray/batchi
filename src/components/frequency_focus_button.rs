@@ -27,11 +27,16 @@ pub fn FrequencyFocusButton() -> impl IntoView {
             .map(|f| f.spectrogram.max_freq)
             .unwrap_or(96_000.0);
 
-        let new_max = match ff.freq_range_hz() {
-            Some((_, high)) => Some(high.min(file_nyquist)),
-            None => None,
-        };
-        state.max_display_freq.set(new_max);
+        match ff.view_range_hz(file_nyquist) {
+            Some((view_lo, view_hi)) => {
+                state.min_display_freq.set(Some(view_lo));
+                state.max_display_freq.set(Some(view_hi));
+            }
+            None => {
+                state.min_display_freq.set(None);
+                state.max_display_freq.set(None);
+            }
+        }
 
         if state.listen_adjustment.get_untracked() == ListenAdjustment::Auto {
             state.playback_mode.set(ff.auto_listen_mode());

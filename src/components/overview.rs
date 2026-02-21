@@ -72,11 +72,13 @@ fn draw_overview_spectrogram(
     spec_time_res: f64,       // seconds per full-FFT spectrogram column (for viewport width)
     total_duration: f64,      // total file duration in seconds (from audio, always correct)
     main_canvas_width: f64,   // actual pixel width of main spectrogram canvas
-    main_freq_crop: f64,      // 0..1: fraction of Nyquist shown in main view (1=all)
+    main_freq_crop_lo: f64,   // 0..1: low fraction of Nyquist shown in main view
+    main_freq_crop_hi: f64,   // 0..1: high fraction of Nyquist shown in main view
     bookmarks: &[(f64,)],
     playhead_time: f64,
     is_playing: bool,
     overview_freq_crop: f64,  // 0..1: fraction shown in the overview itself
+    ff_range: Option<(f64, f64)>, // FF range as (lo_frac, hi_frac) of Nyquist
 ) {
     let cw = canvas.width() as f64;
     let ch = canvas.height() as f64;
@@ -132,12 +134,10 @@ fn draw_overview_spectrogram(
     let vp_x = (scroll_offset * px_per_sec).max(0.0);
     let vp_w = (visible_time * px_per_sec).max(2.0);
 
-    // Vertical: map main_freq_crop into the overview's freq coordinate space.
+    // Vertical: map main view freq range into the overview's freq coordinate space.
     // overview y=0 → top freq (ofc * Nyquist), y=ch → 0 Hz.
-    // main shows 0 Hz .. main_freq_crop*Nyquist.
-    // Top of main range in overview coords:
-    let vp_y1 = (ch * (1.0 - main_freq_crop / ofc)).clamp(0.0, ch);
-    let vp_y2 = ch;
+    let vp_y1 = (ch * (1.0 - main_freq_crop_hi / ofc)).clamp(0.0, ch);
+    let vp_y2 = (ch * (1.0 - main_freq_crop_lo / ofc)).clamp(0.0, ch);
     let vp_h = vp_y2 - vp_y1;
 
     ctx.set_fill_style_str("rgba(80, 180, 130, 0.12)");
@@ -145,6 +145,19 @@ fn draw_overview_spectrogram(
     ctx.set_stroke_style_str("rgba(80, 180, 130, 0.55)");
     ctx.set_line_width(1.0);
     ctx.stroke_rect(vp_x, vp_y1, vp_w, vp_h);
+
+    // FF range highlight (nested inside viewport rect)
+    if let Some((ff_lo, ff_hi)) = ff_range {
+        let ff_y1 = (ch * (1.0 - ff_hi / ofc)).clamp(0.0, ch);
+        let ff_y2 = (ch * (1.0 - ff_lo / ofc)).clamp(0.0, ch);
+        if ff_y2 - ff_y1 > 0.5 {
+            ctx.set_fill_style_str("rgba(120, 200, 160, 0.15)");
+            ctx.fill_rect(vp_x, ff_y1, vp_w, ff_y2 - ff_y1);
+            ctx.set_stroke_style_str("rgba(120, 200, 160, 0.7)");
+            ctx.set_line_width(1.0);
+            ctx.stroke_rect(vp_x, ff_y1, vp_w, ff_y2 - ff_y1);
+        }
+    }
 
     // Bookmark dots (yellow, top edge)
     ctx.set_fill_style_str("rgba(255, 200, 50, 0.9)");
@@ -296,7 +309,9 @@ pub fn OverviewPanel() -> impl IntoView {
         let zoom = state.zoom_level.get();
         let overview_view = state.overview_view.get();
         let freq_mode = state.overview_freq_mode.get();
+        let min_display_freq = state.min_display_freq.get();
         let max_display_freq = state.max_display_freq.get();
+        let ff = state.frequency_focus.get();
         let bookmarks = state.bookmarks.get();
         let playhead = state.playhead_time.get();
         let is_playing = state.is_playing.get();
@@ -326,10 +341,20 @@ pub fn OverviewPanel() -> impl IntoView {
             file.audio.sample_rate as f64 / 2.0
         };
 
-        // Fraction of Nyquist shown in the main view (1.0 = show all)
-        let main_freq_crop = max_display_freq
+        // Fractions of Nyquist shown in the main view
+        let main_freq_crop_hi = max_display_freq
             .map(|mdf| (mdf / max_freq).clamp(0.001, 1.0))
             .unwrap_or(1.0);
+        let main_freq_crop_lo = min_display_freq
+            .map(|mdf| (mdf / max_freq).clamp(0.0, 1.0))
+            .unwrap_or(0.0);
+
+        // FF range as fractions of Nyquist (for the inner highlight)
+        let ff_range = ff.freq_range_hz().map(|(lo, hi)| {
+            let lo_frac = (lo / max_freq).clamp(0.0, 1.0);
+            let hi_frac = (hi.min(max_freq) / max_freq).clamp(0.0, 1.0);
+            (lo_frac, hi_frac)
+        });
 
         match overview_view {
             OverviewView::Spectrogram => {
@@ -348,11 +373,13 @@ pub fn OverviewPanel() -> impl IntoView {
                         file.spectrogram.time_resolution, // spec_time_res (for viewport width)
                         file.audio.duration_secs,         // true total duration
                         main_canvas_w,
-                        main_freq_crop,
+                        main_freq_crop_lo,
+                        main_freq_crop_hi,
                         &bm_tuples,
                         playhead,
                         is_playing,
                         overview_freq_crop,
+                        ff_range,
                     );
                 } else {
                     ctx.set_fill_style_str("#333");

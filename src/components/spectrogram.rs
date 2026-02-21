@@ -141,6 +141,7 @@ pub fn Spectrogram() -> impl IntoView {
         let te_factor = state.te_factor.get();
         let ps_factor = state.ps_factor.get();
         let playback_mode = state.playback_mode.get();
+        let min_display_freq = state.min_display_freq.get();
         let max_display_freq = state.max_display_freq.get();
         let mouse_freq = state.mouse_freq.get();
         let mouse_cx = state.mouse_canvas_x.get();
@@ -186,7 +187,9 @@ pub fn Spectrogram() -> impl IntoView {
             .map(|f| f.spectrogram.max_freq)
             .unwrap_or(96_000.0);
         let max_freq = max_display_freq.unwrap_or(file_max_freq);
-        let freq_crop = max_freq / file_max_freq;
+        let min_freq = min_display_freq.unwrap_or(0.0);
+        let freq_crop_lo = min_freq / file_max_freq;
+        let freq_crop_hi = max_freq / file_max_freq;
 
         if sidebar_tab == SidebarTab::Harmonics {
             // --- Phase coherence heatmap mode ---
@@ -200,7 +203,8 @@ pub fn Spectrogram() -> impl IntoView {
                             display_h,
                             scroll_col,
                             zoom,
-                            freq_crop,
+                            freq_crop_lo,
+                            freq_crop_hi,
                         );
                     }
                     _ => {
@@ -228,6 +232,7 @@ pub fn Spectrogram() -> impl IntoView {
             };
             spectrogram_renderer::draw_freq_markers(
                 &ctx,
+                min_freq,
                 max_freq,
                 display_h as f64,
                 display_w as f64,
@@ -254,7 +259,7 @@ pub fn Spectrogram() -> impl IntoView {
         // --- Normal spectrogram mode ---
         pre_rendered.with_untracked(|pr| {
             if let Some(rendered) = pr {
-                spectrogram_renderer::blit_viewport(&ctx, rendered, canvas, scroll_col, zoom, freq_crop);
+                spectrogram_renderer::blit_viewport(&ctx, rendered, canvas, scroll_col, zoom, freq_crop_lo, freq_crop_hi);
 
                 // Determine frequency shift mode for marker labels
                 let show_het = het_interacting
@@ -280,6 +285,7 @@ pub fn Spectrogram() -> impl IntoView {
 
                 spectrogram_renderer::draw_freq_markers(
                     &ctx,
+                    min_freq,
                     max_freq,
                     display_h as f64,
                     display_w as f64,
@@ -293,6 +299,7 @@ pub fn Spectrogram() -> impl IntoView {
                         &ctx,
                         het_freq,
                         het_cutoff,
+                        min_freq,
                         max_freq,
                         display_h as f64,
                         display_w as f64,
@@ -304,6 +311,7 @@ pub fn Spectrogram() -> impl IntoView {
                     spectrogram_renderer::draw_selection(
                         &ctx,
                         &sel,
+                        min_freq,
                         max_freq,
                         scroll,
                         time_res,
@@ -315,6 +323,7 @@ pub fn Spectrogram() -> impl IntoView {
                         spectrogram_renderer::draw_harmonic_shadows(
                             &ctx,
                             &sel,
+                            min_freq,
                             max_freq,
                             scroll,
                             time_res,
@@ -334,6 +343,7 @@ pub fn Spectrogram() -> impl IntoView {
                             state.filter_freq_low.get_untracked(),
                             state.filter_freq_high.get_untracked(),
                             state.filter_band_mode.get_untracked(),
+                            min_freq,
                             max_freq,
                             display_w as f64,
                             display_h as f64,
@@ -438,11 +448,13 @@ pub fn Spectrogram() -> impl IntoView {
         let file_max_freq = file.spectrogram.max_freq;
         let max_freq = state.max_display_freq.get_untracked()
             .unwrap_or(file_max_freq);
+        let min_freq = state.min_display_freq.get_untracked()
+            .unwrap_or(0.0);
         let scroll = state.scroll_offset.get_untracked();
         let zoom = state.zoom_level.get_untracked();
 
         let (t, f) = spectrogram_renderer::pixel_to_time_freq(
-            px_x, px_y, max_freq, scroll, time_res, zoom, cw, ch,
+            px_x, px_y, min_freq, max_freq, scroll, time_res, zoom, cw, ch,
         );
         Some((px_x, t, f))
     };
@@ -606,7 +618,8 @@ fn draw_coherence_heatmap(
     display_h: u32,
     scroll_col: f64,
     zoom: f64,
-    freq_crop: f64,
+    freq_crop_lo: f64,
+    freq_crop_hi: f64,
 ) {
     let w = display_w as usize;
     let h = display_h as usize;
@@ -637,9 +650,9 @@ fn draw_coherence_heatmap(
 
         for px_y in 0..h {
             // Map pixel row → frequency bin.
-            // Row 0 (top) = max displayed freq, row h (bottom) = 0 Hz.
-            // freq_crop = max_display_freq / file_max_freq, so max bin shown = n_bins * freq_crop.
-            let bin_f = n_bins as f64 * freq_crop * (1.0 - px_y as f64 / h as f64);
+            // Row 0 (top) = max displayed freq, row h (bottom) = min displayed freq.
+            let frac = freq_crop_lo + (freq_crop_hi - freq_crop_lo) * (1.0 - px_y as f64 / h as f64);
+            let bin_f = (n_bins as f64 * frac).min((n_bins - 1) as f64);
             let bin_i = (bin_f as usize).min(n_bins - 1);
 
             let coherence = frame_row[bin_i];

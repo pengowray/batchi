@@ -298,16 +298,30 @@ fn compute_flow_shift(prev: &[f32], curr: &[f32], bin: usize, h: usize) -> f32 {
     best_d as f32 / max_disp as f32
 }
 
+/// Convert a frequency to a canvas Y coordinate.
+/// min_freq is shown at the bottom (y = canvas_height), max_freq at the top (y = 0).
+#[inline]
+pub fn freq_to_y(freq: f64, min_freq: f64, max_freq: f64, canvas_height: f64) -> f64 {
+    canvas_height * (1.0 - (freq - min_freq) / (max_freq - min_freq))
+}
+
+/// Convert a canvas Y coordinate back to a frequency.
+#[inline]
+pub fn y_to_freq(y: f64, min_freq: f64, max_freq: f64, canvas_height: f64) -> f64 {
+    min_freq + (max_freq - min_freq) * (1.0 - y / canvas_height)
+}
+
 /// Blit the pre-rendered spectrogram to a visible canvas, handling scroll, zoom, and freq crop.
-/// `freq_crop` is 0.0–1.0: fraction of the vertical image to show (from bottom / low freq).
-/// 1.0 = show all, 0.5 = show bottom half only.
+/// `freq_crop_lo` / `freq_crop_hi` are fractions (0..1) of the full image height:
+/// lo = min_display_freq / file_max_freq, hi = max_display_freq / file_max_freq.
 pub fn blit_viewport(
     ctx: &CanvasRenderingContext2d,
     pre_rendered: &PreRendered,
     canvas: &HtmlCanvasElement,
     scroll_col: f64,
     zoom: f64,
-    freq_crop: f64,
+    freq_crop_lo: f64,
+    freq_crop_hi: f64,
 ) {
     let cw = canvas.width() as f64;
     let ch = canvas.height() as f64;
@@ -320,23 +334,26 @@ pub fn blit_viewport(
         return;
     }
 
-    let fc = freq_crop.max(0.01);
+    let fc_lo = freq_crop_lo.max(0.0);
+    let fc_hi = freq_crop_hi.max(0.01);
 
     // How many source columns are visible at current zoom
     let visible_cols = (cw / zoom).min(pre_rendered.width as f64);
     let src_start = scroll_col.max(0.0).min((pre_rendered.width as f64 - visible_cols).max(0.0));
 
     // Vertical crop: row 0 = highest freq, last row = 0 Hz
+    // Extract the band from fc_lo to fc_hi of the full image
     let full_h = pre_rendered.height as f64;
-    let (src_y, src_h, dst_y, dst_h) = if fc <= 1.0 {
-        // Display range <= data range: crop to bottom `fc` fraction of source
-        let sy = full_h * (1.0 - fc);
-        (sy, full_h * fc, 0.0, ch)
+    let (src_y, src_h, dst_y, dst_h) = if fc_hi <= 1.0 {
+        let sy = full_h * (1.0 - fc_hi);
+        let sh = full_h * (fc_hi - fc_lo).max(0.001);
+        (sy, sh, 0.0, ch)
     } else {
-        // Display range > data range (above Nyquist): draw all data into
-        // the bottom portion of the canvas, leaving the top black
-        let frac = 1.0 / fc; // fraction of canvas the data occupies
-        (0.0, full_h, ch * (1.0 - frac), ch * frac)
+        // Display range extends above Nyquist
+        let fc_range = (fc_hi - fc_lo).max(0.001);
+        let data_frac = (1.0 - fc_lo) / fc_range;
+        let sh = full_h * (1.0 - fc_lo);
+        (0.0, sh, ch * (1.0 - data_frac), ch * data_frac)
     };
 
     // Create ImageData from pixel buffer and draw it
@@ -409,6 +426,7 @@ pub struct FreqMarkerState {
 /// Labels are white; colored range bars indicate the resistor-band color.
 pub fn draw_freq_markers(
     ctx: &CanvasRenderingContext2d,
+    min_freq: f64,
     max_freq: f64,
     canvas_height: f64,
     canvas_width: f64,
@@ -423,9 +441,10 @@ pub fn draw_freq_markers(
     let tick_len = 22.0; // short tick under label (~half old label_area_w)
     let right_tick_len = 15.0;
 
-    // Collect all division freqs to check for nyquist overlap
+    // Collect all division freqs within visible range
     let mut divisions: Vec<f64> = Vec::new();
-    let mut freq = 10_000.0;
+    let first_div = ((min_freq / 10_000.0).ceil() * 10_000.0).max(10_000.0);
+    let mut freq = first_div;
     while freq < max_freq {
         divisions.push(freq);
         freq += 10_000.0;
@@ -435,11 +454,11 @@ pub fn draw_freq_markers(
     let is_nyquist_top = (max_freq - ms.file_max_freq).abs() < 1.0;
     // Find topmost division for nyquist overlap check
     let topmost_div = divisions.last().copied().unwrap_or(0.0);
-    let topmost_div_y_frac = if max_freq > 0.0 { topmost_div / max_freq } else { 0.0 };
+    let topmost_div_y_frac = if max_freq > min_freq { (topmost_div - min_freq) / (max_freq - min_freq) } else { 0.0 };
     let hide_topmost_for_nyquist = is_nyquist_top && topmost_div_y_frac > 0.95;
 
     for &freq in &divisions {
-        let y = canvas_height * (1.0 - freq / max_freq);
+        let y = freq_to_y(freq, min_freq, max_freq, canvas_height);
 
         // Skip topmost division if it would overlap nyquist marker
         if hide_topmost_for_nyquist && freq == topmost_div && !ms.mouse_in_label_area {
@@ -462,8 +481,8 @@ pub fn draw_freq_markers(
         let mouse_in_range = ms.mouse_freq.map_or(false, |mf| mf >= freq && mf < bar_top_freq);
         if ms.has_selection || mouse_in_range {
             let bar_alpha = if ms.has_selection { 0.6 } else { 0.8 };
-            let bar_y_top = canvas_height * (1.0 - bar_top_freq / max_freq);
-            let bar_y_bot = canvas_height * (1.0 - freq / max_freq);
+            let bar_y_top = freq_to_y(bar_top_freq, min_freq, max_freq, canvas_height);
+            let bar_y_bot = freq_to_y(freq, min_freq, max_freq, canvas_height);
             ctx.set_fill_style_str(&format!("rgba({},{},{},{:.2})", color[0], color[1], color[2], bar_alpha));
             ctx.fill_rect(color_bar_x, bar_y_top, color_bar_w, bar_y_bot - bar_y_top);
         }
@@ -585,8 +604,8 @@ pub fn draw_freq_markers(
 
     // --- Cursor frequency indicator ---
     if let Some(mf) = ms.mouse_freq {
-        if !ms.mouse_in_label_area && mf > 0.0 && mf < max_freq {
-            let y = canvas_height * (1.0 - mf / max_freq);
+        if !ms.mouse_in_label_area && mf > min_freq && mf < max_freq {
+            let y = freq_to_y(mf, min_freq, max_freq, canvas_height);
 
             // Label (above the dashed line, starting around midpoint)
             let freq_label = if mf >= 1000.0 {
@@ -631,17 +650,18 @@ pub fn draw_het_overlay(
     ctx: &CanvasRenderingContext2d,
     het_freq: f64,
     het_cutoff: f64,
+    min_freq: f64,
     max_freq: f64,
     canvas_height: f64,
     canvas_width: f64,
 ) {
     let cutoff = het_cutoff;
-    let band_low = (het_freq - cutoff).max(0.0);
+    let band_low = (het_freq - cutoff).max(min_freq);
     let band_high = (het_freq + cutoff).min(max_freq);
 
-    let y_center = canvas_height * (1.0 - het_freq / max_freq);
-    let y_band_top = canvas_height * (1.0 - band_high / max_freq);
-    let y_band_bottom = canvas_height * (1.0 - band_low / max_freq);
+    let y_center = freq_to_y(het_freq, min_freq, max_freq, canvas_height);
+    let y_band_top = freq_to_y(band_high, min_freq, max_freq, canvas_height);
+    let y_band_bottom = freq_to_y(band_low, min_freq, max_freq, canvas_height);
 
     // Dim regions outside the audible band
     ctx.set_fill_style_str("rgba(0, 0, 0, 0.5)");
@@ -690,6 +710,7 @@ pub fn draw_het_overlay(
 pub fn draw_selection(
     ctx: &CanvasRenderingContext2d,
     selection: &Selection,
+    min_freq: f64,
     max_freq: f64,
     scroll_offset: f64,
     time_resolution: f64,
@@ -703,8 +724,8 @@ pub fn draw_selection(
 
     let x0 = ((selection.time_start - start_time) * px_per_sec).max(0.0);
     let x1 = ((selection.time_end - start_time) * px_per_sec).min(canvas_width);
-    let y0 = (canvas_height * (1.0 - selection.freq_high / max_freq)).max(0.0);
-    let y1 = (canvas_height * (1.0 - selection.freq_low / max_freq)).min(canvas_height);
+    let y0 = freq_to_y(selection.freq_high, min_freq, max_freq, canvas_height).max(0.0);
+    let y1 = freq_to_y(selection.freq_low, min_freq, max_freq, canvas_height).min(canvas_height);
 
     if x1 <= x0 || y1 <= y0 {
         return;
@@ -725,6 +746,7 @@ pub fn draw_selection(
 pub fn draw_harmonic_shadows(
     ctx: &CanvasRenderingContext2d,
     selection: &Selection,
+    min_freq: f64,
     max_freq: f64,
     scroll_offset: f64,
     time_resolution: f64,
@@ -758,8 +780,8 @@ pub fn draw_harmonic_shadows(
     let hi_low = selection.freq_low * 2.0;
     let hi_high = selection.freq_high * 2.0;
     if hi_low < max_freq {
-        let y0 = (canvas_height * (1.0 - hi_high.min(max_freq) / max_freq)).max(0.0);
-        let y1 = (canvas_height * (1.0 - hi_low / max_freq)).min(canvas_height);
+        let y0 = freq_to_y(hi_high.min(max_freq), min_freq, max_freq, canvas_height).max(0.0);
+        let y1 = freq_to_y(hi_low, min_freq, max_freq, canvas_height).min(canvas_height);
         if y1 > y0 {
             ctx.set_fill_style_str("rgba(50, 120, 200, 0.06)");
             ctx.fill_rect(x0, y0, w, y1 - y0);
@@ -773,8 +795,8 @@ pub fn draw_harmonic_shadows(
     let lo_low = selection.freq_low / 2.0;
     let lo_high = selection.freq_high / 2.0;
     {
-        let y0 = (canvas_height * (1.0 - lo_high / max_freq)).max(0.0);
-        let y1 = (canvas_height * (1.0 - lo_low.max(0.0) / max_freq)).min(canvas_height);
+        let y0 = freq_to_y(lo_high, min_freq, max_freq, canvas_height).max(0.0);
+        let y1 = freq_to_y(lo_low.max(min_freq), min_freq, max_freq, canvas_height).min(canvas_height);
         if y1 > y0 {
             ctx.set_fill_style_str("rgba(50, 120, 200, 0.06)");
             ctx.fill_rect(x0, y0, w, y1 - y0);
@@ -798,6 +820,7 @@ pub fn draw_filter_overlay(
     freq_low: f64,
     freq_high: f64,
     band_mode: u8,
+    min_freq: f64,
     max_freq: f64,
     canvas_width: f64,
     canvas_height: f64,
@@ -817,8 +840,8 @@ pub fn draw_filter_overlay(
         _ => return,
     };
 
-    let y_top = (canvas_height * (1.0 - band_hi.min(max_freq) / max_freq)).max(0.0);
-    let y_bot = (canvas_height * (1.0 - band_lo.max(0.0) / max_freq)).min(canvas_height);
+    let y_top = freq_to_y(band_hi.min(max_freq), min_freq, max_freq, canvas_height).max(0.0);
+    let y_bot = freq_to_y(band_lo.max(min_freq), min_freq, max_freq, canvas_height).min(canvas_height);
 
     if y_bot <= y_top {
         return;
@@ -850,6 +873,7 @@ pub fn draw_filter_overlay(
 pub fn pixel_to_time_freq(
     px_x: f64,
     px_y: f64,
+    min_freq: f64,
     max_freq: f64,
     scroll_offset: f64,
     time_resolution: f64,
@@ -859,6 +883,6 @@ pub fn pixel_to_time_freq(
 ) -> (f64, f64) {
     let visible_time = (canvas_width / zoom) * time_resolution;
     let time = scroll_offset + (px_x / canvas_width) * visible_time;
-    let freq = max_freq * (1.0 - px_y / canvas_height);
+    let freq = y_to_freq(px_y, min_freq, max_freq, canvas_height);
     (time, freq)
 }

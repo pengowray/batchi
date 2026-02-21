@@ -461,6 +461,7 @@ fn SpectrogramSettingsPanel() -> impl IntoView {
             v => v.parse::<f64>().ok().map(|khz| khz * 1000.0),
         };
         state.max_display_freq.set(freq);
+        state.min_display_freq.set(None); // reset to 0 Hz on manual override
     };
 
     view! {
