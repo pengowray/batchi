@@ -1455,9 +1455,9 @@ fn AnalysisPanel() -> impl IntoView {
                                     let pct = count as f64 / sign_total as f64 * 100.0;
                                     let missing = sign_total - count;
                                     if missing > 0 && pct >= 99.5 {
-                                        format!("Bit {}: {} / {} {} samples ({:.1}%) — all but {}", label, count, sign_total, polarity, pct, missing)
+                                        format!("Bit {} is set in {} / {} {} samples ({:.1}%) — all but {}", label, count, sign_total, polarity, pct, missing)
                                     } else {
-                                        format!("Bit {}: {} / {} {} samples ({:.1}%)", label, count, sign_total, polarity, pct)
+                                        format!("Bit {} is set in {} / {} {} samples ({:.1}%)", label, count, sign_total, polarity, pct)
                                     }
                                 } else {
                                     format!("Bit {}: no {} samples", label, polarity)
