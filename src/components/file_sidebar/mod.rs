@@ -1,21 +1,21 @@
 mod files_panel;
-mod settings_panel;
-mod analysis;
-mod metadata_panel;
-mod harmonics;
+pub mod settings_panel;
+pub mod analysis;
+pub mod metadata_panel;
+pub mod harmonics;
 mod loading;
 
 use leptos::prelude::*;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use js_sys;
-use crate::state::{AppState, SidebarTab};
+use crate::state::AppState;
 
 use files_panel::FilesPanel;
-use settings_panel::{SpectrogramSettingsPanel, SelectionPanel};
-use analysis::AnalysisPanel;
-use metadata_panel::MetadataPanel;
-use harmonics::HarmonicsPanel;
+pub(crate) use settings_panel::{SpectrogramSettingsPanel, SelectionPanel};
+pub(crate) use analysis::AnalysisPanel as SidebarAnalysisPanel;
+pub(crate) use metadata_panel::MetadataPanel;
+pub(crate) use harmonics::HarmonicsPanel;
 
 fn copy_to_clipboard(text: &str) {
     if let Some(window) = web_sys::window() {
@@ -71,35 +71,6 @@ pub fn FileSidebar() -> impl IntoView {
         cls
     };
 
-    let dropdown_open = state.sidebar_dropdown_open;
-
-    let on_dropdown_toggle = move |_: web_sys::MouseEvent| {
-        if state.sidebar_collapsed.get_untracked() {
-            state.sidebar_collapsed.set(false);
-        } else {
-            dropdown_open.update(|v| *v = !*v);
-        }
-    };
-
-    let select_tab = move |tab: SidebarTab| {
-        state.sidebar_collapsed.set(false);
-        state.sidebar_tab.set(tab);
-        dropdown_open.set(false);
-    };
-
-    // Close dropdown when clicking outside
-    let on_dropdown_blur = move |_: web_sys::FocusEvent| {
-        // Small delay to allow click on menu items to register first
-        let handle = wasm_bindgen::closure::Closure::once(move || {
-            dropdown_open.set(false);
-        });
-        let _ = web_sys::window().unwrap().set_timeout_with_callback_and_timeout_and_arguments_0(
-            handle.as_ref().unchecked_ref(),
-            150,
-        );
-        handle.forget();
-    };
-
     view! {
         <div class=sidebar_class>
             <div class="sidebar-tabs">
@@ -109,7 +80,6 @@ pub fn FileSidebar() -> impl IntoView {
                             class="sidebar-tab sidebar-collapse-btn"
                             on:click=move |_| {
                                 state.sidebar_collapsed.update(|c| *c = !*c);
-                                dropdown_open.set(false);
                             }
                             title=move || if state.sidebar_collapsed.get() { "Show sidebar" } else { "Hide sidebar" }
                         >
@@ -119,45 +89,9 @@ pub fn FileSidebar() -> impl IntoView {
                 } else {
                     None
                 }}
-                <div class="sidebar-tab-dropdown-wrap" tabindex="-1" on:focusout=on_dropdown_blur>
-                    <button class="sidebar-tab-dropdown" on:click=on_dropdown_toggle>
-                        {move || state.sidebar_tab.get().label()}
-                        <span class="dropdown-arrow">{move || if dropdown_open.get() { "\u{25B4}" } else { "\u{25BE}" }}</span>
-                    </button>
-                    {move || {
-                        if dropdown_open.get() {
-                            let items: Vec<_> = SidebarTab::ALL.iter().map(|&tab| {
-                                let is_active = move || state.sidebar_tab.get() == tab;
-                                let label = tab.label();
-                                view! {
-                                    <button
-                                        class=move || if is_active() { "sidebar-tab-option active" } else { "sidebar-tab-option" }
-                                        on:mousedown=move |ev: web_sys::MouseEvent| {
-                                            ev.prevent_default();
-                                            select_tab(tab);
-                                        }
-                                    >
-                                        {label}
-                                    </button>
-                                }
-                            }).collect();
-                            view! {
-                                <div class="sidebar-tab-menu">{items}</div>
-                            }.into_any()
-                        } else {
-                            view! { <span></span> }.into_any()
-                        }
-                    }}
-                </div>
+                <div class="sidebar-header-label">"Files"</div>
             </div>
-            {move || match state.sidebar_tab.get() {
-                SidebarTab::Files => view! { <FilesPanel /> }.into_any(),
-                SidebarTab::Spectrogram => view! { <SpectrogramSettingsPanel /> }.into_any(),
-                SidebarTab::Selection => view! { <SelectionPanel /> }.into_any(),
-                SidebarTab::Analysis => view! { <AnalysisPanel /> }.into_any(),
-                SidebarTab::Harmonics => view! { <HarmonicsPanel /> }.into_any(),
-                SidebarTab::Metadata => view! { <MetadataPanel /> }.into_any(),
-            }}
+            <FilesPanel />
             {if !is_mobile {
                 Some(view! { <div class="sidebar-resize-handle" on:mousedown=on_resize_start></div> })
             } else {

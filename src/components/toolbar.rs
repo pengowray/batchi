@@ -73,6 +73,26 @@ pub fn Toolbar() -> impl IntoView {
                 })}
             </div>
 
+            // Settings button (opens right sidebar on mobile)
+            {if is_mobile {
+                Some(view! {
+                    <button
+                        class="toolbar-menu-btn"
+                        on:click=move |ev: web_sys::MouseEvent| {
+                            ev.stop_propagation();
+                            state.right_sidebar_collapsed.update(|c| *c = !*c);
+                            // Close left sidebar when opening right
+                            if !state.right_sidebar_collapsed.get_untracked() {
+                                state.sidebar_collapsed.set(true);
+                            }
+                        }
+                        title="Settings"
+                    >{"\u{2699}"}</button>
+                })
+            } else {
+                None
+            }}
+
             // Record button
             <button
                 class=move || if state.mic_recording.get() { "toolbar-record-btn active" } else { "toolbar-record-btn" }

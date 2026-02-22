@@ -58,7 +58,7 @@ fn format_file_size(bytes: usize) -> String {
 }
 
 #[component]
-pub(super) fn MetadataPanel() -> impl IntoView {
+pub(crate) fn MetadataPanel() -> impl IntoView {
     let state = expect_context::<AppState>();
 
     view! {

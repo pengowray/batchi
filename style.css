@@ -1645,3 +1645,43 @@ body.sidebar-resizing {
     background: rgba(0, 0, 0, 0.4);
     z-index: 199;
 }
+
+/* ── Left sidebar header label ─────────────────────────────────────── */
+.sidebar-header-label {
+    flex: 1;
+    padding: 10px 8px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #eee;
+    border-bottom: 2px solid #4a8;
+}
+
+/* ── Right sidebar overrides ───────────────────────────────────────── */
+.right-sidebar {
+    border-right: none;
+    border-left: 1px solid #333;
+}
+
+.right-sidebar.collapsed {
+    border-left: none;
+}
+
+.right-sidebar.collapsed .sidebar-collapse-btn {
+    left: auto;
+    right: 4px;
+}
+
+.right-sidebar .sidebar-resize-handle {
+    right: auto;
+    left: -3px;
+}
+
+.right-sidebar.mobile-overlay {
+    left: auto;
+    right: 0;
+    box-shadow: -4px 0 20px rgba(0,0,0,0.5);
+}
+
+.right-sidebar.mobile-overlay.collapsed {
+    transform: translateX(100%);
+}

@@ -5,6 +5,7 @@ use crate::state::{AppState, LayerPanel, OverviewView};
 use crate::audio::playback;
 use crate::audio::microphone;
 use crate::components::file_sidebar::FileSidebar;
+use crate::components::right_sidebar::RightSidebar;
 use crate::components::spectrogram::Spectrogram;
 use crate::components::waveform::Waveform;
 use crate::components::toolbar::Toolbar;
@@ -69,12 +70,12 @@ pub fn App() -> impl IntoView {
 
     let grid_style = move || {
         if is_mobile {
-            // Sidebar is position:fixed overlay, so single column for main content
+            // Sidebars are position:fixed overlays, so single column for main content
             "grid-template-columns: 1fr".to_string()
-        } else if state.sidebar_collapsed.get() {
-            "grid-template-columns: 0px 1fr".to_string()
         } else {
-            format!("grid-template-columns: {}px 1fr", state.sidebar_width.get() as i32)
+            let left = if state.sidebar_collapsed.get() { 0 } else { state.sidebar_width.get() as i32 };
+            let right = if state.right_sidebar_collapsed.get() { 0 } else { state.right_sidebar_width.get() as i32 };
+            format!("grid-template-columns: {}px 1fr {}px", left, right)
         }
     };
 
@@ -82,9 +83,12 @@ pub fn App() -> impl IntoView {
     if is_mobile {
         let state_back = state.clone();
         let on_popstate = wasm_bindgen::closure::Closure::<dyn Fn(web_sys::Event)>::new(move |_: web_sys::Event| {
-            if !state_back.sidebar_collapsed.get_untracked() {
+            if !state_back.right_sidebar_collapsed.get_untracked() {
+                state_back.right_sidebar_collapsed.set(true);
+                let _ = web_sys::window().unwrap().history().unwrap()
+                    .push_state_with_url(&wasm_bindgen::JsValue::NULL, "", None);
+            } else if !state_back.sidebar_collapsed.get_untracked() {
                 state_back.sidebar_collapsed.set(true);
-                // Re-push state so back button keeps working next time
                 let _ = web_sys::window().unwrap().history().unwrap()
                     .push_state_with_url(&wasm_bindgen::JsValue::NULL, "", None);
             }
@@ -103,14 +107,18 @@ pub fn App() -> impl IntoView {
             {if is_mobile {
                 Some(view! {
                     <div
-                        class=move || if state.sidebar_collapsed.get() { "sidebar-backdrop" } else { "sidebar-backdrop open" }
-                        on:click=move |_| state.sidebar_collapsed.set(true)
+                        class=move || if !state.sidebar_collapsed.get() || !state.right_sidebar_collapsed.get() { "sidebar-backdrop open" } else { "sidebar-backdrop" }
+                        on:click=move |_| {
+                            state.sidebar_collapsed.set(true);
+                            state.right_sidebar_collapsed.set(true);
+                        }
                     ></div>
                 })
             } else {
                 None
             }}
             <MainArea />
+            <RightSidebar />
         </div>
     }
 }
@@ -127,6 +135,7 @@ fn MainArea() -> impl IntoView {
         state.layer_panel_open.set(None);
         if is_mobile {
             state.sidebar_collapsed.set(true);
+            state.right_sidebar_collapsed.set(true);
         }
     };
 

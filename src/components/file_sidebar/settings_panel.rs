@@ -4,7 +4,7 @@ use crate::state::{AppState, FrequencyFocus, SpectrogramDisplay};
 use crate::dsp::zero_crossing::zero_crossing_frequency;
 
 #[component]
-pub(super) fn SpectrogramSettingsPanel() -> impl IntoView {
+pub(crate) fn SpectrogramSettingsPanel() -> impl IntoView {
     let state = expect_context::<AppState>();
 
     let on_toggle_change = move |ev: web_sys::Event| {
@@ -175,7 +175,7 @@ pub(super) fn SpectrogramSettingsPanel() -> impl IntoView {
 }
 
 #[component]
-pub(super) fn SelectionPanel() -> impl IntoView {
+pub(crate) fn SelectionPanel() -> impl IntoView {
     let state = expect_context::<AppState>();
 
     let analysis = move || {

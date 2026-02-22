@@ -5,7 +5,7 @@ use crate::state::AppState;
 use crate::dsp::harmonics;
 
 #[component]
-pub(super) fn HarmonicsPanel() -> impl IntoView {
+pub(crate) fn HarmonicsPanel() -> impl IntoView {
     let state = expect_context::<AppState>();
 
     let harmonics = Memo::new(move |_| {

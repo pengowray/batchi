@@ -4,7 +4,7 @@ use crate::dsp::bit_analysis::{self, BitCaution};
 use crate::dsp::wsnr;
 
 #[component]
-pub(super) fn AnalysisPanel() -> impl IntoView {
+pub(crate) fn AnalysisPanel() -> impl IntoView {
     let state = expect_context::<AppState>();
 
     let analysis = Memo::new(move |_| {

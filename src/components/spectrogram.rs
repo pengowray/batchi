@@ -7,7 +7,7 @@ use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement, ImageData, MouseEvent
 use crate::canvas::spectrogram_renderer::{self, FreqMarkerState, FreqShiftMode, MovementAlgo, MovementData, PreRendered};
 use crate::dsp::harmonics;
 use crate::audio::playback;
-use crate::state::{AppState, CanvasTool, SpectrogramHandle, ListenAdjustment, PlaybackMode, Selection, SidebarTab, SpectrogramDisplay};
+use crate::state::{AppState, CanvasTool, SpectrogramHandle, ListenAdjustment, PlaybackMode, Selection, RightSidebarTab, SpectrogramDisplay};
 
 const LABEL_AREA_WIDTH: f64 = 60.0;
 
@@ -188,8 +188,8 @@ pub fn Spectrogram() -> impl IntoView {
     // Effect 2b: compute phase coherence frames when the Harmonics tab becomes active or the file changes.
     // Only reads files/idx when the tab is Harmonics, so it doesn't run for every file change otherwise.
     Effect::new(move || {
-        let tab = state.sidebar_tab.get();
-        if tab != SidebarTab::Harmonics {
+        let tab = state.right_sidebar_tab.get();
+        if tab != RightSidebarTab::Harmonics {
             return;
         }
         let files = state.files.get();
@@ -224,7 +224,7 @@ pub fn Spectrogram() -> impl IntoView {
         let label_opacity = state.label_hover_opacity.get();
         let filter_hovering = state.filter_hovering_band.get();
         let filter_enabled = state.filter_enabled.get();
-        let sidebar_tab = state.sidebar_tab.get();
+        let sidebar_tab = state.right_sidebar_tab.get();
         let spec_hover = state.spec_hover_handle.get();
         let spec_drag = state.spec_drag_handle.get();
         let ff_lo = state.ff_freq_lo.get();
@@ -273,7 +273,7 @@ pub fn Spectrogram() -> impl IntoView {
         let freq_crop_lo = min_freq / file_max_freq;
         let freq_crop_hi = max_freq / file_max_freq;
 
-        if sidebar_tab == SidebarTab::Harmonics {
+        if sidebar_tab == RightSidebarTab::Harmonics {
             // --- Phase coherence heatmap mode ---
             coherence_frames.with_untracked(|cf| {
                 match cf {

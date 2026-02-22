@@ -37,9 +37,8 @@ pub enum SpectrogramDisplay {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
-pub enum SidebarTab {
+pub enum RightSidebarTab {
     #[default]
-    Files,
     Spectrogram,
     Selection,
     Analysis,
@@ -47,10 +46,9 @@ pub enum SidebarTab {
     Metadata,
 }
 
-impl SidebarTab {
+impl RightSidebarTab {
     pub fn label(self) -> &'static str {
         match self {
-            Self::Files => "Files",
             Self::Spectrogram => "Display",
             Self::Selection => "Selection",
             Self::Analysis => "Analysis",
@@ -59,8 +57,7 @@ impl SidebarTab {
         }
     }
 
-    pub const ALL: &'static [SidebarTab] = &[
-        Self::Files,
+    pub const ALL: &'static [RightSidebarTab] = &[
         Self::Spectrogram,
         Self::Selection,
         Self::Analysis,
@@ -268,7 +265,10 @@ pub struct AppState {
     pub is_dragging: RwSignal<bool>,
     pub spectrogram_display: RwSignal<SpectrogramDisplay>,
     pub mv_enabled: RwSignal<bool>,
-    pub sidebar_tab: RwSignal<SidebarTab>,
+    pub right_sidebar_tab: RwSignal<RightSidebarTab>,
+    pub right_sidebar_collapsed: RwSignal<bool>,
+    pub right_sidebar_width: RwSignal<f64>,
+    pub right_sidebar_dropdown_open: RwSignal<bool>,
     pub mv_intensity_gate: RwSignal<f32>,
     pub mv_movement_gate: RwSignal<f32>,
     pub mv_opacity: RwSignal<f32>,
@@ -294,7 +294,6 @@ pub struct AppState {
     pub het_cutoff: RwSignal<f64>,
     pub sidebar_collapsed: RwSignal<bool>,
     pub sidebar_width: RwSignal<f64>,
-    pub sidebar_dropdown_open: RwSignal<bool>,
     // Gain
     pub gain_db: RwSignal<f64>,
     pub auto_gain: RwSignal<bool>,
@@ -418,7 +417,10 @@ impl AppState {
             is_dragging: RwSignal::new(false),
             spectrogram_display: RwSignal::new(SpectrogramDisplay::MovementFlow),
             mv_enabled: RwSignal::new(false),
-            sidebar_tab: RwSignal::new(SidebarTab::Files),
+            right_sidebar_tab: RwSignal::new(RightSidebarTab::Spectrogram),
+            right_sidebar_collapsed: RwSignal::new(true),
+            right_sidebar_width: RwSignal::new(220.0),
+            right_sidebar_dropdown_open: RwSignal::new(false),
             mv_intensity_gate: RwSignal::new(0.5),
             mv_movement_gate: RwSignal::new(0.75),
             mv_opacity: RwSignal::new(0.75),
@@ -443,7 +445,6 @@ impl AppState {
             het_cutoff: RwSignal::new(15_000.0),
             sidebar_collapsed: RwSignal::new(false),
             sidebar_width: RwSignal::new(220.0),
-            sidebar_dropdown_open: RwSignal::new(false),
             gain_db: RwSignal::new(0.0),
             auto_gain: RwSignal::new(true),
 
