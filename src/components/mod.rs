@@ -9,3 +9,4 @@ pub mod play_controls;
 pub mod frequency_focus_button;
 pub mod listen_mode_button;
 pub mod tool_button;
+pub mod freq_range_button;

@@ -173,12 +173,23 @@ pub enum BandpassStrength {
     Custom,
 }
 
-/// Which heterodyne overlay handle is being dragged on the spectrogram.
+/// Which spectrogram overlay handle is being dragged / hovered.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub enum HetDragHandle {
-    Center,      // dragging the center frequency line
-    BandUpper,   // dragging the upper cutoff edge
-    BandLower,   // dragging the lower cutoff edge
+pub enum SpectrogramHandle {
+    FfUpper,       // FF upper boundary
+    FfLower,       // FF lower boundary
+    HetCenter,     // HET center freq
+    HetBandUpper,  // HET upper band edge
+    HetBandLower,  // HET lower band edge
+}
+
+/// How TE / PS factors are auto-computed from the FF range.
+#[derive(Clone, Copy, Debug, PartialEq, Default)]
+pub enum AutoFactorMode {
+    #[default]
+    Target3k,    // factor = FF_center / 3000
+    MinAudible,  // factor = FF_high / 20000
+    Fixed10x,    // factor = 10
 }
 
 /// Active interaction tool for the main spectrogram canvas.
@@ -213,6 +224,7 @@ pub enum LayerPanel {
     FrequencyFocus,
     ListenMode,
     Tool,
+    FreqRange,
 }
 
 /// A navigation history entry (for overview back/forward buttons).
@@ -325,9 +337,20 @@ pub struct AppState {
     // Main panel view mode (Spectrogram or Waveform)
     pub main_view: RwSignal<OverviewView>,
 
-    // HET spectrogram drag handles
-    pub het_drag_handle: RwSignal<Option<HetDragHandle>>,
-    pub het_hover_handle: RwSignal<Option<HetDragHandle>>,
+    // Spectrogram drag handles (FF + HET)
+    pub spec_drag_handle: RwSignal<Option<SpectrogramHandle>>,
+    pub spec_hover_handle: RwSignal<Option<SpectrogramHandle>>,
+
+    // FF frequency range (0.0 = no FF active)
+    pub ff_freq_lo: RwSignal<f64>,
+    pub ff_freq_hi: RwSignal<f64>,
+
+    // Per-parameter auto flags (true = computed from FF)
+    pub het_freq_auto: RwSignal<bool>,
+    pub het_cutoff_auto: RwSignal<bool>,
+    pub te_factor_auto: RwSignal<bool>,
+    pub ps_factor_auto: RwSignal<bool>,
+    pub auto_factor_mode: RwSignal<AutoFactorMode>,
 }
 
 impl AppState {
@@ -401,8 +424,15 @@ impl AppState {
             layer_panel_open: RwSignal::new(None),
             spectrogram_canvas_width: RwSignal::new(1000.0),
             main_view: RwSignal::new(OverviewView::Spectrogram),
-            het_drag_handle: RwSignal::new(None),
-            het_hover_handle: RwSignal::new(None),
+            spec_drag_handle: RwSignal::new(None),
+            spec_hover_handle: RwSignal::new(None),
+            ff_freq_lo: RwSignal::new(0.0),
+            ff_freq_hi: RwSignal::new(0.0),
+            het_freq_auto: RwSignal::new(true),
+            het_cutoff_auto: RwSignal::new(true),
+            te_factor_auto: RwSignal::new(true),
+            ps_factor_auto: RwSignal::new(true),
+            auto_factor_mode: RwSignal::new(AutoFactorMode::Target3k),
         }
     }
 

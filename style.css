@@ -1339,6 +1339,32 @@ body.sidebar-resizing {
     font-variant-numeric: tabular-nums;
 }
 
+/* Per-parameter auto toggle */
+.auto-toggle {
+    all: unset;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 3px;
+    font-size: 10px;
+    font-weight: bold;
+    color: #666;
+    background: rgba(255,255,255,0.06);
+    cursor: pointer;
+    margin-left: 4px;
+    flex-shrink: 0;
+}
+.auto-toggle:hover {
+    color: #aaa;
+    background: rgba(255,255,255,0.12);
+}
+.auto-toggle.on {
+    color: #0cf;
+    background: rgba(0,200,255,0.15);
+}
+
 /* Layer panel container: wraps button + panel for positioning */
 .layer-anchor {
     position: absolute;

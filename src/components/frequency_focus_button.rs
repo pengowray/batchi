@@ -1,5 +1,5 @@
 use leptos::prelude::*;
-use crate::state::{AppState, BandpassStrength, FrequencyFocus, LayerPanel, ListenAdjustment};
+use crate::state::{AppState, AutoFactorMode, BandpassStrength, FrequencyFocus, LayerPanel, ListenAdjustment};
 
 fn layer_opt_class(active: bool) -> &'static str {
     if active { "layer-panel-opt sel" } else { "layer-panel-opt" }
@@ -17,7 +17,7 @@ pub fn FrequencyFocusButton() -> impl IntoView {
 
     let is_open = move || state.layer_panel_open.get() == Some(LayerPanel::FrequencyFocus);
 
-    // When FrequencyFocus changes, update display freq and auto-listen mode
+    // Effect A: FF preset → ff_freq_lo / ff_freq_hi (+ display freq for human presets only)
     Effect::new(move || {
         let ff = state.frequency_focus.get();
         let files = state.files.get();
@@ -27,25 +27,79 @@ pub fn FrequencyFocusButton() -> impl IntoView {
             .map(|f| f.spectrogram.max_freq)
             .unwrap_or(96_000.0);
 
-        match ff.view_range_hz(file_nyquist) {
-            Some((view_lo, view_hi)) => {
-                state.min_display_freq.set(Some(view_lo));
-                state.max_display_freq.set(Some(view_hi));
-            }
-            None => {
+        match ff {
+            FrequencyFocus::None => {
+                state.ff_freq_lo.set(0.0);
+                state.ff_freq_hi.set(0.0);
                 state.min_display_freq.set(None);
                 state.max_display_freq.set(None);
             }
+            FrequencyFocus::Custom => {
+                // Custom — ff_freq_lo/hi are set by drag handles, don't touch
+            }
+            _ => {
+                if let Some((lo, hi)) = ff.freq_range_hz() {
+                    let hi = hi.min(file_nyquist);
+                    state.ff_freq_lo.set(lo);
+                    state.ff_freq_hi.set(hi);
+                }
+                // Only human presets zoom the display
+                match ff {
+                    FrequencyFocus::HumanHearing | FrequencyFocus::HumanSpeech => {
+                        state.min_display_freq.set(Some(0.0));
+                        state.max_display_freq.set(Some(22_000.0));
+                    }
+                    _ => {
+                        state.min_display_freq.set(None);
+                        state.max_display_freq.set(None);
+                    }
+                }
+            }
         }
+    });
 
+    // Effect B: FF → auto listen mode
+    Effect::new(move || {
+        let ff = state.frequency_focus.get();
         if state.listen_adjustment.get_untracked() == ListenAdjustment::Auto {
             state.playback_mode.set(ff.auto_listen_mode());
-            // Auto-set HET frequency for bat ranges
-            match ff {
-                FrequencyFocus::Bat1 => state.het_frequency.set(27_500.0),
-                FrequencyFocus::Bat2 => state.het_frequency.set(42_500.0),
-                _ => {}
-            }
+        }
+    });
+
+    // Effect C: FF range → auto parameter values
+    Effect::new(move || {
+        let ff_lo = state.ff_freq_lo.get();
+        let ff_hi = state.ff_freq_hi.get();
+        let mode = state.auto_factor_mode.get();
+
+        if ff_hi <= ff_lo {
+            return; // no FF active
+        }
+
+        let ff_center = (ff_lo + ff_hi) / 2.0;
+        let ff_bandwidth = ff_hi - ff_lo;
+
+        // Auto HET frequency
+        if state.het_freq_auto.get_untracked() {
+            state.het_frequency.set(ff_center);
+        }
+        // Auto HET cutoff
+        if state.het_cutoff_auto.get_untracked() {
+            state.het_cutoff.set((ff_bandwidth / 2.0).min(15_000.0));
+        }
+
+        // Compute factor based on mode
+        let factor = match mode {
+            AutoFactorMode::Target3k => ff_center / 3000.0,
+            AutoFactorMode::MinAudible => ff_hi / 20_000.0,
+            AutoFactorMode::Fixed10x => 10.0,
+        };
+
+        if state.te_factor_auto.get_untracked() {
+            state.te_factor.set(factor.round().clamp(2.0, 40.0));
+        }
+        if state.ps_factor_auto.get_untracked() {
+            state.ps_factor.set(factor.round().clamp(2.0, 20.0));
         }
     });
 

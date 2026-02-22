@@ -1,5 +1,5 @@
 use leptos::prelude::*;
-use crate::state::{AppState, BandpassStrength, HetDragHandle, LayerPanel, ListenAdjustment, PlaybackMode};
+use crate::state::{AppState, AutoFactorMode, BandpassStrength, SpectrogramHandle, LayerPanel, ListenAdjustment, PlaybackMode};
 
 fn layer_opt_class(active: bool) -> &'static str {
     if active { "layer-panel-opt sel" } else { "layer-panel-opt" }
@@ -70,6 +70,7 @@ pub fn ListenModeButton() -> impl IntoView {
         use wasm_bindgen::JsCast;
         let input: web_sys::HtmlInputElement = ev.target().unwrap().unchecked_into();
         if let Ok(val) = input.value().parse::<f64>() {
+            state.te_factor_auto.set(false);
             if state.listen_adjustment.get_untracked() == ListenAdjustment::Auto {
                 state.listen_adjustment.set(ListenAdjustment::Manual);
                 state.playback_mode.set(PlaybackMode::TimeExpansion);
@@ -82,6 +83,7 @@ pub fn ListenModeButton() -> impl IntoView {
         use wasm_bindgen::JsCast;
         let input: web_sys::HtmlInputElement = ev.target().unwrap().unchecked_into();
         if let Ok(val) = input.value().parse::<f64>() {
+            state.ps_factor_auto.set(false);
             if state.listen_adjustment.get_untracked() == ListenAdjustment::Auto {
                 state.listen_adjustment.set(ListenAdjustment::Manual);
                 state.playback_mode.set(PlaybackMode::PitchShift);
@@ -174,31 +176,41 @@ pub fn ListenModeButton() -> impl IntoView {
                                     </div>
                                     {match mode {
                                         PlaybackMode::Heterodyne => view! {
+                                            // HET freq row + auto toggle
                                             <div class="layer-panel-slider-row het-text-row"
                                                 on:mouseenter=move |_| {
                                                     state.het_interacting.set(true);
-                                                    state.het_hover_handle.set(Some(HetDragHandle::Center));
+                                                    state.spec_hover_handle.set(Some(SpectrogramHandle::HetCenter));
                                                 }
                                                 on:mouseleave=move |_| {
                                                     state.het_interacting.set(false);
-                                                    state.het_hover_handle.set(None);
+                                                    state.spec_hover_handle.set(None);
                                                 }
                                             >
                                                 <label>"Freq"</label>
                                                 <span class="het-value">{move || format!("{:.1} kHz", state.het_frequency.get() / 1000.0)}</span>
+                                                <button class=move || if state.het_freq_auto.get() { "auto-toggle on" } else { "auto-toggle" }
+                                                    on:click=move |_| state.het_freq_auto.update(|v| *v = !*v)
+                                                    title="Toggle auto HET frequency"
+                                                >"A"</button>
                                             </div>
+                                            // HET LP cutoff row + auto toggle
                                             <div class="layer-panel-slider-row het-text-row"
                                                 on:mouseenter=move |_| {
                                                     state.het_interacting.set(true);
-                                                    state.het_hover_handle.set(Some(HetDragHandle::BandUpper));
+                                                    state.spec_hover_handle.set(Some(SpectrogramHandle::HetBandUpper));
                                                 }
                                                 on:mouseleave=move |_| {
                                                     state.het_interacting.set(false);
-                                                    state.het_hover_handle.set(None);
+                                                    state.spec_hover_handle.set(None);
                                                 }
                                             >
                                                 <label>"LP cutoff"</label>
                                                 <span class="het-value">{move || format!("{:.1} kHz", state.het_cutoff.get() / 1000.0)}</span>
+                                                <button class=move || if state.het_cutoff_auto.get() { "auto-toggle on" } else { "auto-toggle" }
+                                                    on:click=move |_| state.het_cutoff_auto.update(|v| *v = !*v)
+                                                    title="Toggle auto LP cutoff"
+                                                >"A"</button>
                                             </div>
                                         }.into_any(),
                                         PlaybackMode::TimeExpansion => view! {
@@ -209,6 +221,10 @@ pub fn ListenModeButton() -> impl IntoView {
                                                     on:input=on_te_change
                                                 />
                                                 <span>{move || format!("{}x", state.te_factor.get() as u32)}</span>
+                                                <button class=move || if state.te_factor_auto.get() { "auto-toggle on" } else { "auto-toggle" }
+                                                    on:click=move |_| state.te_factor_auto.update(|v| *v = !*v)
+                                                    title="Toggle auto TE factor"
+                                                >"A"</button>
                                             </div>
                                         }.into_any(),
                                         PlaybackMode::PitchShift => view! {
@@ -219,6 +235,10 @@ pub fn ListenModeButton() -> impl IntoView {
                                                     on:input=on_ps_change
                                                 />
                                                 <span>{move || format!("÷{}", state.ps_factor.get() as u32)}</span>
+                                                <button class=move || if state.ps_factor_auto.get() { "auto-toggle on" } else { "auto-toggle" }
+                                                    on:click=move |_| state.ps_factor_auto.update(|v| *v = !*v)
+                                                    title="Toggle auto PS factor"
+                                                >"A"</button>
                                             </div>
                                         }.into_any(),
                                         PlaybackMode::ZeroCrossing => view! {
@@ -232,6 +252,31 @@ pub fn ListenModeButton() -> impl IntoView {
                                             </div>
                                         }.into_any(),
                                         PlaybackMode::Normal => view! { <span></span> }.into_any(),
+                                    }}
+
+                                    // Auto factor mode switch (visible when any factor param is auto)
+                                    {move || {
+                                        let any_auto = state.te_factor_auto.get()
+                                            || state.ps_factor_auto.get()
+                                            || state.het_freq_auto.get()
+                                            || state.het_cutoff_auto.get();
+                                        any_auto.then(|| view! {
+                                            <div class="layer-panel-title" style="margin-top: 4px;">"Auto mode"</div>
+                                            <div style="display: flex; gap: 2px; padding: 0 6px 4px;">
+                                                <button class=move || layer_opt_class(state.auto_factor_mode.get() == AutoFactorMode::Target3k)
+                                                    on:click=move |_| state.auto_factor_mode.set(AutoFactorMode::Target3k)
+                                                    title="Factor = FF center / 3 kHz"
+                                                >"3k"</button>
+                                                <button class=move || layer_opt_class(state.auto_factor_mode.get() == AutoFactorMode::MinAudible)
+                                                    on:click=move |_| state.auto_factor_mode.set(AutoFactorMode::MinAudible)
+                                                    title="Factor = FF high / 20 kHz"
+                                                >"Min aud"</button>
+                                                <button class=move || layer_opt_class(state.auto_factor_mode.get() == AutoFactorMode::Fixed10x)
+                                                    on:click=move |_| state.auto_factor_mode.set(AutoFactorMode::Fixed10x)
+                                                    title="Factor = 10x"
+                                                >"10x"</button>
+                                            </div>
+                                        })
                                     }}
                                 }
                             })}

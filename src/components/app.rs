@@ -13,6 +13,7 @@ use crate::components::play_controls::PlayControls;
 use crate::components::frequency_focus_button::FrequencyFocusButton;
 use crate::components::listen_mode_button::ListenModeButton;
 use crate::components::tool_button::ToolButton;
+use crate::components::freq_range_button::FreqRangeButton;
 
 #[component]
 pub fn App() -> impl IntoView {
@@ -97,6 +98,7 @@ fn MainArea() -> impl IntoView {
                             <div class="main-overlays">
                                 <PlayControls />
                                 <MainViewButton />
+                                <FreqRangeButton />
                                 <FrequencyFocusButton />
                                 <ListenModeButton />
                                 <ToolButton />
@@ -131,7 +133,7 @@ fn MainViewButton() -> impl IntoView {
 
     view! {
         <div
-            style=move || format!("position: absolute; bottom: 82px; left: 28px; pointer-events: none; opacity: {}; transition: opacity 0.1s;",
+            style=move || format!("position: absolute; bottom: 118px; left: 28px; pointer-events: none; opacity: {}; transition: opacity 0.1s;",
                 if state.mouse_in_label_area.get() { "0" } else { "1" })
             on:click=|ev: web_sys::MouseEvent| ev.stop_propagation()
         >
