@@ -1327,6 +1327,18 @@ body.sidebar-resizing {
     font-variant-numeric: tabular-nums;
 }
 
+.het-text-row {
+    cursor: pointer;
+}
+.het-text-row:hover .het-value {
+    color: #0cf;
+}
+.het-value {
+    font-size: 11px;
+    color: #aaa;
+    font-variant-numeric: tabular-nums;
+}
+
 /* Layer panel container: wraps button + panel for positioning */
 .layer-anchor {
     position: absolute;

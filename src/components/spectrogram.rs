@@ -6,9 +6,50 @@ use std::rc::Rc;
 use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement, ImageData, MouseEvent};
 use crate::canvas::spectrogram_renderer::{self, FreqMarkerState, FreqShiftMode, MovementAlgo, MovementData, PreRendered};
 use crate::dsp::harmonics;
-use crate::state::{AppState, CanvasTool, PlaybackMode, Selection, SidebarTab, SpectrogramDisplay};
+use crate::audio::playback;
+use crate::state::{AppState, CanvasTool, HetDragHandle, ListenAdjustment, PlaybackMode, Selection, SidebarTab, SpectrogramDisplay};
 
 const LABEL_AREA_WIDTH: f64 = 60.0;
+
+/// Check if a Y pixel position is within `threshold` pixels of a HET overlay line.
+/// Returns the closest handle if within threshold, None otherwise.
+fn hit_test_het_handles(
+    mouse_y: f64,
+    het_freq: f64,
+    het_cutoff: f64,
+    min_freq: f64,
+    max_freq: f64,
+    canvas_height: f64,
+    threshold: f64,
+) -> Option<HetDragHandle> {
+    let y_center = spectrogram_renderer::freq_to_y(het_freq, min_freq, max_freq, canvas_height);
+    let y_upper = spectrogram_renderer::freq_to_y(
+        (het_freq + het_cutoff).min(max_freq), min_freq, max_freq, canvas_height,
+    );
+    let y_lower = spectrogram_renderer::freq_to_y(
+        (het_freq - het_cutoff).max(min_freq), min_freq, max_freq, canvas_height,
+    );
+
+    let dist_center = (mouse_y - y_center).abs();
+    let dist_upper = (mouse_y - y_upper).abs();
+    let dist_lower = (mouse_y - y_lower).abs();
+
+    let min_dist = dist_center.min(dist_upper).min(dist_lower);
+    if min_dist > threshold {
+        return None;
+    }
+
+    // Prefer center line if tied
+    if dist_center <= threshold && dist_center <= dist_upper && dist_center <= dist_lower {
+        Some(HetDragHandle::Center)
+    } else if dist_upper <= threshold && dist_upper <= dist_lower {
+        Some(HetDragHandle::BandUpper)
+    } else if dist_lower <= threshold {
+        Some(HetDragHandle::BandLower)
+    } else {
+        None
+    }
+}
 
 #[component]
 pub fn Spectrogram() -> impl IntoView {
@@ -155,6 +196,8 @@ pub fn Spectrogram() -> impl IntoView {
         let filter_hovering = state.filter_hovering_band.get();
         let filter_enabled = state.filter_enabled.get();
         let sidebar_tab = state.sidebar_tab.get();
+        let het_hover = state.het_hover_handle.get();
+        let het_drag = state.het_drag_handle.get();
         let _pre = pre_rendered.track();
         let _coh = coherence_frames.track();
 
@@ -269,7 +312,7 @@ pub fn Spectrogram() -> impl IntoView {
 
                 // Determine frequency shift mode for marker labels
                 let show_het = het_interacting
-                    || (playback_mode == PlaybackMode::Heterodyne && is_playing);
+                    || playback_mode == PlaybackMode::Heterodyne;
                 let shift_mode = if show_het {
                     FreqShiftMode::Heterodyne(het_freq)
                 } else {
@@ -309,6 +352,8 @@ pub fn Spectrogram() -> impl IntoView {
                         max_freq,
                         display_h as f64,
                         display_w as f64,
+                        het_hover,
+                        het_drag,
                     );
                 }
 
@@ -437,8 +482,8 @@ pub fn Spectrogram() -> impl IntoView {
         }
     });
 
-    // Helper to get (px_x, time, freq) from mouse event
-    let mouse_to_xtf = move |ev: &MouseEvent| -> Option<(f64, f64, f64)> {
+    // Helper to get (px_x, px_y, time, freq) from mouse event
+    let mouse_to_xtf = move |ev: &MouseEvent| -> Option<(f64, f64, f64, f64)> {
         let canvas_el = canvas_ref.get()?;
         let canvas: &HtmlCanvasElement = canvas_el.as_ref();
         let rect = canvas.get_bounding_client_rect();
@@ -462,11 +507,23 @@ pub fn Spectrogram() -> impl IntoView {
         let (t, f) = spectrogram_renderer::pixel_to_time_freq(
             px_x, px_y, min_freq, max_freq, scroll, time_res, zoom, cw, ch,
         );
-        Some((px_x, t, f))
+        Some((px_x, px_y, t, f))
     };
 
     let on_mousedown = move |ev: MouseEvent| {
         if ev.button() != 0 { return; }
+
+        // Check for HET handle drag first (takes priority over tool)
+        if state.playback_mode.get_untracked() == PlaybackMode::Heterodyne {
+            if state.het_hover_handle.get_untracked().is_some() {
+                let handle = state.het_hover_handle.get_untracked().unwrap();
+                state.het_drag_handle.set(Some(handle));
+                state.is_dragging.set(true);
+                ev.prevent_default();
+                return;
+            }
+        }
+
         match state.canvas_tool.get_untracked() {
             CanvasTool::Hand => {
                 // Bookmark tap while playing
@@ -480,7 +537,7 @@ pub fn Spectrogram() -> impl IntoView {
                 hand_drag_start.set((ev.client_x() as f64, state.scroll_offset.get_untracked()));
             }
             CanvasTool::Selection => {
-                if let Some((_, t, f)) = mouse_to_xtf(&ev) {
+                if let Some((_, _, t, f)) = mouse_to_xtf(&ev) {
                     state.is_dragging.set(true);
                     drag_start.set((t, f));
                     state.selection.set(None);
@@ -490,7 +547,7 @@ pub fn Spectrogram() -> impl IntoView {
     };
 
     let on_mousemove = move |ev: MouseEvent| {
-        if let Some((px_x, t, f)) = mouse_to_xtf(&ev) {
+        if let Some((px_x, px_y, t, f)) = mouse_to_xtf(&ev) {
             // Always track hover position
             state.mouse_freq.set(Some(f));
             state.mouse_canvas_x.set(px_x);
@@ -505,6 +562,44 @@ pub fn Spectrogram() -> impl IntoView {
             }
 
             if state.is_dragging.get_untracked() {
+                // HET handle drag takes priority
+                if let Some(handle) = state.het_drag_handle.get_untracked() {
+                    let Some(canvas_el) = canvas_ref.get() else { return };
+                    let canvas: &HtmlCanvasElement = canvas_el.as_ref();
+                    let ch = canvas.height() as f64;
+                    let files = state.files.get_untracked();
+                    let idx = state.current_file_index.get_untracked();
+                    let file = idx.and_then(|i| files.get(i));
+                    let file_max_freq = file.map(|f| f.spectrogram.max_freq).unwrap_or(96_000.0);
+                    let min_freq_val = state.min_display_freq.get_untracked().unwrap_or(0.0);
+                    let max_freq_val = state.max_display_freq.get_untracked().unwrap_or(file_max_freq);
+                    let freq_at_mouse = spectrogram_renderer::y_to_freq(px_y, min_freq_val, max_freq_val, ch);
+
+                    // Switch to manual mode if currently auto
+                    if state.listen_adjustment.get_untracked() == ListenAdjustment::Auto {
+                        state.listen_adjustment.set(ListenAdjustment::Manual);
+                        state.playback_mode.set(PlaybackMode::Heterodyne);
+                    }
+
+                    match handle {
+                        HetDragHandle::Center => {
+                            let clamped = freq_at_mouse.clamp(1000.0, file_max_freq);
+                            state.het_frequency.set(clamped);
+                        }
+                        HetDragHandle::BandUpper => {
+                            let het_freq = state.het_frequency.get_untracked();
+                            let new_cutoff = (freq_at_mouse - het_freq).clamp(1000.0, 30000.0);
+                            state.het_cutoff.set(new_cutoff);
+                        }
+                        HetDragHandle::BandLower => {
+                            let het_freq = state.het_frequency.get_untracked();
+                            let new_cutoff = (het_freq - freq_at_mouse).clamp(1000.0, 30000.0);
+                            state.het_cutoff.set(new_cutoff);
+                        }
+                    }
+                    return;
+                }
+
                 match state.canvas_tool.get_untracked() {
                     CanvasTool::Hand => {
                         // Pan view
@@ -535,6 +630,29 @@ pub fn Spectrogram() -> impl IntoView {
                         }));
                     }
                 }
+            } else {
+                // Not dragging — do HET handle hover detection
+                if state.playback_mode.get_untracked() == PlaybackMode::Heterodyne {
+                    let Some(canvas_el) = canvas_ref.get() else { return };
+                    let canvas: &HtmlCanvasElement = canvas_el.as_ref();
+                    let ch = canvas.height() as f64;
+                    let files = state.files.get_untracked();
+                    let idx = state.current_file_index.get_untracked();
+                    let file = idx.and_then(|i| files.get(i));
+                    let file_max_freq = file.map(|f| f.spectrogram.max_freq).unwrap_or(96_000.0);
+                    let min_freq_val = state.min_display_freq.get_untracked().unwrap_or(0.0);
+                    let max_freq_val = state.max_display_freq.get_untracked().unwrap_or(file_max_freq);
+
+                    let het_freq = state.het_frequency.get_untracked();
+                    let het_cutoff_val = state.het_cutoff.get_untracked();
+                    let handle = hit_test_het_handles(
+                        px_y, het_freq, het_cutoff_val,
+                        min_freq_val, max_freq_val, ch, 8.0,
+                    );
+                    state.het_hover_handle.set(handle);
+                } else {
+                    state.het_hover_handle.set(None);
+                }
             }
         }
     };
@@ -544,13 +662,27 @@ pub fn Spectrogram() -> impl IntoView {
         state.mouse_in_label_area.set(false);
         label_hover_target.set(0.0);
         state.is_dragging.set(false);
+        state.het_drag_handle.set(None);
+        state.het_hover_handle.set(None);
     };
 
     let on_mouseup = move |ev: MouseEvent| {
         if !state.is_dragging.get_untracked() { return; }
+
+        // End HET handle drag
+        if state.het_drag_handle.get_untracked().is_some() {
+            state.het_drag_handle.set(None);
+            state.is_dragging.set(false);
+            // Live audio update if playing
+            if state.is_playing.get_untracked() {
+                playback::replay_het(&state);
+            }
+            return;
+        }
+
         state.is_dragging.set(false);
         if state.canvas_tool.get_untracked() != CanvasTool::Selection { return; }
-        if let Some((_, t, f)) = mouse_to_xtf(&ev) {
+        if let Some((_, _, t, f)) = mouse_to_xtf(&ev) {
             let (t0, f0) = drag_start.get_untracked();
             let sel = Selection {
                 time_start: t0.min(t),
@@ -595,9 +727,14 @@ pub fn Spectrogram() -> impl IntoView {
 
     view! {
         <div class="spectrogram-container"
-            style=move || match state.canvas_tool.get() {
-                CanvasTool::Hand => "cursor: grab;",
-                CanvasTool::Selection => "cursor: crosshair;",
+            style=move || {
+                if state.het_drag_handle.get().is_some() || state.het_hover_handle.get().is_some() {
+                    return "cursor: ns-resize;".to_string();
+                }
+                match state.canvas_tool.get() {
+                    CanvasTool::Hand => "cursor: grab;".to_string(),
+                    CanvasTool::Selection => "cursor: crosshair;".to_string(),
+                }
             }
         >
             <canvas

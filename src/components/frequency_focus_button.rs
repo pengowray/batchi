@@ -75,6 +75,7 @@ pub fn FrequencyFocusButton() -> impl IntoView {
                             FrequencyFocus::Infra => "Infra",
                             FrequencyFocus::FullUltrasound => "Ultra",
                             FrequencyFocus::FullSpectrum => "Full",
+                            FrequencyFocus::Custom => "Custom",
                         }
                     }}</span>
                 </button>

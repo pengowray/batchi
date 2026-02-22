@@ -92,13 +92,14 @@ pub enum FrequencyFocus {
     Infra,           // 10 – 20 Hz
     FullUltrasound,  // 18 kHz – Nyquist
     FullSpectrum,    // 10 Hz – Nyquist
+    Custom,          // user-adjusted range
 }
 
 impl FrequencyFocus {
     /// Display-range in Hz (low, high). None = show all.
     pub fn freq_range_hz(self) -> Option<(f64, f64)> {
         match self {
-            Self::None           => None,
+            Self::None | Self::Custom => None,
             Self::HumanHearing   => Some((20.0, 20_000.0)),
             Self::HumanSpeech    => Some((300.0, 3_400.0)),
             Self::Bat1           => Some((20_000.0, 35_000.0)),
@@ -125,7 +126,7 @@ impl FrequencyFocus {
     /// Auto listen-mode implied by this focus (used when ListenAdjustment::Auto).
     pub fn auto_listen_mode(self) -> PlaybackMode {
         match self {
-            Self::None | Self::HumanHearing | Self::HumanSpeech => PlaybackMode::Normal,
+            Self::None | Self::Custom | Self::HumanHearing | Self::HumanSpeech => PlaybackMode::Normal,
             Self::Bat1 | Self::Bat2 => PlaybackMode::Heterodyne,
             Self::Infra => PlaybackMode::TimeExpansion,
             Self::FullUltrasound | Self::FullSpectrum => PlaybackMode::PitchShift,
@@ -142,6 +143,7 @@ impl FrequencyFocus {
             Self::Infra          => "Infra (10–20)",
             Self::FullUltrasound => "Full ultrasound (18k+)",
             Self::FullSpectrum   => "Full spectrum (10hz+)",
+            Self::Custom         => "Custom",
         }
     }
 
@@ -169,6 +171,14 @@ pub enum BandpassStrength {
     Some,
     Strong,
     Custom,
+}
+
+/// Which heterodyne overlay handle is being dragged on the spectrogram.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum HetDragHandle {
+    Center,      // dragging the center frequency line
+    BandUpper,   // dragging the upper cutoff edge
+    BandLower,   // dragging the lower cutoff edge
 }
 
 /// Active interaction tool for the main spectrogram canvas.
@@ -314,6 +324,10 @@ pub struct AppState {
 
     // Main panel view mode (Spectrogram or Waveform)
     pub main_view: RwSignal<OverviewView>,
+
+    // HET spectrogram drag handles
+    pub het_drag_handle: RwSignal<Option<HetDragHandle>>,
+    pub het_hover_handle: RwSignal<Option<HetDragHandle>>,
 }
 
 impl AppState {
@@ -387,6 +401,8 @@ impl AppState {
             layer_panel_open: RwSignal::new(None),
             spectrogram_canvas_width: RwSignal::new(1000.0),
             main_view: RwSignal::new(OverviewView::Spectrogram),
+            het_drag_handle: RwSignal::new(None),
+            het_hover_handle: RwSignal::new(None),
         }
     }
 

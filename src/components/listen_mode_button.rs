@@ -1,5 +1,5 @@
 use leptos::prelude::*;
-use crate::state::{AppState, BandpassStrength, LayerPanel, ListenAdjustment, PlaybackMode};
+use crate::state::{AppState, BandpassStrength, HetDragHandle, LayerPanel, ListenAdjustment, PlaybackMode};
 
 fn layer_opt_class(active: bool) -> &'static str {
     if active { "layer-panel-opt sel" } else { "layer-panel-opt" }
@@ -57,6 +57,7 @@ pub fn ListenModeButton() -> impl IntoView {
         use wasm_bindgen::JsCast;
         let input: web_sys::HtmlInputElement = ev.target().unwrap().unchecked_into();
         if let Ok(val) = input.value().parse::<f64>() {
+            state.auto_gain.set(false);
             state.gain_db.set(val);
         }
     };
@@ -65,26 +66,14 @@ pub fn ListenModeButton() -> impl IntoView {
         state.gain_db.set(0.0);
     };
 
-    let on_het_freq_change = move |ev: web_sys::Event| {
-        use wasm_bindgen::JsCast;
-        let input: web_sys::HtmlInputElement = ev.target().unwrap().unchecked_into();
-        if let Ok(val) = input.value().parse::<f64>() {
-            state.het_frequency.set(val * 1000.0);
-        }
-    };
-
-    let on_het_cutoff_change = move |ev: web_sys::Event| {
-        use wasm_bindgen::JsCast;
-        let input: web_sys::HtmlInputElement = ev.target().unwrap().unchecked_into();
-        if let Ok(val) = input.value().parse::<f64>() {
-            state.het_cutoff.set(val * 1000.0);
-        }
-    };
-
     let on_te_change = move |ev: web_sys::Event| {
         use wasm_bindgen::JsCast;
         let input: web_sys::HtmlInputElement = ev.target().unwrap().unchecked_into();
         if let Ok(val) = input.value().parse::<f64>() {
+            if state.listen_adjustment.get_untracked() == ListenAdjustment::Auto {
+                state.listen_adjustment.set(ListenAdjustment::Manual);
+                state.playback_mode.set(PlaybackMode::TimeExpansion);
+            }
             state.te_factor.set(val);
         }
     };
@@ -93,6 +82,10 @@ pub fn ListenModeButton() -> impl IntoView {
         use wasm_bindgen::JsCast;
         let input: web_sys::HtmlInputElement = ev.target().unwrap().unchecked_into();
         if let Ok(val) = input.value().parse::<f64>() {
+            if state.listen_adjustment.get_untracked() == ListenAdjustment::Auto {
+                state.listen_adjustment.set(ListenAdjustment::Manual);
+                state.playback_mode.set(PlaybackMode::PitchShift);
+            }
             state.ps_factor.set(val);
         }
     };
@@ -101,6 +94,10 @@ pub fn ListenModeButton() -> impl IntoView {
         use wasm_bindgen::JsCast;
         let input: web_sys::HtmlInputElement = ev.target().unwrap().unchecked_into();
         if let Ok(val) = input.value().parse::<f64>() {
+            if state.listen_adjustment.get_untracked() == ListenAdjustment::Auto {
+                state.listen_adjustment.set(ListenAdjustment::Manual);
+                state.playback_mode.set(PlaybackMode::ZeroCrossing);
+            }
             state.zc_factor.set(val);
         }
     };
@@ -123,7 +120,6 @@ pub fn ListenModeButton() -> impl IntoView {
                     <span class="layer-btn-value">{listen_label}</span>
                 </button>
                 {move || is_open().then(|| {
-                    let adj = state.listen_adjustment.get();
                     let mode = state.playback_mode.get();
                     let is_zc = mode == PlaybackMode::ZeroCrossing;
 
@@ -165,28 +161,44 @@ pub fn ListenModeButton() -> impl IntoView {
                                 on:click=make_set_manual(state, PlaybackMode::Normal)
                             >"1:1 — Native rate"</button>
 
-                            // ── Adjustment sliders (when Manual) ─────────────
-                            {(adj == ListenAdjustment::Manual).then(|| {
+                            // ── Adjustment (always visible) ─────────────────
+                            {(mode != PlaybackMode::Normal).then(|| {
                                 view! {
                                     <hr />
-                                    <div class="layer-panel-title">"Adjustment"</div>
+                                    <div class="layer-panel-title">
+                                        {move || if state.listen_adjustment.get() == ListenAdjustment::Auto {
+                                            "Adjustment (auto)"
+                                        } else {
+                                            "Adjustment"
+                                        }}
+                                    </div>
                                     {match mode {
                                         PlaybackMode::Heterodyne => view! {
-                                            <div class="layer-panel-slider-row">
+                                            <div class="layer-panel-slider-row het-text-row"
+                                                on:mouseenter=move |_| {
+                                                    state.het_interacting.set(true);
+                                                    state.het_hover_handle.set(Some(HetDragHandle::Center));
+                                                }
+                                                on:mouseleave=move |_| {
+                                                    state.het_interacting.set(false);
+                                                    state.het_hover_handle.set(None);
+                                                }
+                                            >
                                                 <label>"Freq"</label>
-                                                <input type="range" min="10" max="150" step="0.5"
-                                                    prop:value=move || (state.het_frequency.get() / 1000.0).to_string()
-                                                    on:input=on_het_freq_change
-                                                />
-                                                <span>{move || format!("{:.0} kHz", state.het_frequency.get() / 1000.0)}</span>
+                                                <span class="het-value">{move || format!("{:.1} kHz", state.het_frequency.get() / 1000.0)}</span>
                                             </div>
-                                            <div class="layer-panel-slider-row">
+                                            <div class="layer-panel-slider-row het-text-row"
+                                                on:mouseenter=move |_| {
+                                                    state.het_interacting.set(true);
+                                                    state.het_hover_handle.set(Some(HetDragHandle::BandUpper));
+                                                }
+                                                on:mouseleave=move |_| {
+                                                    state.het_interacting.set(false);
+                                                    state.het_hover_handle.set(None);
+                                                }
+                                            >
                                                 <label>"LP cutoff"</label>
-                                                <input type="range" min="1" max="30" step="0.5"
-                                                    prop:value=move || (state.het_cutoff.get() / 1000.0).to_string()
-                                                    on:input=on_het_cutoff_change
-                                                />
-                                                <span>{move || format!("{:.0} kHz", state.het_cutoff.get() / 1000.0)}</span>
+                                                <span class="het-value">{move || format!("{:.1} kHz", state.het_cutoff.get() / 1000.0)}</span>
                                             </div>
                                         }.into_any(),
                                         PlaybackMode::TimeExpansion => view! {
@@ -245,7 +257,9 @@ pub fn ListenModeButton() -> impl IntoView {
                             // ── Gain ─────────────────────────────────────────
                             {(!is_zc).then(|| view! {
                                 <hr />
-                                <div class="layer-panel-title">"Gain"</div>
+                                <div class="layer-panel-title">
+                                    {move || if state.auto_gain.get() { "Gain (auto)" } else { "Gain" }}
+                                </div>
                                 <div class="layer-panel-slider-row">
                                     <label>"Level"</label>
                                     <input type="range" min="-30" max="30" step="0.5"
@@ -258,7 +272,6 @@ pub fn ListenModeButton() -> impl IntoView {
                                         }
                                         on:input=on_gain_change
                                         on:dblclick=on_gain_reset
-                                        disabled=move || state.auto_gain.get()
                                     />
                                     <span>{move || {
                                         let db = if state.auto_gain.get() {

@@ -1,5 +1,5 @@
 use crate::canvas::colors::{freq_marker_color, freq_marker_label, magnitude_to_greyscale, movement_rgb};
-use crate::state::Selection;
+use crate::state::{HetDragHandle, Selection};
 use crate::types::SpectrogramData;
 use wasm_bindgen::JsCast;
 use wasm_bindgen::Clamped;
@@ -653,6 +653,8 @@ pub fn draw_het_overlay(
     max_freq: f64,
     canvas_height: f64,
     canvas_width: f64,
+    hover_handle: Option<HetDragHandle>,
+    drag_handle: Option<HetDragHandle>,
 ) {
     let cutoff = het_cutoff;
     let band_low = (het_freq - cutoff).max(min_freq);
@@ -675,34 +677,88 @@ pub fn draw_het_overlay(
     ctx.set_fill_style_str("rgba(0, 200, 255, 0.07)");
     ctx.fill_rect(0.0, y_band_top, canvas_width, y_band_bottom - y_band_top);
 
-    // Band edge lines (subtle)
-    ctx.set_stroke_style_str("rgba(0, 200, 255, 0.3)");
-    ctx.set_line_width(1.0);
-    for &y in &[y_band_top, y_band_bottom] {
+    let is_active = |handle: HetDragHandle| -> bool {
+        drag_handle == Some(handle) || hover_handle == Some(handle)
+    };
+
+    // Band edge lines
+    for &(y, handle) in &[(y_band_top, HetDragHandle::BandUpper), (y_band_bottom, HetDragHandle::BandLower)] {
+        let active = is_active(handle);
+        let alpha = if active { 0.7 } else { 0.3 };
+        let width = if active { 2.0 } else { 1.0 };
+        ctx.set_stroke_style_str(&format!("rgba(0, 200, 255, {:.2})", alpha));
+        ctx.set_line_width(width);
         ctx.begin_path();
         ctx.move_to(0.0, y);
         ctx.line_to(canvas_width, y);
         ctx.stroke();
+
+        // Draw handle triangle at right edge
+        let handle_size = if active { 10.0 } else { 6.0 };
+        let handle_alpha = if active { 0.9 } else { 0.4 };
+        ctx.set_fill_style_str(&format!("rgba(0, 200, 255, {:.2})", handle_alpha));
+        ctx.begin_path();
+        ctx.move_to(canvas_width, y - handle_size);
+        ctx.line_to(canvas_width - handle_size, y);
+        ctx.line_to(canvas_width, y + handle_size);
+        ctx.close_path();
+        let _ = ctx.fill();
     }
 
-    // Center line at het_freq (dashed)
-    ctx.set_stroke_style_str("rgba(0, 230, 255, 0.8)");
-    ctx.set_line_width(1.5);
-    let _ = ctx.set_line_dash(&js_sys::Array::of2(
-        &wasm_bindgen::JsValue::from_f64(6.0),
-        &wasm_bindgen::JsValue::from_f64(4.0),
-    ));
+    // Center line at het_freq
+    let center_active = is_active(HetDragHandle::Center);
+    let center_dragging = drag_handle == Some(HetDragHandle::Center);
+    if center_dragging {
+        // Solid line when dragging
+        ctx.set_stroke_style_str("rgba(0, 230, 255, 1.0)");
+        ctx.set_line_width(2.0);
+    } else if center_active {
+        // Brighter dashed line when hovered
+        ctx.set_stroke_style_str("rgba(0, 230, 255, 1.0)");
+        ctx.set_line_width(2.0);
+        let _ = ctx.set_line_dash(&js_sys::Array::of2(
+            &wasm_bindgen::JsValue::from_f64(6.0),
+            &wasm_bindgen::JsValue::from_f64(4.0),
+        ));
+    } else {
+        // Default dashed line
+        ctx.set_stroke_style_str("rgba(0, 230, 255, 0.8)");
+        ctx.set_line_width(1.5);
+        let _ = ctx.set_line_dash(&js_sys::Array::of2(
+            &wasm_bindgen::JsValue::from_f64(6.0),
+            &wasm_bindgen::JsValue::from_f64(4.0),
+        ));
+    }
     ctx.begin_path();
     ctx.move_to(0.0, y_center);
     ctx.line_to(canvas_width, y_center);
     ctx.stroke();
     let _ = ctx.set_line_dash(&js_sys::Array::new()); // reset dash
 
-    // Label at center line (positioned on left, offset from freq division labels)
+    // Center handle triangle at right edge
+    let handle_size = if center_active { 10.0 } else { 6.0 };
+    let handle_alpha = if center_active { 0.9 } else { 0.5 };
+    ctx.set_fill_style_str(&format!("rgba(0, 230, 255, {:.2})", handle_alpha));
+    ctx.begin_path();
+    ctx.move_to(canvas_width, y_center - handle_size);
+    ctx.line_to(canvas_width - handle_size, y_center);
+    ctx.line_to(canvas_width, y_center + handle_size);
+    ctx.close_path();
+    let _ = ctx.fill();
+
+    // Label at center line
     ctx.set_fill_style_str("rgba(0, 230, 255, 0.9)");
     ctx.set_font("bold 12px sans-serif");
-    let label = format!("HET {:.0} kHz", het_freq / 1000.0);
+    let label = format!("HET {:.1} kHz", het_freq / 1000.0);
     let _ = ctx.fill_text(&label, 55.0, y_center - 5.0);
+
+    // LP cutoff label near band edges (show when any handle is active)
+    if hover_handle.is_some() || drag_handle.is_some() {
+        ctx.set_fill_style_str("rgba(0, 200, 255, 0.7)");
+        ctx.set_font("11px sans-serif");
+        let lp_label = format!("LP ±{:.1} kHz", het_cutoff / 1000.0);
+        let _ = ctx.fill_text(&lp_label, 55.0, y_band_bottom + 14.0);
+    }
 }
 
 /// Draw selection rectangle overlay on spectrogram.
