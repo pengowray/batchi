@@ -49,6 +49,7 @@ async fn load_named_bytes(name: String, bytes: &[u8], xc_metadata: Option<Vec<(S
                 spectrogram: placeholder_spec,
                 preview: Some(preview),
                 xc_metadata,
+                is_recording: false,
             });
             if files.len() == 1 {
                 state.current_file_index.set(Some(0));

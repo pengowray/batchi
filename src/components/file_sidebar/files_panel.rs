@@ -3,6 +3,7 @@ use leptos::task::spawn_local;
 use wasm_bindgen::{Clamped, JsCast};
 use web_sys::{CanvasRenderingContext2d, DragEvent, HtmlCanvasElement, HtmlInputElement, ImageData, MouseEvent};
 use crate::audio::playback;
+use crate::audio::microphone;
 use crate::canvas::tile_cache;
 use crate::state::AppState;
 use crate::types::PreviewImage;
@@ -173,11 +174,13 @@ pub(super) fn FilesPanel() -> impl IntoView {
                         </div>
                     }.into_any()
                 } else {
+                    let is_tauri = state.is_tauri;
                     let items: Vec<_> = file_vec.iter().enumerate().map(|(i, f)| {
                         let name = f.name.clone();
                         let dur = f.audio.duration_secs;
                         let sr = f.audio.sample_rate;
                         let preview = f.preview.clone();
+                        let is_rec = f.is_recording;
                         let is_active = move || current_idx.get() == Some(i);
                         let on_click = move |_| {
                             // Clear navigation history and bookmarks when switching files
@@ -191,7 +194,6 @@ pub(super) fn FilesPanel() -> impl IntoView {
                             if state.is_playing.get_untracked() && state.current_file_index.get_untracked() == Some(i) {
                                 playback::stop(&state);
                             }
-                            // Clear tile cache for this file
                             tile_cache::clear_file(i);
                             state.files.update(|files| { files.remove(i); });
                             state.current_file_index.update(|idx| {
@@ -207,6 +209,24 @@ pub(super) fn FilesPanel() -> impl IntoView {
                                 };
                             });
                         };
+                        let name_dl = name.clone();
+                        let on_download = move |ev: MouseEvent| {
+                            ev.stop_propagation();
+                            let files = state.files.get_untracked();
+                            if let Some(f) = files.get(i) {
+                                microphone::download_wav(&f.audio.samples, f.audio.sample_rate, &name_dl);
+                            }
+                        };
+                        let on_mark_saved = move |ev: MouseEvent| {
+                            ev.stop_propagation();
+                            state.files.update(|files| {
+                                if let Some(f) = files.get_mut(i) {
+                                    f.is_recording = false;
+                                }
+                            });
+                        };
+                        // Show unsaved badge on web recordings only
+                        let show_unsaved = is_rec && !is_tauri;
                         view! {
                             <div
                                 class=move || if is_active() { "file-item active" } else { "file-item" }
@@ -214,7 +234,24 @@ pub(super) fn FilesPanel() -> impl IntoView {
                             >
                                 {preview.map(|pv| view! { <PreviewCanvas preview=pv /> })}
                                 <div class="file-item-header">
-                                    <div class="file-item-name">{name}</div>
+                                    <div class="file-item-name">
+                                        {if show_unsaved {
+                                            Some(view! { <span class="file-unsaved-badge" title="Unsaved recording"></span> })
+                                        } else {
+                                            None
+                                        }}
+                                        {name}
+                                    </div>
+                                    {if show_unsaved {
+                                        Some(view! {
+                                            <button class="file-download-btn" on:click=on_download title="Download WAV"
+                                            >"\u{2B73}"</button>
+                                            <button class="file-mark-saved-btn" on:click=on_mark_saved title="Mark as saved"
+                                            >"\u{2713}"</button>
+                                        })
+                                    } else {
+                                        None
+                                    }}
                                     <button class="file-item-close" on:click=on_close>"×"</button>
                                 </div>
                                 <div class="file-item-info">

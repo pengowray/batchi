@@ -8,6 +8,7 @@ pub struct LoadedFile {
     pub spectrogram: SpectrogramData,
     pub preview: Option<PreviewImage>,
     pub xc_metadata: Option<Vec<(String, String)>>,
+    pub is_recording: bool,  // true = unsaved recording (show indicator on web)
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -221,15 +222,6 @@ pub enum OverviewFreqMode {
     MatchMain,  // tracks max_display_freq
 }
 
-/// Microphone capture state machine.
-#[derive(Clone, Copy, Debug, PartialEq, Default)]
-pub enum MicState {
-    #[default]
-    Off,       // Mic inactive
-    Armed,     // Mic open, monitoring through speakers
-    Recording, // Mic open, monitoring + accumulating samples
-}
-
 /// Which floating layer panel is currently open (only one at a time).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum LayerPanel {
@@ -364,16 +356,25 @@ pub struct AppState {
     pub ps_factor_auto: RwSignal<bool>,
     pub auto_factor_mode: RwSignal<AutoFactorMode>,
 
-    // Microphone
-    pub mic_state: RwSignal<MicState>,
+    // Microphone (independent listen + record)
+    pub mic_listening: RwSignal<bool>,
+    pub mic_recording: RwSignal<bool>,
     pub mic_sample_rate: RwSignal<u32>,
     pub mic_samples_recorded: RwSignal<usize>,
 
     // Transient status message (e.g. permission errors)
     pub status_message: RwSignal<Option<String>>,
 
-    // Mobile detection
+    // Platform detection
     pub is_mobile: RwSignal<bool>,
+    pub is_tauri: bool,
+}
+
+fn detect_tauri() -> bool {
+    let Some(window) = web_sys::window() else { return false };
+    js_sys::Reflect::get(&window, &wasm_bindgen::JsValue::from_str("__TAURI_INTERNALS__"))
+        .map(|v| !v.is_undefined())
+        .unwrap_or(false)
 }
 
 fn detect_mobile() -> bool {
@@ -472,11 +473,13 @@ impl AppState {
             te_factor_auto: RwSignal::new(true),
             ps_factor_auto: RwSignal::new(true),
             auto_factor_mode: RwSignal::new(AutoFactorMode::Target3k),
-            mic_state: RwSignal::new(MicState::Off),
+            mic_listening: RwSignal::new(false),
+            mic_recording: RwSignal::new(false),
             mic_sample_rate: RwSignal::new(0),
             mic_samples_recorded: RwSignal::new(0),
             status_message: RwSignal::new(None),
             is_mobile: RwSignal::new(detect_mobile()),
+            is_tauri: detect_tauri(),
         };
 
         // On mobile, start with sidebar collapsed

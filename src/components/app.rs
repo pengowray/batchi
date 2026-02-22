@@ -1,7 +1,7 @@
 use leptos::prelude::*;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
-use crate::state::{AppState, LayerPanel, MicState, OverviewView};
+use crate::state::{AppState, LayerPanel, OverviewView};
 use crate::audio::playback;
 use crate::audio::microphone;
 use crate::components::file_sidebar::FileSidebar;
@@ -43,27 +43,22 @@ pub fn App() -> impl IntoView {
                 }
             }
         }
-        if ev.key() == "m" || ev.key() == "M" {
+        if ev.key() == "l" || ev.key() == "L" {
             ev.prevent_default();
             let st = state_kb;
-            match st.mic_state.get_untracked() {
-                MicState::Off => {
-                    wasm_bindgen_futures::spawn_local(async move {
-                        microphone::arm(&st).await;
-                    });
-                }
-                MicState::Armed => {
-                    microphone::start_recording(&st);
-                }
-                MicState::Recording => {
-                    if let Some((samples, sr)) = microphone::stop_recording(&st) {
-                        microphone::finalize_recording(samples, sr, st);
-                    }
-                }
-            }
+            wasm_bindgen_futures::spawn_local(async move {
+                microphone::toggle_listen(&st).await;
+            });
         }
-        if ev.key() == "Escape" && state_kb.mic_state.get_untracked() != MicState::Off {
-            microphone::disarm(&state_kb);
+        if ev.key() == "r" || ev.key() == "R" {
+            ev.prevent_default();
+            let st = state_kb;
+            wasm_bindgen_futures::spawn_local(async move {
+                microphone::toggle_record(&st).await;
+            });
+        }
+        if ev.key() == "Escape" && (state_kb.mic_listening.get_untracked() || state_kb.mic_recording.get_untracked()) {
+            microphone::stop_all(&state_kb);
         }
     });
     let window = web_sys::window().unwrap();
@@ -158,6 +153,31 @@ fn MainArea() -> impl IntoView {
 
                             // Floating overlay layer
                             <div class="main-overlays">
+                                // Unsaved recording banner (web only)
+                                {move || {
+                                    if state.is_tauri { return None; }
+                                    let files = state.files.get();
+                                    let idx = state.current_file_index.get()?;
+                                    let file = files.get(idx)?;
+                                    if !file.is_recording { return None; }
+                                    let name = file.name.clone();
+                                    Some(view! {
+                                        <div
+                                            class="unsaved-banner"
+                                            on:click=move |_| {
+                                                let files = state.files.get_untracked();
+                                                let idx = state.current_file_index.get_untracked();
+                                                if let Some(i) = idx {
+                                                    if let Some(f) = files.get(i) {
+                                                        microphone::download_wav(&f.audio.samples, f.audio.sample_rate, &name);
+                                                    }
+                                                }
+                                            }
+                                        >
+                                            "Unsaved recording \u{2014} click to download"
+                                        </div>
+                                    })
+                                }}
                                 <PlayControls />
                                 <MainViewButton />
                                 <FreqRangeButton />

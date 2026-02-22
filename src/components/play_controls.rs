@@ -1,7 +1,6 @@
 use leptos::prelude::*;
-use crate::state::{AppState, MicState};
+use crate::state::AppState;
 use crate::audio::playback;
-use crate::audio::microphone;
 
 #[component]
 pub fn PlayControls() -> impl IntoView {
@@ -28,67 +27,8 @@ pub fn PlayControls() -> impl IntoView {
         <div class="play-controls"
             on:click=|ev: web_sys::MouseEvent| ev.stop_propagation()
         >
-            // Mic button (always visible)
-            <button
-                class=move || match state.mic_state.get() {
-                    MicState::Off => "layer-btn".to_string(),
-                    MicState::Armed => "layer-btn mic-armed".to_string(),
-                    MicState::Recording => "layer-btn mic-recording".to_string(),
-                }
-                on:click=move |_| {
-                    let st = state;
-                    match st.mic_state.get_untracked() {
-                        MicState::Off => {
-                            wasm_bindgen_futures::spawn_local(async move {
-                                microphone::arm(&st).await;
-                            });
-                        }
-                        MicState::Armed => {
-                            microphone::start_recording(&st);
-                        }
-                        MicState::Recording => {
-                            if let Some((samples, sr)) = microphone::stop_recording(&st) {
-                                microphone::finalize_recording(samples, sr, st);
-                            }
-                        }
-                    }
-                }
-                title=move || match state.mic_state.get() {
-                    MicState::Off => "Arm microphone (M)",
-                    MicState::Armed => "Start recording (M)",
-                    MicState::Recording => "Stop recording (M)",
-                }
-            >
-                <span class="layer-btn-category">"Mic"</span>
-                <span class="layer-btn-value">{move || match state.mic_state.get() {
-                    MicState::Off => "Off".to_string(),
-                    MicState::Armed => "Armed".to_string(),
-                    MicState::Recording => {
-                        let n = state.mic_samples_recorded.get();
-                        let sr = state.mic_sample_rate.get_untracked().max(1);
-                        let secs = n as f64 / sr as f64;
-                        format!("{:.1}s", secs)
-                    }
-                }}</span>
-            </button>
-
-            // Disarm button (only when armed or recording)
-            {move || (state.mic_state.get() != MicState::Off).then(|| {
-                view! {
-                    <button
-                        class="layer-btn"
-                        on:click=move |_| microphone::disarm(&state)
-                        title="Disarm microphone (Esc)"
-                    >
-                        <span class="layer-btn-category">"Mic"</span>
-                        <span class="layer-btn-value">"Off"</span>
-                    </button>
-                }
-            })}
-
             // Status message toast (auto-dismissing)
             {move || state.status_message.get().map(|msg| {
-                // Auto-clear after 3 seconds
                 let state2 = state;
                 wasm_bindgen_futures::spawn_local(async move {
                     let p = js_sys::Promise::new(&mut |resolve, _| {
@@ -137,14 +77,13 @@ pub fn PlayControls() -> impl IntoView {
                             view! {
                                 <button class="bookmark-item"
                                     on:click=move |_| {
-                                        // Jump to just before the bookmark so it's visible
                                         let zoom = state2.zoom_level.get_untracked();
                                         let files = state2.files.get_untracked();
                                         let idx = state2.current_file_index.get_untracked();
                                         let time_res = idx.and_then(|i| files.get(i))
                                             .map(|f| f.spectrogram.time_resolution)
                                             .unwrap_or(0.001);
-                                        let canvas_w = 800.0_f64; // approximate
+                                        let canvas_w = 800.0_f64;
                                         let visible_time = (canvas_w / zoom) * time_res;
                                         let new_scroll = (t - visible_time * 0.1).max(0.0);
                                         state2.scroll_offset.set(new_scroll);

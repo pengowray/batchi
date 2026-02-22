@@ -34,6 +34,63 @@ pub fn heterodyne_mix(samples: &[f32], sample_rate: u32, lo_freq: f64, cutoff_hz
     filtered
 }
 
+/// Stateful real-time heterodyne processor for live mic monitoring.
+/// Maintains oscillator phase and cascaded LP filter states between
+/// consecutive audio buffers to avoid clicks and transients.
+pub struct RealtimeHet {
+    phase: f64,
+    lp_state: [f32; 4],
+}
+
+impl RealtimeHet {
+    pub fn new() -> Self {
+        Self {
+            phase: 0.0,
+            lp_state: [0.0; 4],
+        }
+    }
+
+    /// Process `input` through heterodyne (ring modulation + 4-pass LP) and
+    /// write result into `output`. Both slices must have the same length.
+    pub fn process(
+        &mut self,
+        input: &[f32],
+        output: &mut [f32],
+        sample_rate: u32,
+        lo_freq: f64,
+        cutoff_hz: f64,
+    ) {
+        let sr = sample_rate as f64;
+        let phase_inc = 2.0 * PI * lo_freq / sr;
+        let dt = 1.0 / sr;
+        let rc = 1.0 / (2.0 * PI * cutoff_hz);
+        let alpha = (dt / (rc + dt)) as f32;
+
+        for (i, &sample) in input.iter().enumerate() {
+            // Ring modulation with continuous phase
+            let lo = (self.phase + phase_inc * i as f64).cos() as f32;
+            let mut val = sample * lo;
+
+            // 4-pass cascaded single-pole LP filter
+            for s in self.lp_state.iter_mut() {
+                val = alpha * val + (1.0 - alpha) * *s;
+                *s = val;
+            }
+
+            output[i] = val;
+        }
+
+        // Advance phase, keep in [0, 2π) to avoid precision loss
+        self.phase = (self.phase + phase_inc * input.len() as f64) % (2.0 * PI);
+    }
+
+    /// Reset state (call when HET params change significantly or mic restarts)
+    pub fn reset(&mut self) {
+        self.phase = 0.0;
+        self.lp_state = [0.0; 4];
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

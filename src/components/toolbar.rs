@@ -1,5 +1,6 @@
 use leptos::prelude::*;
 use crate::state::AppState;
+use crate::audio::microphone;
 
 #[component]
 pub fn Toolbar() -> impl IntoView {
@@ -7,6 +8,14 @@ pub fn Toolbar() -> impl IntoView {
     let show_about = RwSignal::new(false);
 
     let is_mobile = state.is_mobile.get_untracked();
+
+    let on_het_change = move |ev: web_sys::Event| {
+        use wasm_bindgen::JsCast;
+        let input: web_sys::HtmlInputElement = ev.target().unwrap().unchecked_into();
+        if let Ok(val) = input.value().parse::<f64>() {
+            state.het_frequency.set(val * 1000.0);
+        }
+    };
 
     view! {
         <div class="toolbar">
@@ -30,6 +39,60 @@ pub fn Toolbar() -> impl IntoView {
                 on:click=move |_| show_about.set(true)
                 title="About Batchi"
             >"Batchi"</span>
+
+            // Spacer
+            <div style="flex: 1;"></div>
+
+            // Listen button + HET slider
+            <div class="toolbar-listen-group">
+                <button
+                    class=move || if state.mic_listening.get() { "toolbar-listen-btn active" } else { "toolbar-listen-btn" }
+                    on:click=move |_| {
+                        let st = state;
+                        wasm_bindgen_futures::spawn_local(async move {
+                            microphone::toggle_listen(&st).await;
+                        });
+                    }
+                    title="Toggle live HET listening (L)"
+                >
+                    {move || if state.mic_listening.get() {
+                        format!("HET {:.0}k", state.het_frequency.get() / 1000.0)
+                    } else {
+                        "Listen".to_string()
+                    }}
+                </button>
+                {move || state.mic_listening.get().then(|| view! {
+                    <input
+                        type="range"
+                        class="toolbar-het-slider"
+                        min="15" max="100" step="1"
+                        prop:value=move || (state.het_frequency.get() / 1000.0).to_string()
+                        on:input=on_het_change
+                        title="HET frequency (kHz)"
+                    />
+                })}
+            </div>
+
+            // Record button
+            <button
+                class=move || if state.mic_recording.get() { "toolbar-record-btn active" } else { "toolbar-record-btn" }
+                on:click=move |_| {
+                    let st = state;
+                    wasm_bindgen_futures::spawn_local(async move {
+                        microphone::toggle_record(&st).await;
+                    });
+                }
+                title="Toggle recording (R)"
+            >
+                {move || if state.mic_recording.get() {
+                    let n = state.mic_samples_recorded.get();
+                    let sr = state.mic_sample_rate.get_untracked().max(1);
+                    let secs = n as f64 / sr as f64;
+                    format!("Rec {:.1}s", secs)
+                } else {
+                    "Record".to_string()
+                }}
+            </button>
 
             {move || show_about.get().then(|| view! {
                 <div class="about-overlay" on:click=move |_| show_about.set(false)>
