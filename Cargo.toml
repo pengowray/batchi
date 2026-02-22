@@ -1,3 +1,6 @@
+[workspace]
+members = [".", "src-tauri"]
+
 [package]
 name = "batchi"
 version = "0.1.4"
