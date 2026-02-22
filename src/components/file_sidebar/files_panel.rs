@@ -12,6 +12,7 @@ use super::loading::{read_and_load_file, DemoEntry, fetch_demo_index, load_singl
 #[component]
 pub(super) fn FilesPanel() -> impl IntoView {
     let state = expect_context::<AppState>();
+    let is_mobile = state.is_mobile.get_untracked();
     let drag_over = RwSignal::new(false);
     let files = state.files;
     let current_idx = state.current_file_index;
@@ -129,7 +130,7 @@ pub(super) fn FilesPanel() -> impl IntoView {
                 if file_vec.is_empty() && lc == 0 {
                     view! {
                         <div class="drop-hint">
-                            "Drop audio files here"
+                            {if !is_mobile { Some("Drop audio files here") } else { None }}
                             <button class="upload-btn" on:click=on_upload_click>"Browse files"</button>
                             <button class="upload-btn demo-btn" on:click=on_demo_click>
                                 {move || if demo_loading.get() { "Loading..." } else { "Load demo" }}

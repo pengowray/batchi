@@ -354,11 +354,32 @@ pub struct AppState {
     pub te_factor_auto: RwSignal<bool>,
     pub ps_factor_auto: RwSignal<bool>,
     pub auto_factor_mode: RwSignal<AutoFactorMode>,
+
+    // Mobile detection
+    pub is_mobile: RwSignal<bool>,
+}
+
+fn detect_mobile() -> bool {
+    let Some(window) = web_sys::window() else { return false };
+    // Check user agent for mobile keywords
+    if let Ok(ua) = window.navigator().user_agent() {
+        let ua_lower = ua.to_lowercase();
+        if ua_lower.contains("android") || ua_lower.contains("iphone") || ua_lower.contains("ipad") || ua_lower.contains("mobile") {
+            return true;
+        }
+    }
+    // Fallback: check screen width
+    if let Ok(w) = window.inner_width() {
+        if let Some(w) = w.as_f64() {
+            return w < 768.0;
+        }
+    }
+    false
 }
 
 impl AppState {
     pub fn new() -> Self {
-        Self {
+        let s = Self {
             files: RwSignal::new(Vec::new()),
             current_file_index: RwSignal::new(None),
             selection: RwSignal::new(None),
@@ -433,7 +454,15 @@ impl AppState {
             te_factor_auto: RwSignal::new(true),
             ps_factor_auto: RwSignal::new(true),
             auto_factor_mode: RwSignal::new(AutoFactorMode::Target3k),
+            is_mobile: RwSignal::new(detect_mobile()),
+        };
+
+        // On mobile, start with sidebar collapsed
+        if s.is_mobile.get_untracked() {
+            s.sidebar_collapsed.set(true);
         }
+
+        s
     }
 
     pub fn current_file(&self) -> Option<LoadedFile> {

@@ -47,8 +47,10 @@ pub fn App() -> impl IntoView {
     let _ = window.add_event_listener_with_callback("keydown", handler.as_ref().unchecked_ref());
     handler.forget();
 
+    let is_mobile = state.is_mobile.get_untracked();
+
     let grid_style = move || {
-        if state.sidebar_collapsed.get() {
+        if is_mobile || state.sidebar_collapsed.get() {
             "grid-template-columns: 0px 1fr".to_string()
         } else {
             format!("grid-template-columns: {}px 1fr", state.sidebar_width.get() as i32)
@@ -68,9 +70,14 @@ fn MainArea() -> impl IntoView {
     let state = expect_context::<AppState>();
     let has_file = move || state.current_file_index.get().is_some();
 
-    // Click anywhere in the main area closes open layer panels
+    let is_mobile = state.is_mobile.get_untracked();
+
+    // Click anywhere in the main area closes open layer panels (and sidebar on mobile)
     let on_main_click = move |_: web_sys::MouseEvent| {
         state.layer_panel_open.set(None);
+        if is_mobile {
+            state.sidebar_collapsed.set(true);
+        }
     };
 
     view! {
@@ -108,11 +115,19 @@ fn MainArea() -> impl IntoView {
                         <AnalysisPanel />
                     }.into_any()
                 } else {
-                    view! {
-                        <div class="empty-state">
-                            "Drop WAV, FLAC or MP3 files into the sidebar"
-                        </div>
-                    }.into_any()
+                    if is_mobile {
+                        view! {
+                            <div class="empty-state">
+                                "Tap \u{2630} to load audio files"
+                            </div>
+                        }.into_any()
+                    } else {
+                        view! {
+                            <div class="empty-state">
+                                "Drop WAV, FLAC or MP3 files into the sidebar"
+                            </div>
+                        }.into_any()
+                    }
                 }
             }}
         </div>

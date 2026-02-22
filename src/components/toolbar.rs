@@ -6,11 +6,24 @@ pub fn Toolbar() -> impl IntoView {
     let state = expect_context::<AppState>();
     let show_about = RwSignal::new(false);
 
+    let is_mobile = state.is_mobile.get_untracked();
+
     view! {
         <div class="toolbar">
+            {if is_mobile {
+                Some(view! {
+                    <button
+                        class="toolbar-menu-btn"
+                        on:click=move |_| state.sidebar_collapsed.update(|c| *c = !*c)
+                        title="Menu"
+                    >"\u{2630}"</button>
+                })
+            } else {
+                None
+            }}
             <span
                 class="toolbar-brand"
-                style=move || if state.sidebar_collapsed.get() { "margin-left: 24px; cursor: pointer" } else { "cursor: pointer" }
+                style=move || if !is_mobile && state.sidebar_collapsed.get() { "margin-left: 24px; cursor: pointer" } else { "cursor: pointer" }
                 on:click=move |_| show_about.set(true)
                 title="About Batchi"
             >"Batchi"</span>

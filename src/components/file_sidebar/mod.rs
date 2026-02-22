@@ -58,8 +58,17 @@ pub fn FileSidebar() -> impl IntoView {
         let _ = doc.add_event_listener_with_callback_and_bool("mouseup", on_up.unchecked_ref(), true);
     };
 
+    let is_mobile = state.is_mobile.get_untracked();
+
     let sidebar_class = move || {
-        if state.sidebar_collapsed.get() { "sidebar collapsed" } else { "sidebar" }
+        let mut cls = String::from("sidebar");
+        if state.sidebar_collapsed.get() {
+            cls.push_str(" collapsed");
+        }
+        if is_mobile {
+            cls.push_str(" mobile-overlay");
+        }
+        cls
     };
 
     let dropdown_open = state.sidebar_dropdown_open;
@@ -94,16 +103,22 @@ pub fn FileSidebar() -> impl IntoView {
     view! {
         <div class=sidebar_class>
             <div class="sidebar-tabs">
-                <button
-                    class="sidebar-tab sidebar-collapse-btn"
-                    on:click=move |_| {
-                        state.sidebar_collapsed.update(|c| *c = !*c);
-                        dropdown_open.set(false);
-                    }
-                    title=move || if state.sidebar_collapsed.get() { "Show sidebar" } else { "Hide sidebar" }
-                >
-                    {move || if state.sidebar_collapsed.get() { "\u{25B6}" } else { "\u{25C0}" }}
-                </button>
+                {if !is_mobile {
+                    Some(view! {
+                        <button
+                            class="sidebar-tab sidebar-collapse-btn"
+                            on:click=move |_| {
+                                state.sidebar_collapsed.update(|c| *c = !*c);
+                                dropdown_open.set(false);
+                            }
+                            title=move || if state.sidebar_collapsed.get() { "Show sidebar" } else { "Hide sidebar" }
+                        >
+                            {move || if state.sidebar_collapsed.get() { "\u{25B6}" } else { "\u{25C0}" }}
+                        </button>
+                    })
+                } else {
+                    None
+                }}
                 <div class="sidebar-tab-dropdown-wrap" tabindex="-1" on:focusout=on_dropdown_blur>
                     <button class="sidebar-tab-dropdown" on:click=on_dropdown_toggle>
                         {move || state.sidebar_tab.get().label()}
@@ -143,7 +158,11 @@ pub fn FileSidebar() -> impl IntoView {
                 SidebarTab::Harmonics => view! { <HarmonicsPanel /> }.into_any(),
                 SidebarTab::Metadata => view! { <MetadataPanel /> }.into_any(),
             }}
-            <div class="sidebar-resize-handle" on:mousedown=on_resize_start></div>
+            {if !is_mobile {
+                Some(view! { <div class="sidebar-resize-handle" on:mousedown=on_resize_start></div> })
+            } else {
+                None
+            }}
         </div>
     }
 }
