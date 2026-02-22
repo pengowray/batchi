@@ -73,16 +73,48 @@ pub fn App() -> impl IntoView {
     let is_mobile = state.is_mobile.get_untracked();
 
     let grid_style = move || {
-        if is_mobile || state.sidebar_collapsed.get() {
+        if is_mobile {
+            // Sidebar is position:fixed overlay, so single column for main content
+            "grid-template-columns: 1fr".to_string()
+        } else if state.sidebar_collapsed.get() {
             "grid-template-columns: 0px 1fr".to_string()
         } else {
             format!("grid-template-columns: {}px 1fr", state.sidebar_width.get() as i32)
         }
     };
 
+    // Android back button: close sidebar when open
+    if is_mobile {
+        let state_back = state.clone();
+        let on_popstate = wasm_bindgen::closure::Closure::<dyn Fn(web_sys::Event)>::new(move |_: web_sys::Event| {
+            if !state_back.sidebar_collapsed.get_untracked() {
+                state_back.sidebar_collapsed.set(true);
+                // Re-push state so back button keeps working next time
+                let _ = web_sys::window().unwrap().history().unwrap()
+                    .push_state_with_url(&wasm_bindgen::JsValue::NULL, "", None);
+            }
+        });
+        let window = web_sys::window().unwrap();
+        let _ = window.add_event_listener_with_callback("popstate", on_popstate.as_ref().unchecked_ref());
+        on_popstate.forget();
+        // Push initial history entry so back button has something to pop
+        let _ = window.history().unwrap()
+            .push_state_with_url(&wasm_bindgen::JsValue::NULL, "", None);
+    }
+
     view! {
         <div class="app" style=grid_style>
             <FileSidebar />
+            {if is_mobile {
+                Some(view! {
+                    <div
+                        class=move || if state.sidebar_collapsed.get() { "sidebar-backdrop" } else { "sidebar-backdrop open" }
+                        on:click=move |_| state.sidebar_collapsed.set(true)
+                    ></div>
+                })
+            } else {
+                None
+            }}
             <MainArea />
         </div>
     }

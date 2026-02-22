@@ -50,6 +50,7 @@ web-sys = { version = "0.3", features = [
     "Response",
     "Navigator",
     "Clipboard",
+    "History",
     "MediaDevices",
     "MediaStream",
     "MediaStreamConstraints",

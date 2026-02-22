@@ -374,15 +374,16 @@ pub struct AppState {
 }
 
 fn detect_mobile() -> bool {
-    let Some(window) = web_sys::window() else { return false };
-    // Check user agent for mobile keywords
+    let window = match web_sys::window() {
+        Some(w) => w,
+        None => return false,
+    };
     if let Ok(ua) = window.navigator().user_agent() {
         let ua_lower = ua.to_lowercase();
         if ua_lower.contains("android") || ua_lower.contains("iphone") || ua_lower.contains("ipad") || ua_lower.contains("mobile") {
             return true;
         }
     }
-    // Fallback: check screen width
     if let Ok(w) = window.inner_width() {
         if let Some(w) = w.as_f64() {
             return w < 768.0;

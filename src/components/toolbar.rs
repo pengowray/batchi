@@ -14,7 +14,10 @@ pub fn Toolbar() -> impl IntoView {
                 Some(view! {
                     <button
                         class="toolbar-menu-btn"
-                        on:click=move |_| state.sidebar_collapsed.update(|c| *c = !*c)
+                        on:click=move |ev: web_sys::MouseEvent| {
+                            ev.stop_propagation();
+                            state.sidebar_collapsed.update(|c| *c = !*c);
+                        }
                         title="Menu"
                     >"\u{2630}"</button>
                 })
