@@ -448,7 +448,7 @@ pub fn OverviewPanel() -> impl IntoView {
         let total_duration = file_duration();
         if total_duration <= 0.0 || cw <= 0.0 { return; }
         let dx = ev.client_x() as f64 - drag_start_x.get_untracked();
-        let dt = -(dx / cw) * total_duration;
+        let dt = (dx / cw) * total_duration;
         let visible_time = {
             let files = state.files.get_untracked();
             let idx = state.current_file_index.get_untracked();
