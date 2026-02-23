@@ -338,8 +338,18 @@ pub fn blit_viewport(
     let fc_hi = freq_crop_hi.max(0.01);
 
     // How many source columns are visible at current zoom
-    let visible_cols = (cw / zoom).min(pre_rendered.width as f64);
+    let natural_visible_cols = cw / zoom;
+    let visible_cols = natural_visible_cols.min(pre_rendered.width as f64);
     let src_start = scroll_col.max(0.0).min((pre_rendered.width as f64 - visible_cols).max(0.0));
+
+    // If file has fewer columns than the view span, draw at correct proportional
+    // width instead of stretching.  This keeps the spectrogram aligned with the
+    // time-to-pixel mapping used by the playhead, waveform, and overlays.
+    let dst_w = if (pre_rendered.width as f64) < natural_visible_cols {
+        cw * (pre_rendered.width as f64 / natural_visible_cols)
+    } else {
+        cw
+    };
 
     // Vertical crop: row 0 = highest freq, last row = 0 Hz
     // Extract the band from fc_lo to fc_hi of the full image
@@ -383,7 +393,7 @@ pub fn blit_viewport(
                 .unwrap();
             let _ = tmp_ctx.put_image_data(&img, 0.0, 0.0);
 
-            // Draw the visible portion scaled to fill the canvas
+            // Draw the visible portion, proportionally sized to match overlay coordinate space
             let _ = ctx.draw_image_with_html_canvas_element_and_sw_and_sh_and_dx_and_dy_and_dw_and_dh(
                 &tmp,
                 src_start,
@@ -392,7 +402,7 @@ pub fn blit_viewport(
                 src_h,
                 0.0,
                 dst_y,
-                cw,
+                dst_w,
                 dst_h,
             );
         }

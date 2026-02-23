@@ -809,8 +809,8 @@ pub fn finalize_recording(samples: Vec<f32>, sample_rate: u32, state: AppState) 
         metadata: FileMetadata {
             file_size: 0,
             format: "REC",
-            bits_per_sample: 32,
-            is_float: true,
+            bits_per_sample: 16,
+            is_float: false,
             guano: None,
         },
     };

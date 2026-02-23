@@ -85,6 +85,7 @@ pub struct MicState {
     pub emitter_stop: Arc<AtomicBool>,
     pub format: NativeSampleFormat,
     pub sample_rate: u32,
+    pub channels: usize,
     pub device_name: String,
 }
 
@@ -149,6 +150,7 @@ pub fn open_mic() -> Result<MicState, String> {
     let format = detect_format(&config);
     let sample_rate = config.sample_rate().0;
     let stream_config: cpal::StreamConfig = config.into();
+    let channels = stream_config.channels as usize;
 
     let buffer = Arc::new(Mutex::new(RecordingBuffer::new(format, sample_rate)));
     let is_recording = Arc::new(AtomicBool::new(false));
@@ -170,13 +172,28 @@ pub fn open_mic() -> Result<MicState, String> {
                 move |data: &[i16], _: &cpal::InputCallbackInfo| {
                     let mut buf = buf.lock().unwrap();
                     if rec.load(Ordering::Relaxed) {
-                        buf.samples_i16.extend_from_slice(data);
-                        buf.total_samples += data.len();
+                        if channels > 1 {
+                            let mono: Vec<i16> = data.chunks(channels)
+                                .map(|frame| (frame.iter().map(|&s| s as i32).sum::<i32>() / channels as i32) as i16)
+                                .collect();
+                            buf.total_samples += mono.len();
+                            buf.samples_i16.extend_from_slice(&mono);
+                        } else {
+                            buf.total_samples += data.len();
+                            buf.samples_i16.extend_from_slice(data);
+                        }
                     }
                     if strm.load(Ordering::Relaxed) || rec.load(Ordering::Relaxed) {
-                        let f32_data: Vec<f32> =
-                            data.iter().map(|&s| s as f32 / 32768.0).collect();
-                        buf.pending_f32.extend_from_slice(&f32_data);
+                        if channels > 1 {
+                            let f32_data: Vec<f32> = data.chunks(channels)
+                                .map(|frame| frame.iter().map(|&s| s as f32 / 32768.0).sum::<f32>() / channels as f32)
+                                .collect();
+                            buf.pending_f32.extend_from_slice(&f32_data);
+                        } else {
+                            let f32_data: Vec<f32> =
+                                data.iter().map(|&s| s as f32 / 32768.0).collect();
+                            buf.pending_f32.extend_from_slice(&f32_data);
+                        }
                     }
                 },
                 err_callback,
@@ -189,13 +206,28 @@ pub fn open_mic() -> Result<MicState, String> {
                 move |data: &[i32], _: &cpal::InputCallbackInfo| {
                     let mut buf = buf.lock().unwrap();
                     if rec.load(Ordering::Relaxed) {
-                        buf.samples_i32.extend_from_slice(data);
-                        buf.total_samples += data.len();
+                        if channels > 1 {
+                            let mono: Vec<i32> = data.chunks(channels)
+                                .map(|frame| (frame.iter().map(|&s| s as i64).sum::<i64>() / channels as i64) as i32)
+                                .collect();
+                            buf.total_samples += mono.len();
+                            buf.samples_i32.extend_from_slice(&mono);
+                        } else {
+                            buf.total_samples += data.len();
+                            buf.samples_i32.extend_from_slice(data);
+                        }
                     }
                     if strm.load(Ordering::Relaxed) || rec.load(Ordering::Relaxed) {
-                        let f32_data: Vec<f32> =
-                            data.iter().map(|&s| s as f32 / 2147483648.0).collect();
-                        buf.pending_f32.extend_from_slice(&f32_data);
+                        if channels > 1 {
+                            let f32_data: Vec<f32> = data.chunks(channels)
+                                .map(|frame| frame.iter().map(|&s| s as f32 / 2147483648.0).sum::<f32>() / channels as f32)
+                                .collect();
+                            buf.pending_f32.extend_from_slice(&f32_data);
+                        } else {
+                            let f32_data: Vec<f32> =
+                                data.iter().map(|&s| s as f32 / 2147483648.0).collect();
+                            buf.pending_f32.extend_from_slice(&f32_data);
+                        }
                     }
                 },
                 err_callback,
@@ -208,11 +240,26 @@ pub fn open_mic() -> Result<MicState, String> {
                 move |data: &[f32], _: &cpal::InputCallbackInfo| {
                     let mut buf = buf.lock().unwrap();
                     if rec.load(Ordering::Relaxed) {
-                        buf.samples_f32.extend_from_slice(data);
-                        buf.total_samples += data.len();
+                        if channels > 1 {
+                            let mono: Vec<f32> = data.chunks(channels)
+                                .map(|frame| frame.iter().sum::<f32>() / channels as f32)
+                                .collect();
+                            buf.total_samples += mono.len();
+                            buf.samples_f32.extend_from_slice(&mono);
+                        } else {
+                            buf.total_samples += data.len();
+                            buf.samples_f32.extend_from_slice(data);
+                        }
                     }
                     if strm.load(Ordering::Relaxed) || rec.load(Ordering::Relaxed) {
-                        buf.pending_f32.extend_from_slice(data);
+                        if channels > 1 {
+                            let f32_data: Vec<f32> = data.chunks(channels)
+                                .map(|frame| frame.iter().sum::<f32>() / channels as f32)
+                                .collect();
+                            buf.pending_f32.extend_from_slice(&f32_data);
+                        } else {
+                            buf.pending_f32.extend_from_slice(data);
+                        }
                     }
                 },
                 err_callback,
@@ -226,6 +273,8 @@ pub fn open_mic() -> Result<MicState, String> {
         .play()
         .map_err(|e| format!("Failed to start mic stream: {}", e))?;
 
+    eprintln!("Mic opened: {} ch={} sr={} fmt={:?}", device_name, channels, sample_rate, format);
+
     Ok(MicState {
         stream: SendStream(stream),
         buffer,
@@ -234,6 +283,7 @@ pub fn open_mic() -> Result<MicState, String> {
         emitter_stop,
         format,
         sample_rate,
+        channels,
         device_name,
     })
 }
