@@ -145,7 +145,7 @@ pub fn Spectrogram() -> impl IntoView {
                         pre_rendered.set(Some(PreRendered {
                             width: pv.width,
                             height: pv.height,
-                            pixels: pv.pixels.clone(),
+                            pixels: pv.pixels.to_vec(),
                         }));
                     } else {
                         pre_rendered.set(None);

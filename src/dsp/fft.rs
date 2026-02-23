@@ -3,6 +3,7 @@ use crate::types::{AudioData, PreviewImage, SpectrogramColumn, SpectrogramData};
 use realfft::RealFftPlanner;
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 thread_local! {
     static FFT_PLANNER: RefCell<RealFftPlanner<f32>> = RefCell::new(RealFftPlanner::new());
@@ -72,7 +73,7 @@ pub fn compute_spectrogram(
     let max_freq = audio.sample_rate as f64 / 2.0;
 
     SpectrogramData {
-        columns,
+        columns: Arc::new(columns),
         freq_resolution,
         time_resolution,
         max_freq,
@@ -131,7 +132,7 @@ pub fn compute_preview(audio: &AudioData, target_width: u32, target_height: u32)
         return PreviewImage {
             width: 1,
             height: 1,
-            pixels: vec![0, 0, 0, 255],
+            pixels: Arc::new(vec![0, 0, 0, 255]),
         };
     }
 
@@ -143,7 +144,7 @@ pub fn compute_preview(audio: &AudioData, target_width: u32, target_height: u32)
         return PreviewImage {
             width: 1,
             height: 1,
-            pixels: vec![0, 0, 0, 255],
+            pixels: Arc::new(vec![0, 0, 0, 255]),
         };
     }
 
@@ -181,7 +182,7 @@ pub fn compute_preview(audio: &AudioData, target_width: u32, target_height: u32)
     PreviewImage {
         width: out_w,
         height: out_h,
-        pixels,
+        pixels: Arc::new(pixels),
     }
 }
 
@@ -193,7 +194,7 @@ mod tests {
     fn test_audio(samples: Vec<f32>, sample_rate: u32) -> AudioData {
         AudioData {
             duration_secs: samples.len() as f64 / sample_rate as f64,
-            samples,
+            samples: Arc::new(samples),
             sample_rate,
             channels: 1,
             metadata: FileMetadata {

@@ -1,6 +1,7 @@
 use crate::audio::guano::parse_guano;
 use crate::types::{AudioData, FileMetadata};
 use std::io::Cursor;
+use std::sync::Arc;
 
 /// Load audio from raw file bytes. Detects WAV, FLAC, OGG, or MP3 by header magic bytes.
 pub fn load_audio(bytes: &[u8]) -> Result<AudioData, String> {
@@ -61,7 +62,7 @@ fn load_wav(bytes: &[u8]) -> Result<AudioData, String> {
     let duration_secs = samples.len() as f64 / sample_rate as f64;
 
     Ok(AudioData {
-        samples,
+        samples: Arc::new(samples),
         sample_rate,
         channels,
         duration_secs,
@@ -94,7 +95,7 @@ fn load_flac(bytes: &[u8]) -> Result<AudioData, String> {
     let duration_secs = samples.len() as f64 / sample_rate as f64;
 
     Ok(AudioData {
-        samples,
+        samples: Arc::new(samples),
         sample_rate,
         channels,
         duration_secs,
@@ -132,7 +133,7 @@ fn load_ogg(bytes: &[u8]) -> Result<AudioData, String> {
     let duration_secs = samples.len() as f64 / sample_rate as f64;
 
     Ok(AudioData {
-        samples,
+        samples: Arc::new(samples),
         sample_rate,
         channels,
         duration_secs,
@@ -223,7 +224,7 @@ fn load_mp3(bytes: &[u8]) -> Result<AudioData, String> {
     let duration_secs = samples.len() as f64 / sample_rate as f64;
 
     Ok(AudioData {
-        samples,
+        samples: Arc::new(samples),
         sample_rate,
         channels,
         duration_secs,

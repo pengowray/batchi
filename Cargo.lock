@@ -211,10 +211,13 @@ name = "batchi-desktop"
 version = "0.1.4"
 dependencies = [
  "chrono",
+ "claxon",
  "cpal",
  "hound",
+ "lewton",
  "serde",
  "serde_json",
+ "symphonia",
  "tauri",
  "tauri-build",
 ]

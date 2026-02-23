@@ -1,11 +1,16 @@
+mod audio_decode;
+mod native_playback;
 mod recording;
 
+use audio_decode::{AudioFileInfo, FullDecodeResult};
+use native_playback::{NativePlayParams, PlaybackState, PlaybackStatus};
 use recording::{MicInfo, MicState, MicStatus, RecordingResult};
 use std::sync::atomic::Ordering;
 use std::sync::Mutex;
 use tauri::Manager;
 
 type MicMutex = Mutex<Option<MicState>>;
+type PlaybackMutex = Mutex<Option<PlaybackState>>;
 
 #[tauri::command]
 fn save_recording(
@@ -167,10 +172,62 @@ fn mic_get_status(state: tauri::State<MicMutex>) -> MicStatus {
     }
 }
 
+// ── Audio file decoding commands ─────────────────────────────────────
+
+#[tauri::command]
+fn audio_file_info(path: String) -> Result<AudioFileInfo, String> {
+    audio_decode::file_info(&path)
+}
+
+#[tauri::command]
+fn audio_decode_full(path: String) -> Result<FullDecodeResult, String> {
+    audio_decode::decode_full(&path)
+}
+
+// ── Native playback commands ────────────────────────────────────────
+
+#[tauri::command]
+fn native_play(
+    app: tauri::AppHandle,
+    state: tauri::State<PlaybackMutex>,
+    params: NativePlayParams,
+) -> Result<(), String> {
+    let mut pb = state.lock().map_err(|e| e.to_string())?;
+    // Stop existing playback
+    native_playback::stop(&mut pb);
+    // Start new playback
+    let new_state = native_playback::start(params, app)?;
+    *pb = Some(new_state);
+    Ok(())
+}
+
+#[tauri::command]
+fn native_stop(state: tauri::State<PlaybackMutex>) -> Result<(), String> {
+    let mut pb = state.lock().map_err(|e| e.to_string())?;
+    native_playback::stop(&mut pb);
+    Ok(())
+}
+
+#[tauri::command]
+fn native_playback_status(state: tauri::State<PlaybackMutex>) -> PlaybackStatus {
+    let pb = state.lock().unwrap_or_else(|e| e.into_inner());
+    match pb.as_ref() {
+        Some(s) => PlaybackStatus {
+            is_playing: s.is_playing(),
+            playhead_secs: s.playhead_secs(),
+        },
+        None => PlaybackStatus {
+            is_playing: false,
+            playhead_secs: 0.0,
+        },
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .manage(Mutex::new(None::<MicState>))
+        .manage(Mutex::new(None::<PlaybackState>))
         .invoke_handler(tauri::generate_handler![
             save_recording,
             mic_open,
@@ -179,6 +236,11 @@ pub fn run() {
             mic_stop_recording,
             mic_set_listening,
             mic_get_status,
+            audio_file_info,
+            audio_decode_full,
+            native_play,
+            native_stop,
+            native_playback_status,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -8,6 +8,7 @@ use crate::audio::loader::load_audio;
 use crate::dsp::fft::{compute_preview, compute_spectrogram_partial};
 use crate::state::{AppState, LoadedFile};
 use crate::types::SpectrogramData;
+use std::sync::Arc;
 
 pub(super) async fn read_and_load_file(file: File, state: AppState) -> Result<(), String> {
     let name = file.name();
@@ -31,7 +32,7 @@ async fn load_named_bytes(name: String, bytes: &[u8], xc_metadata: Option<Vec<(S
     let name_check = name.clone();
 
     let placeholder_spec = SpectrogramData {
-        columns: Vec::new(),
+        columns: Arc::new(Vec::new()),
         freq_resolution: 0.0,
         time_resolution: 0.0,
         max_freq: audio.sample_rate as f64 / 2.0,
@@ -68,7 +69,9 @@ async fn load_named_bytes(name: String, bytes: &[u8], xc_metadata: Option<Vec<(S
     JsFuture::from(yield_promise).await.ok();
 
     // Phase 2: full spectrogram — computed in small chunks so the browser
-    // stays responsive.  Each chunk yields via setTimeout(0) before continuing.
+    // stays responsive.  Chunks are computed viewport-first (expanding
+    // outward from the current scroll position) so the visible region
+    // appears quickly even for very long files.
     const FFT_SIZE: usize = 2048;
     const HOP_SIZE: usize = 512;
     const CHUNK_COLS: usize = 32; // ~50 ms of work per chunk on typical hardware
@@ -79,10 +82,30 @@ async fn load_named_bytes(name: String, bytes: &[u8], xc_metadata: Option<Vec<(S
         0
     };
 
-    let mut all_columns: Vec<crate::types::SpectrogramColumn> = Vec::with_capacity(total_cols);
+    // Pre-allocate with Option so we can insert chunks in any order
+    let mut all_columns: Vec<Option<crate::types::SpectrogramColumn>> =
+        (0..total_cols).map(|_| None).collect();
 
-    let mut chunk_start = 0;
-    while chunk_start < total_cols {
+    // Build chunk schedule: viewport-first expanding order
+    let time_resolution = HOP_SIZE as f64 / audio_for_stft.sample_rate as f64;
+    let scroll = state.scroll_offset.get_untracked();
+    let zoom = state.zoom_level.get_untracked();
+    let canvas_w = state.spectrogram_canvas_width.get_untracked();
+    let visible_time = if zoom > 0.0 { canvas_w / zoom * time_resolution } else { 1.0 };
+    let center_col = ((scroll + visible_time / 2.0) / time_resolution) as usize;
+    let center_col = center_col.min(total_cols.saturating_sub(1));
+
+    // Generate chunk start indices in expanding-ring order from center
+    let total_chunks = (total_cols + CHUNK_COLS - 1) / CHUNK_COLS;
+    let center_chunk = center_col / CHUNK_COLS;
+    let chunk_order = expanding_chunk_order(center_chunk, total_chunks);
+
+    for chunk_idx in chunk_order {
+        let chunk_start = chunk_idx * CHUNK_COLS;
+        if chunk_start >= total_cols {
+            continue;
+        }
+
         // Check the file is still loaded (user may have removed it)
         let still_present = state.files.get_untracked()
             .get(file_index)
@@ -97,8 +120,12 @@ async fn load_named_bytes(name: String, bytes: &[u8], xc_metadata: Option<Vec<(S
             chunk_start,
             CHUNK_COLS,
         );
-        all_columns.extend(chunk);
-        chunk_start += CHUNK_COLS;
+        for (i, col) in chunk.into_iter().enumerate() {
+            let idx = chunk_start + i;
+            if idx < total_cols {
+                all_columns[idx] = Some(col);
+            }
+        }
 
         // Yield so the browser can process events / paint between chunks
         let p = js_sys::Promise::new(&mut |resolve, _| {
@@ -107,12 +134,20 @@ async fn load_named_bytes(name: String, bytes: &[u8], xc_metadata: Option<Vec<(S
         JsFuture::from(p).await.ok();
     }
 
+    // Unwrap all columns (all should be Some at this point)
+    let final_columns: Vec<crate::types::SpectrogramColumn> = all_columns
+        .into_iter()
+        .map(|opt| opt.unwrap_or_else(|| crate::types::SpectrogramColumn {
+            magnitudes: Vec::new(),
+            time_offset: 0.0,
+        }))
+        .collect();
+
     let freq_resolution = audio_for_stft.sample_rate as f64 / FFT_SIZE as f64;
-    let time_resolution = HOP_SIZE as f64 / audio_for_stft.sample_rate as f64;
     let max_freq = audio_for_stft.sample_rate as f64 / 2.0;
 
     let spectrogram = SpectrogramData {
-        columns: all_columns,
+        columns: Arc::new(final_columns),
         freq_resolution,
         time_resolution,
         max_freq,
@@ -322,4 +357,34 @@ async fn read_file_bytes(file: &File) -> Result<Vec<u8>, String> {
         .map_err(|_| "Expected ArrayBuffer".to_string())?;
     let uint8_array = js_sys::Uint8Array::new(&array_buffer);
     Ok(uint8_array.to_vec())
+}
+
+/// Generate chunk indices in expanding-ring order from a center chunk.
+/// Returns indices: center, center-1, center+1, center-2, center+2, ...
+fn expanding_chunk_order(center: usize, total: usize) -> Vec<usize> {
+    let mut order = Vec::with_capacity(total);
+    if total == 0 {
+        return order;
+    }
+    let center = center.min(total - 1);
+    order.push(center);
+    let mut dist = 1usize;
+    while order.len() < total {
+        let left = center.checked_sub(dist);
+        let right = center + dist;
+        if let Some(l) = left {
+            if l < total {
+                order.push(l);
+            }
+        }
+        if right < total {
+            order.push(right);
+        }
+        // If both are out of bounds, we're done
+        if left.is_none() && right >= total {
+            break;
+        }
+        dist += 1;
+    }
+    order
 }

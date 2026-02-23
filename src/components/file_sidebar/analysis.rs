@@ -1,32 +1,79 @@
 use leptos::prelude::*;
-use crate::state::AppState;
-use crate::dsp::bit_analysis::{self, BitCaution};
+use wasm_bindgen::prelude::*;
+use wasm_bindgen_futures::spawn_local;
+use crate::state::{AppState, RightSidebarTab};
+use crate::dsp::bit_analysis::{self, BitAnalysis, BitCaution};
 use crate::dsp::wsnr;
 
 #[component]
 pub(crate) fn AnalysisPanel() -> impl IntoView {
     let state = expect_context::<AppState>();
 
-    let analysis = Memo::new(move |_| {
-        let files = state.files.get();
-        let idx = state.current_file_index.get();
-        idx.and_then(|i| files.get(i).cloned()).map(|file| {
-            let meta = &file.audio.metadata;
-            bit_analysis::analyze_bits(
-                &file.audio.samples,
-                meta.bits_per_sample,
-                meta.is_float,
-                file.audio.duration_secs,
-            )
-        })
-    });
+    // Async analysis results — None means "not yet computed" or "computing"
+    let analysis: RwSignal<Option<BitAnalysis>> = RwSignal::new(None);
+    let wsnr_result: RwSignal<Option<wsnr::WsnrResult>> = RwSignal::new(None);
+    let is_computing = RwSignal::new(false);
+    let last_computed_idx: RwSignal<Option<usize>> = RwSignal::new(None);
+    let compute_gen = RwSignal::new(0u32);
 
-    let wsnr_result = Memo::new(move |_| {
+    // Only compute expensive analysis when the Analysis tab is active
+    Effect::new(move || {
+        let tab = state.right_sidebar_tab.get();
         let files = state.files.get();
         let idx = state.current_file_index.get();
-        idx.and_then(|i| files.get(i).cloned()).map(|file| {
-            wsnr::analyze_wsnr(&file.audio.samples, file.audio.sample_rate)
-        })
+
+        if tab != RightSidebarTab::Analysis {
+            return;
+        }
+
+        // Already computed for this file
+        if idx == last_computed_idx.get_untracked() && analysis.get_untracked().is_some() {
+            return;
+        }
+
+        let file = idx.and_then(|i| files.get(i).cloned());
+        let Some(file) = file else {
+            analysis.set(None);
+            wsnr_result.set(None);
+            last_computed_idx.set(None);
+            is_computing.set(false);
+            return;
+        };
+
+        // Clear previous results and mark computing
+        analysis.set(None);
+        wsnr_result.set(None);
+        is_computing.set(true);
+        last_computed_idx.set(idx);
+        compute_gen.update(|g| *g += 1);
+        let gen = compute_gen.get_untracked();
+
+        let samples = file.audio.samples.clone(); // Arc clone, O(1)
+        let sample_rate = file.audio.sample_rate;
+        let bits_per_sample = file.audio.metadata.bits_per_sample;
+        let is_float = file.audio.metadata.is_float;
+        let duration_secs = file.audio.duration_secs;
+
+        spawn_local(async move {
+            // Yield to let UI render "Computing..." state
+            yield_to_browser().await;
+            if compute_gen.get_untracked() != gen { return; }
+
+            let bits_result = bit_analysis::analyze_bits(
+                &samples, bits_per_sample, is_float, duration_secs,
+            );
+            if compute_gen.get_untracked() != gen { return; }
+            analysis.set(Some(bits_result));
+
+            yield_to_browser().await;
+            if compute_gen.get_untracked() != gen { return; }
+
+            let wsnr_res = wsnr::analyze_wsnr(&samples, sample_rate);
+            if compute_gen.get_untracked() != gen { return; }
+            wsnr_result.set(Some(wsnr_res));
+
+            is_computing.set(false);
+        });
     });
 
     let xc_quality = Memo::new(move |_| {
@@ -327,6 +374,14 @@ pub(crate) fn AnalysisPanel() -> impl IntoView {
                     }
                 }
             }}
+            // Computing indicator
+            {move || {
+                if is_computing.get() {
+                    view! { <div class="sidebar-panel-empty">"Computing analysis\u{2026}"</div> }.into_any()
+                } else {
+                    view! { <span></span> }.into_any()
+                }
+            }}
             // wSNR section
             {move || {
                 match wsnr_result.get().as_ref() {
@@ -615,4 +670,18 @@ pub(crate) fn AnalysisPanel() -> impl IntoView {
             }}
         </div>
     }
+}
+
+/// Yield once to the browser event loop via a zero-duration setTimeout.
+async fn yield_to_browser() {
+    let promise = js_sys::Promise::new(&mut |resolve, _reject| {
+        let win = web_sys::window().unwrap();
+        let cb = Closure::once_into_js(move || {
+            let _ = resolve.call0(&JsValue::NULL);
+        });
+        let _ = win.set_timeout_with_callback_and_timeout_and_arguments_0(
+            cb.unchecked_ref(), 0,
+        );
+    });
+    let _ = wasm_bindgen_futures::JsFuture::from(promise).await;
 }

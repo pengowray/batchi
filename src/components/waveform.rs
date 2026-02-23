@@ -38,7 +38,7 @@ pub fn Waveform() -> impl IntoView {
                     FilterQuality::HQ => apply_eq_filter(&file.audio.samples, sr, freq_low, freq_high, db_below, db_selected, db_harmonics, db_above, band_mode),
                 }
             } else {
-                file.audio.samples.clone()
+                file.audio.samples.to_vec()
             };
             zc_rate_per_bin(&samples, sr, ZC_BIN_DURATION, filter_enabled)
         })

@@ -576,7 +576,7 @@ fn finalize_recording_tauri(result: JsValue, state: AppState) {
         if is_float { " float" } else { "" }, saved_path);
 
     let audio = AudioData {
-        samples,
+        samples: samples.into(),
         sample_rate,
         channels: 1,
         duration_secs,
@@ -595,7 +595,7 @@ fn finalize_recording_tauri(result: JsValue, state: AppState) {
     let name_check = filename.clone();
 
     let placeholder_spec = SpectrogramData {
-        columns: Vec::new(),
+        columns: Vec::new().into(),
         freq_resolution: 0.0,
         time_resolution: 0.0,
         max_freq: sample_rate as f64 / 2.0,
@@ -815,7 +815,7 @@ pub fn finalize_recording(samples: Vec<f32>, sample_rate: u32, state: AppState) 
     );
 
     let audio = AudioData {
-        samples,
+        samples: samples.into(),
         sample_rate,
         channels: 1,
         duration_secs,
@@ -835,7 +835,7 @@ pub fn finalize_recording(samples: Vec<f32>, sample_rate: u32, state: AppState) 
     let is_tauri = state.is_tauri;
 
     let placeholder_spec = SpectrogramData {
-        columns: Vec::new(),
+        columns: Vec::new().into(),
         freq_resolution: 0.0,
         time_resolution: 0.0,
         max_freq: sample_rate as f64 / 2.0,
@@ -939,7 +939,7 @@ fn spawn_spectrogram_computation(
         let max_freq = audio.sample_rate as f64 / 2.0;
 
         let spectrogram = SpectrogramData {
-            columns: all_columns,
+            columns: all_columns.into(),
             freq_resolution,
             time_resolution,
             max_freq,
