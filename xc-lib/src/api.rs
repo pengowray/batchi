@@ -71,13 +71,16 @@ fn parse_search_response(body: &serde_json::Value) -> Result<XcSearchResult, Str
     })
 }
 
-/// Search the XC API with a free-form query string.
+/// Search the XC API with a query string.
 ///
 /// The query uses XC search tag syntax, e.g.:
 /// - `"grp:bats"` — all bat recordings
 /// - `"grp:bats cnt:Australia"` — Australian bat recordings
 /// - `"nr:928094"` — specific recording by number
-/// - `"Myotis dasycneme"` — species name search
+/// - `"sp:Myotis dasycneme"` — species name search
+///
+/// Plain text without tags is automatically wrapped in `sp:"..."`,
+/// since XC API v3 requires all queries to use tags.
 pub async fn search(
     client: &reqwest::Client,
     api_key: &str,
@@ -85,10 +88,11 @@ pub async fn search(
     page: u32,
     per_page: u32,
 ) -> Result<XcSearchResult, String> {
+    let query = normalize_query(query);
     let url = format!(
         "{}?query={}&key={}&page={}&per_page={}",
         API_BASE,
-        urlencod(query),
+        urlencod(&query),
         urlencod(api_key),
         page,
         per_page.clamp(50, 500),
@@ -149,9 +153,37 @@ pub async fn download_audio(
         .map_err(|e| format!("Failed to read audio bytes: {e}"))
 }
 
+/// Ensure the query uses tag syntax required by XC API v3.
+///
+/// If the query already contains tags (e.g. `gen:Myotis`, `grp:bats`),
+/// it is returned as-is. Otherwise the plain text is wrapped in `sp:"..."`
+/// — the v3 replacement for v2's tag-less species search.
+fn normalize_query(query: &str) -> String {
+    let q = query.trim();
+    if q.is_empty() {
+        return q.to_string();
+    }
+    // Check if query already has at least one tag (alphabetic word followed by ':')
+    let has_tag = q.split_whitespace().any(|tok| {
+        tok.find(':').map_or(false, |pos| {
+            pos > 0 && tok[..pos].chars().all(|c| c.is_ascii_alphabetic())
+        })
+    });
+    if has_tag {
+        return q.to_string();
+    }
+    // Wrap plain text as species name search; quote multi-word values
+    if q.contains(' ') {
+        format!("sp:\"{q}\"")
+    } else {
+        format!("sp:{q}")
+    }
+}
+
 /// Minimal URL encoding for query parameters.
 fn urlencod(s: &str) -> String {
     s.replace(' ', "%20")
+        .replace('"', "%22")
         .replace('&', "%26")
         .replace('=', "%3D")
         .replace('+', "%2B")
