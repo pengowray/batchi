@@ -6,6 +6,12 @@ use crate::tauri_bridge::tauri_invoke;
 
 const XC_GROUPS: &[&str] = &["bats", "birds", "frogs", "grasshoppers", "land mammals"];
 
+const XC_COUNTRIES_RAW: &str = include_str!("../data/countries.txt");
+
+fn xc_countries() -> Vec<&'static str> {
+    XC_COUNTRIES_RAW.lines().filter(|l| !l.is_empty()).collect()
+}
+
 // ── Helper to call tauri_invoke with a JS object of args ─────────────
 
 async fn invoke_with(cmd: &str, args: &js_sys::Object) -> Result<JsValue, String> {
@@ -221,6 +227,22 @@ pub fn XcBrowser() -> impl IntoView {
     let recordings_total: RwSignal<u32> = RwSignal::new(0);
     let cached_ids: RwSignal<std::collections::HashSet<u64>> = RwSignal::new(std::collections::HashSet::new());
 
+    // Country combobox state
+    let country_dropdown_open = RwSignal::new(false);
+    let country_filter_text = RwSignal::new(String::new());
+    let country_highlight_idx = RwSignal::new(0usize);
+    let countries = xc_countries();
+    let filtered_countries = Memo::new(move |_| {
+        let filter = country_filter_text.get().to_lowercase();
+        if filter.is_empty() {
+            countries.clone()
+        } else {
+            countries.iter().copied()
+                .filter(|c| c.to_lowercase().contains(&filter))
+                .collect::<Vec<_>>()
+        }
+    });
+
     // Check if API key is already set
     spawn_local(async move {
         match crate::tauri_bridge::tauri_invoke_no_args("xc_get_api_key").await {
@@ -297,6 +319,10 @@ pub fn XcBrowser() -> impl IntoView {
     };
 
     let on_load_group = move |_: web_sys::MouseEvent| {
+        // Commit any pending filter text
+        let text = country_filter_text.get_untracked().trim().to_string();
+        country_input.set(text);
+        country_dropdown_open.set(false);
         load_group();
     };
 
@@ -410,8 +436,42 @@ pub fn XcBrowser() -> impl IntoView {
     };
 
     let on_country_keydown = move |ev: web_sys::KeyboardEvent| {
-        if ev.key() == "Enter" {
-            load_group();
+        match ev.key().as_str() {
+            "Enter" => {
+                if country_dropdown_open.get_untracked() {
+                    let list = filtered_countries.get_untracked();
+                    let idx = country_highlight_idx.get_untracked();
+                    if idx == 0 {
+                        country_input.set(String::new());
+                        country_filter_text.set(String::new());
+                    } else if let Some(name) = list.get(idx - 1) {
+                        country_input.set(name.to_string());
+                        country_filter_text.set(name.to_string());
+                    }
+                    country_dropdown_open.set(false);
+                } else {
+                    let text = country_filter_text.get_untracked().trim().to_string();
+                    country_input.set(text);
+                }
+                load_group();
+            }
+            "Escape" => {
+                country_dropdown_open.set(false);
+                country_filter_text.set(country_input.get_untracked());
+            }
+            "ArrowDown" => {
+                ev.prevent_default();
+                if !country_dropdown_open.get_untracked() {
+                    country_dropdown_open.set(true);
+                }
+                let max = filtered_countries.get_untracked().len();
+                country_highlight_idx.update(|i| *i = (*i + 1).min(max));
+            }
+            "ArrowUp" => {
+                ev.prevent_default();
+                country_highlight_idx.update(|i| *i = i.saturating_sub(1));
+            }
+            _ => {}
         }
     };
 
@@ -594,14 +654,101 @@ pub fn XcBrowser() -> impl IntoView {
                                                 }).collect::<Vec<_>>()}
                                             </select>
                                             <label>" Country: "</label>
-                                            <input
-                                                type="text"
-                                                class="xc-input xc-country-input"
-                                                placeholder="All"
-                                                prop:value=move || country_input.get()
-                                                on:input=move |ev| country_input.set(event_target_value(&ev))
-                                                on:keydown=on_country_keydown
-                                            />
+                                            <div
+                                                class="xc-combobox"
+                                                tabindex="-1"
+                                                on:focusout=move |ev: web_sys::FocusEvent| {
+                                                    // Check if the new focus target is still inside this combobox
+                                                    if let Some(related) = ev.related_target() {
+                                                        if let Some(el) = ev.current_target() {
+                                                            let container: web_sys::HtmlElement = el.unchecked_into();
+                                                            let related_node: web_sys::Node = related.unchecked_into();
+                                                            if container.contains(Some(&related_node)) {
+                                                                return;
+                                                            }
+                                                        }
+                                                    }
+                                                    country_dropdown_open.set(false);
+                                                    country_filter_text.set(country_input.get_untracked());
+                                                }
+                                            >
+                                                <input
+                                                    type="text"
+                                                    class="xc-input xc-country-input"
+                                                    placeholder="All"
+                                                    prop:value=move || country_filter_text.get()
+                                                    on:input=move |ev| {
+                                                        let val = event_target_value(&ev);
+                                                        country_filter_text.set(val);
+                                                        country_highlight_idx.set(0);
+                                                        country_dropdown_open.set(true);
+                                                    }
+                                                    on:focus=move |_| {
+                                                        country_filter_text.set(country_input.get_untracked());
+                                                        country_dropdown_open.set(true);
+                                                    }
+                                                    on:keydown=on_country_keydown
+                                                />
+                                                <button
+                                                    class="xc-combobox-toggle"
+                                                    tabindex="-1"
+                                                    on:mousedown=move |ev: web_sys::MouseEvent| {
+                                                        ev.prevent_default();
+                                                        country_dropdown_open.update(|v| *v = !*v);
+                                                    }
+                                                >
+                                                    {"\u{25BE}"}
+                                                </button>
+                                                {move || country_dropdown_open.get().then(|| {
+                                                    let list = filtered_countries.get();
+                                                    view! {
+                                                        <div class="xc-combobox-dropdown">
+                                                            <button
+                                                                class=move || if country_input.get().is_empty() {
+                                                                    "xc-combobox-option sel"
+                                                                } else {
+                                                                    "xc-combobox-option"
+                                                                }
+                                                                on:mousedown=move |ev: web_sys::MouseEvent| {
+                                                                    ev.prevent_default();
+                                                                    country_input.set(String::new());
+                                                                    country_filter_text.set(String::new());
+                                                                    country_dropdown_open.set(false);
+                                                                }
+                                                            >
+                                                                "All (no filter)"
+                                                            </button>
+                                                            {list.into_iter().enumerate().map(|(i, name)| {
+                                                                let name_owned = name.to_string();
+                                                                let name_for_set = name_owned.clone();
+                                                                let name_for_cls = name_owned.clone();
+                                                                view! {
+                                                                    <button
+                                                                        class=move || {
+                                                                            let mut cls = "xc-combobox-option".to_string();
+                                                                            if country_input.get() == name_for_cls {
+                                                                                cls.push_str(" sel");
+                                                                            }
+                                                                            if country_highlight_idx.get() == i + 1 {
+                                                                                cls.push_str(" highlight");
+                                                                            }
+                                                                            cls
+                                                                        }
+                                                                        on:mousedown=move |ev: web_sys::MouseEvent| {
+                                                                            ev.prevent_default();
+                                                                            country_input.set(name_for_set.clone());
+                                                                            country_filter_text.set(name_for_set.clone());
+                                                                            country_dropdown_open.set(false);
+                                                                        }
+                                                                    >
+                                                                        {name_owned}
+                                                                    </button>
+                                                                }
+                                                            }).collect::<Vec<_>>()}
+                                                        </div>
+                                                    }
+                                                })}
+                                            </div>
                                             <button class="xc-btn" on:click=on_load_group>"Go"</button>
                                         </div>
                                         <div class="xc-cache-info">
