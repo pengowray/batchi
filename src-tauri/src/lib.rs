@@ -1,6 +1,7 @@
 mod audio_decode;
 mod native_playback;
 mod recording;
+mod xc;
 
 use audio_decode::{AudioFileInfo, FullDecodeResult};
 use native_playback::{NativePlayParams, PlaybackState, PlaybackStatus};
@@ -228,6 +229,19 @@ pub fn run() {
     tauri::Builder::default()
         .manage(Mutex::new(None::<MicState>))
         .manage(Mutex::new(None::<PlaybackState>))
+        .setup(|app| {
+            let cache_root = app
+                .path()
+                .app_data_dir()
+                .map(|d| d.join("xc-cache"))
+                .unwrap_or_else(|_| std::path::PathBuf::from("xc-cache"));
+            let _ = std::fs::create_dir_all(&cache_root);
+            app.manage(Mutex::new(xc::XcState {
+                client: reqwest::Client::new(),
+                cache_root,
+            }));
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             save_recording,
             mic_open,
@@ -241,6 +255,15 @@ pub fn run() {
             native_play,
             native_stop,
             native_playback_status,
+            xc::xc_set_api_key,
+            xc::xc_get_api_key,
+            xc::xc_browse_group,
+            xc::xc_refresh_taxonomy,
+            xc::xc_taxonomy_age,
+            xc::xc_search,
+            xc::xc_species_recordings,
+            xc::xc_download,
+            xc::xc_is_cached,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

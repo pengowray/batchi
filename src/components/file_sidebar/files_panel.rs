@@ -136,6 +136,15 @@ pub(super) fn FilesPanel() -> impl IntoView {
                             <button class="upload-btn demo-btn" on:click=on_demo_click>
                                 {move || if demo_loading.get() { "Loading..." } else { "Load demo" }}
                             </button>
+                            {if state.is_tauri {
+                                Some(view! {
+                                    <button class="upload-btn xc-btn" on:click=move |_| {
+                                        state.xc_browser_open.set(true);
+                                    }>"Explore XC"</button>
+                                })
+                            } else {
+                                None
+                            }}
                             {move || {
                                 if demo_picker_open.get() {
                                     let entries = demo_entries.get();

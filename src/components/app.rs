@@ -16,6 +16,7 @@ use crate::components::frequency_focus_button::FrequencyFocusButton;
 use crate::components::listen_mode_button::ListenModeButton;
 use crate::components::tool_button::ToolButton;
 use crate::components::freq_range_button::FreqRangeButton;
+use crate::components::xc_browser::XcBrowser;
 
 #[component]
 pub fn App() -> impl IntoView {
@@ -58,8 +59,14 @@ pub fn App() -> impl IntoView {
                 microphone::toggle_record(&st).await;
             });
         }
-        if ev.key() == "Escape" && (state_kb.mic_listening.get_untracked() || state_kb.mic_recording.get_untracked()) {
-            microphone::stop_all(&state_kb);
+        if ev.key() == "Escape" {
+            if state_kb.xc_browser_open.get_untracked() {
+                state_kb.xc_browser_open.set(false);
+                return;
+            }
+            if state_kb.mic_listening.get_untracked() || state_kb.mic_recording.get_untracked() {
+                microphone::stop_all(&state_kb);
+            }
         }
     });
     let window = web_sys::window().unwrap();
@@ -119,6 +126,7 @@ pub fn App() -> impl IntoView {
             }}
             <MainArea />
             <RightSidebar />
+            {move || state.xc_browser_open.get().then(|| view! { <XcBrowser /> })}
         </div>
     }
 }

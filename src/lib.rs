@@ -4,6 +4,7 @@ pub mod audio;
 pub mod canvas;
 pub mod components;
 pub mod state;
+pub mod tauri_bridge;
 
 use leptos::prelude::*;
 use components::app::App;

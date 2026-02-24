@@ -1,0 +1,17 @@
+[package]
+name = "xc-cli"
+version = "0.1.0"
+edition = "2021"
+description = "CLI tool for fetching recordings from xeno-canto"
+
+[[bin]]
+name = "xc-fetch"
+path = "src/main.rs"
+
+[dependencies]
+xc-lib = { path = "../xc-lib" }
+clap = { version = "4", features = ["derive"] }
+tokio = { version = "1", features = ["full"] }
+reqwest = { version = "0.12", features = ["json"] }
+dotenvy = "0.15"
+serde_json = "1"

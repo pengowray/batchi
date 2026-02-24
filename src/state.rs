@@ -368,6 +368,9 @@ pub struct AppState {
     // Platform detection
     pub is_mobile: RwSignal<bool>,
     pub is_tauri: bool,
+
+    // XC browser
+    pub xc_browser_open: RwSignal<bool>,
 }
 
 fn detect_tauri() -> bool {
@@ -483,6 +486,7 @@ impl AppState {
             status_message: RwSignal::new(None),
             is_mobile: RwSignal::new(detect_mobile()),
             is_tauri: detect_tauri(),
+            xc_browser_open: RwSignal::new(false),
         };
 
         // On mobile, start with sidebar collapsed
