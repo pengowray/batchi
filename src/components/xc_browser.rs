@@ -461,6 +461,7 @@ pub fn XcBrowser() -> impl IntoView {
 
     let download_and_load = move |id: u64| {
         downloading.set(Some(id));
+        error_msg.set(None);
         spawn_local(async move {
             let args = js_obj();
             set_u64(&args, "id", id);
@@ -508,7 +509,15 @@ pub fn XcBrowser() -> impl IntoView {
 
                 // Error display
                 {move || error_msg.get().map(|msg| view! {
-                    <div class="xc-error">{msg}</div>
+                    <div class="xc-error">
+                        <span>{msg}</span>
+                        <button class="xc-error-dismiss" on:click=move |_| error_msg.set(None)>{"\u{00D7}"}</button>
+                    </div>
+                })}
+
+                // Download progress indicator
+                {move || downloading.get().map(|id| view! {
+                    <div class="xc-downloading">{format!("Downloading XC{id}\u{2026}")}</div>
                 })}
 
                 // API key prompt
@@ -741,10 +750,10 @@ pub fn XcBrowser() -> impl IntoView {
                                                 })}
                                                 <button
                                                     class="xc-btn xc-btn-load"
-                                                    disabled=move || downloading.get() == Some(id)
+                                                    disabled=move || downloading.get().is_some()
                                                     on:click=move |_| dl(id)
                                                 >
-                                                    {move || if downloading.get() == Some(id) { "..." } else { "Load" }}
+                                                    {move || if downloading.get() == Some(id) { "Downloading\u{2026}" } else { "Load" }}
                                                 </button>
                                             </span>
                                         </div>

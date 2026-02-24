@@ -178,13 +178,18 @@ pub async fn xc_download(
     }
 
     // Fetch recording info
-    let rec = api::fetch_recording(&client, &api_key, id).await?;
+    let rec = api::fetch_recording(&client, &api_key, id)
+        .await
+        .map_err(|e| format!("XC{id}: {e}"))?;
 
     // Download audio
-    let audio_bytes = api::download_audio(&client, &rec.file_url).await?;
+    let audio_bytes = api::download_audio(&client, &rec.file_url)
+        .await
+        .map_err(|e| format!("XC{id}: {e}"))?;
 
     // Save to cache
-    let audio_path = cache::save_recording(&cache_root, &rec, &audio_bytes)?;
+    let audio_path = cache::save_recording(&cache_root, &rec, &audio_bytes)
+        .map_err(|e| format!("XC{id}: {e}"))?;
 
     let filename = audio_path
         .file_name()

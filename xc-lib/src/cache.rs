@@ -155,6 +155,17 @@ pub fn save_recording(
     rec: &XcRecording,
     audio_bytes: &[u8],
 ) -> Result<PathBuf, String> {
+    // Validate audio bytes before writing anything
+    if audio_bytes.is_empty() {
+        return Err("Downloaded file is empty".into());
+    }
+    if audio_bytes.len() < 44 {
+        return Err(format!(
+            "Downloaded file is too small ({} bytes) — probably not a valid audio file",
+            audio_bytes.len()
+        ));
+    }
+
     let sounds_dir = root.join("sounds");
     fs::create_dir_all(&sounds_dir)
         .map_err(|e| format!("Failed to create sounds dir: {e}"))?;
@@ -177,13 +188,36 @@ pub fn save_recording(
     fs::write(&meta_path, format!("{json_str}\n"))
         .map_err(|e| format!("Failed to write metadata: {e}"))?;
 
-    // Update index.json
+    // Update index.json (only after audio + metadata written successfully)
     update_index(root, rec, &audio_filename, &meta_filename)?;
 
     Ok(audio_path)
 }
 
+/// Read and parse the cache index, falling back gracefully on errors.
+fn read_index(root: &Path) -> serde_json::Value {
+    let index_path = root.join("index.json");
+    let tmp_path = root.join("index.json.tmp");
+
+    // Try main index first, then tmp fallback (in case rename didn't complete)
+    for path in [&index_path, &tmp_path] {
+        if path.exists() {
+            if let Ok(content) = fs::read_to_string(path) {
+                if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
+                    if val["sounds"].is_array() {
+                        return val;
+                    }
+                }
+            }
+        }
+    }
+
+    // Both missing or corrupt — start fresh
+    serde_json::json!({ "version": 1, "sounds": [] })
+}
+
 /// Update (or create) index.json with a new recording entry.
+/// Writes atomically via a temp file to prevent corruption on crash.
 fn update_index(
     root: &Path,
     rec: &XcRecording,
@@ -191,14 +225,9 @@ fn update_index(
     meta_filename: &str,
 ) -> Result<(), String> {
     let index_path = root.join("index.json");
-    let mut index: serde_json::Value = if index_path.exists() {
-        let content = fs::read_to_string(&index_path)
-            .map_err(|e| format!("Failed to read index.json: {e}"))?;
-        serde_json::from_str(&content)
-            .map_err(|e| format!("Failed to parse index.json: {e}"))?
-    } else {
-        serde_json::json!({ "version": 1, "sounds": [] })
-    };
+    let tmp_path = root.join("index.json.tmp");
+
+    let mut index = read_index(root);
 
     let sounds = index["sounds"]
         .as_array_mut()
@@ -220,8 +249,12 @@ fn update_index(
 
     let json_str = serde_json::to_string_pretty(&index)
         .map_err(|e| format!("Serialize error: {e}"))?;
-    fs::write(&index_path, format!("{json_str}\n"))
-        .map_err(|e| format!("Failed to write index.json: {e}"))?;
+
+    // Write to temp file first, then rename for atomic update
+    fs::write(&tmp_path, format!("{json_str}\n"))
+        .map_err(|e| format!("Failed to write index.json.tmp: {e}"))?;
+    fs::rename(&tmp_path, &index_path)
+        .map_err(|e| format!("Failed to finalize index.json: {e}"))?;
 
     Ok(())
 }

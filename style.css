@@ -1858,6 +1858,37 @@ body.sidebar-resizing {
     padding: 8px 16px;
     font-size: 12px;
     border-bottom: 1px solid #5a2a2a;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.xc-error-dismiss {
+    background: none;
+    border: none;
+    color: #ff8888;
+    font-size: 16px;
+    cursor: pointer;
+    padding: 0 4px;
+    opacity: 0.7;
+    flex-shrink: 0;
+}
+.xc-error-dismiss:hover {
+    opacity: 1;
+}
+
+.xc-downloading {
+    color: #8ac;
+    padding: 8px 16px;
+    font-size: 12px;
+    border-bottom: 1px solid #334;
+    animation: xc-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes xc-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
 }
 
 .xc-loading {

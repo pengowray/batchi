@@ -141,16 +141,37 @@ pub async fn download_audio(
         .get(file_url)
         .send()
         .await
-        .map_err(|e| format!("Download failed: {e}"))?;
+        .map_err(|e| {
+            if e.is_timeout() {
+                "Download timed out — try again".to_string()
+            } else if e.is_connect() {
+                "Could not connect to server — check your internet connection".to_string()
+            } else {
+                format!("Download failed: {e}")
+            }
+        })?;
 
     if !resp.status().is_success() {
-        return Err(format!("Download HTTP {}", resp.status()));
+        let status = resp.status().as_u16();
+        return Err(match status {
+            401 | 403 => "Access denied — check your API key".into(),
+            404 => "Recording not found on server".into(),
+            429 => "Too many requests — wait a moment and try again".into(),
+            500..=599 => format!("Server error (HTTP {status}) — try again later"),
+            _ => format!("Download failed (HTTP {status})"),
+        });
     }
 
     resp.bytes()
         .await
         .map(|b| b.to_vec())
-        .map_err(|e| format!("Failed to read audio bytes: {e}"))
+        .map_err(|e| {
+            if e.is_timeout() {
+                "Download timed out while reading data — try again".to_string()
+            } else {
+                format!("Failed to read audio data: {e}")
+            }
+        })
 }
 
 /// Ensure the query uses tag syntax required by XC API v3.
