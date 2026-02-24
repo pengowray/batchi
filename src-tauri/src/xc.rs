@@ -1,8 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Mutex;
-use tauri::Manager;
-use xc_lib::{api, cache, taxonomy, XcGroupTaxonomy, XcRecording, XcSearchResult};
+use xc_lib::{api, cache, key_store, taxonomy, XcGroupTaxonomy, XcRecording, XcSearchResult};
 
 /// Shared state for XC operations.
 pub struct XcState {
@@ -12,60 +11,31 @@ pub struct XcState {
 
 // ── API Key management ────────────────────────────────────────────────
 
-fn api_key_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
-    let dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    Ok(dir.join("xc_api_key.txt"))
+#[tauri::command]
+pub fn xc_set_api_key(key: String) -> Result<(), String> {
+    key_store::save_key(&key)?;
+    Ok(())
 }
 
 #[tauri::command]
-pub fn xc_set_api_key(app: tauri::AppHandle, key: String) -> Result<(), String> {
-    let path = api_key_path(&app)?;
-    std::fs::write(&path, key.trim()).map_err(|e| format!("Failed to save API key: {e}"))
+pub fn xc_get_api_key() -> Result<Option<String>, String> {
+    Ok(key_store::load_key())
 }
 
-#[tauri::command]
-pub fn xc_get_api_key(app: tauri::AppHandle) -> Result<Option<String>, String> {
-    let path = api_key_path(&app)?;
-    if path.exists() {
-        let key = std::fs::read_to_string(&path)
-            .map_err(|e| format!("Failed to read API key: {e}"))?;
-        let key = key.trim().to_string();
-        if key.is_empty() {
-            Ok(None)
-        } else {
-            Ok(Some(key))
-        }
-    } else {
-        Ok(None)
-    }
-}
-
-fn require_api_key(app: &tauri::AppHandle) -> Result<String, String> {
-    let path = api_key_path(app)?;
-    if !path.exists() {
-        return Err("No XC API key configured. Please set your key first.".into());
-    }
-    let key = std::fs::read_to_string(&path)
-        .map_err(|e| format!("Failed to read API key: {e}"))?;
-    let key = key.trim().to_string();
-    if key.is_empty() {
-        Err("XC API key is empty. Please set your key.".into())
-    } else {
-        Ok(key)
-    }
+fn require_api_key() -> Result<String, String> {
+    key_store::resolve_key(&None)
+        .ok_or_else(|| "No XC API key configured. Please set your key first.".into())
 }
 
 // ── Taxonomy browsing ─────────────────────────────────────────────────
 
 #[tauri::command]
 pub async fn xc_browse_group(
-    app: tauri::AppHandle,
     state: tauri::State<'_, Mutex<XcState>>,
     group: String,
     country: Option<String>,
 ) -> Result<XcGroupTaxonomy, String> {
-    let api_key = require_api_key(&app)?;
+    let api_key = require_api_key()?;
     let (client, cache_root) = {
         let s = state.lock().map_err(|e| e.to_string())?;
         (s.client.clone(), s.cache_root.clone())
@@ -96,12 +66,11 @@ pub async fn xc_browse_group(
 
 #[tauri::command]
 pub async fn xc_refresh_taxonomy(
-    app: tauri::AppHandle,
     state: tauri::State<'_, Mutex<XcState>>,
     group: String,
     country: Option<String>,
 ) -> Result<XcGroupTaxonomy, String> {
-    let api_key = require_api_key(&app)?;
+    let api_key = require_api_key()?;
     let (client, cache_root) = {
         let s = state.lock().map_err(|e| e.to_string())?;
         (s.client.clone(), s.cache_root.clone())
@@ -140,12 +109,11 @@ pub fn xc_taxonomy_age(
 
 #[tauri::command]
 pub async fn xc_search(
-    app: tauri::AppHandle,
     state: tauri::State<'_, Mutex<XcState>>,
     query: String,
     page: Option<u32>,
 ) -> Result<XcSearchResult, String> {
-    let api_key = require_api_key(&app)?;
+    let api_key = require_api_key()?;
     let client = {
         let s = state.lock().map_err(|e| e.to_string())?;
         s.client.clone()
@@ -156,13 +124,12 @@ pub async fn xc_search(
 
 #[tauri::command]
 pub async fn xc_species_recordings(
-    app: tauri::AppHandle,
     state: tauri::State<'_, Mutex<XcState>>,
     genus: String,
     species: String,
     page: Option<u32>,
 ) -> Result<XcSearchResult, String> {
-    let api_key = require_api_key(&app)?;
+    let api_key = require_api_key()?;
     let client = {
         let s = state.lock().map_err(|e| e.to_string())?;
         s.client.clone()
@@ -185,11 +152,10 @@ pub struct XcCachedFile {
 
 #[tauri::command]
 pub async fn xc_download(
-    app: tauri::AppHandle,
     state: tauri::State<'_, Mutex<XcState>>,
     id: u64,
 ) -> Result<XcCachedFile, String> {
-    let api_key = require_api_key(&app)?;
+    let api_key = require_api_key()?;
     let (client, cache_root) = {
         let s = state.lock().map_err(|e| e.to_string())?;
         (s.client.clone(), s.cache_root.clone())

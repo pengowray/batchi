@@ -1,6 +1,6 @@
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
-use xc_lib::{api, cache, taxonomy, XC_GROUPS};
+use xc_lib::{api, cache, key_store, taxonomy, XC_GROUPS};
 
 #[derive(Parser)]
 #[command(name = "xc-fetch", about = "Fetch recordings from xeno-canto API v3")]
@@ -24,7 +24,7 @@ enum Commands {
         #[arg(long)]
         cache_dir: Option<PathBuf>,
 
-        /// API key (overrides XC_API_KEY env var)
+        /// API key (overrides stored key and XC_API_KEY env var)
         #[arg(long)]
         key: Option<String>,
     },
@@ -37,7 +37,7 @@ enum Commands {
         #[arg(long)]
         country: Option<String>,
 
-        /// API key (overrides XC_API_KEY env var)
+        /// API key (overrides stored key and XC_API_KEY env var)
         #[arg(long)]
         key: Option<String>,
 
@@ -49,13 +49,25 @@ enum Commands {
         #[arg(long)]
         cache_dir: Option<PathBuf>,
     },
+    /// Save your XC API key (shared with the Batchi desktop app)
+    SetKey {
+        /// The API key to store
+        key: String,
+    },
+    /// Show the stored API key location and status
+    ShowKey,
+    /// Remove the stored API key
+    ClearKey,
 }
 
-fn get_api_key(key_arg: &Option<String>) -> String {
-    key_arg
-        .clone()
-        .or_else(|| std::env::var("XC_API_KEY").ok())
-        .expect("API key required: pass --key or set XC_API_KEY env var (or add to .env)")
+fn require_api_key(explicit: &Option<String>) -> String {
+    key_store::resolve_key(explicit).unwrap_or_else(|| {
+        eprintln!("API key required. Options:");
+        eprintln!("  xc-fetch set-key YOUR_KEY   (saves for reuse)");
+        eprintln!("  --key YOUR_KEY              (one-time use)");
+        eprintln!("  XC_API_KEY env var or .env   (environment)");
+        std::process::exit(1);
+    })
 }
 
 #[tokio::main]
@@ -65,13 +77,59 @@ async fn main() {
     let client = reqwest::Client::new();
 
     match cli.command {
+        Commands::SetKey { key } => {
+            match key_store::save_key(&key) {
+                Ok(path) => println!("API key saved to {}", path.display()),
+                Err(e) => {
+                    eprintln!("Error: {e}");
+                    std::process::exit(1);
+                }
+            }
+        }
+
+        Commands::ShowKey => {
+            match key_store::key_path() {
+                Some(path) => {
+                    println!("Key file: {}", path.display());
+                    match key_store::load_key() {
+                        Some(k) => {
+                            let masked = if k.len() > 8 {
+                                format!("{}...{}", &k[..4], &k[k.len()-4..])
+                            } else {
+                                "****".to_string()
+                            };
+                            println!("Status:   set ({})", masked);
+                        }
+                        None => println!("Status:   not set"),
+                    }
+                }
+                None => println!("Could not determine config directory"),
+            }
+            // Also check env
+            if let Ok(k) = std::env::var("XC_API_KEY") {
+                if !k.is_empty() {
+                    println!("Env var:  XC_API_KEY is set");
+                }
+            }
+        }
+
+        Commands::ClearKey => {
+            match key_store::delete_key() {
+                Ok(()) => println!("API key removed"),
+                Err(e) => {
+                    eprintln!("Error: {e}");
+                    std::process::exit(1);
+                }
+            }
+        }
+
         Commands::Fetch {
             recording,
             metadata_only,
             cache_dir,
             key,
         } => {
-            let api_key = get_api_key(&key);
+            let api_key = require_api_key(&key);
             let xc_number = api::parse_xc_number(&recording)
                 .unwrap_or_else(|e| {
                     eprintln!("{e}");
@@ -90,7 +148,6 @@ async fn main() {
                 });
 
             if metadata_only {
-                // Write just the metadata sidecar
                 let sounds_dir = cache_root.join("sounds");
                 std::fs::create_dir_all(&sounds_dir).expect("Failed to create sounds dir");
                 let stem = cache::recording_stem(&rec);
@@ -122,7 +179,6 @@ async fn main() {
                 );
             }
 
-            // Print summary
             println!("XC{}: {} ({} {})", rec.id, rec.en, rec.gen, rec.sp);
             println!("Recordist: {}", rec.rec);
             println!("License: {}", rec.lic);
@@ -147,11 +203,10 @@ async fn main() {
                 std::process::exit(1);
             }
 
-            let api_key = get_api_key(&key);
+            let api_key = require_api_key(&key);
             let cache_root = cache_dir.unwrap_or_else(|| PathBuf::from("."));
             let country_ref = country.as_deref();
 
-            // Try cache first
             if !refresh {
                 if let Ok(Some(cached)) = cache::load_taxonomy(&cache_root, &group, country_ref) {
                     let age = cache::taxonomy_age_string(&cache_root, &group, country_ref)
@@ -180,7 +235,6 @@ async fn main() {
             });
             eprintln!();
 
-            // Cache the result
             if let Err(e) = cache::save_taxonomy(&cache_root, &group, country_ref, &taxonomy) {
                 eprintln!("Warning: failed to cache taxonomy: {e}");
             }
