@@ -10,6 +10,11 @@ use crate::state::{AppState, LoadedFile};
 use crate::types::SpectrogramData;
 use std::sync::Arc;
 
+enum SilenceCheck {
+    Silent,
+    HighGain(f64),
+}
+
 pub(super) async fn read_and_load_file(file: File, state: AppState) -> Result<(), String> {
     let name = file.name();
     let bytes = read_file_bytes(&file).await?;
@@ -30,6 +35,22 @@ async fn load_named_bytes(name: String, bytes: &[u8], xc_metadata: Option<Vec<(S
     let preview = compute_preview(&audio, 256, 128);
     let audio_for_stft = audio.clone();
     let name_check = name.clone();
+
+    // Check for silent/quiet files (short files only, to avoid perf overhead)
+    let silence_check = if audio.duration_secs < 60.0 {
+        let peak = audio.samples.iter().map(|s| s.abs()).fold(0.0f32, f32::max);
+        if peak < 0.002 {
+            Some(SilenceCheck::Silent)
+        } else if peak > 1e-10 {
+            let peak_db = 20.0 * (peak as f64).log10();
+            let auto_db = -3.0 - peak_db;
+            if auto_db > 30.0 { Some(SilenceCheck::HighGain(auto_db)) } else { None }
+        } else {
+            None
+        }
+    } else {
+        None
+    };
 
     let placeholder_spec = SpectrogramData {
         columns: Arc::new(Vec::new()),
@@ -57,6 +78,20 @@ async fn load_named_bytes(name: String, bytes: &[u8], xc_metadata: Option<Vec<(S
             }
         });
         file_index = idx;
+    }
+
+    // Notify user about silent/quiet files
+    if let Some(check) = silence_check {
+        match check {
+            SilenceCheck::Silent => {
+                state.auto_gain.set(false);
+                state.gain_db.set(0.0);
+                state.show_info_toast("File appears silent \u{2014} auto-gain disabled");
+            }
+            SilenceCheck::HighGain(db) => {
+                state.show_info_toast(format!("Quiet file \u{2014} auto-gain: +{:.0} dB", db));
+            }
+        }
     }
 
     // Yield to let the UI render the preview

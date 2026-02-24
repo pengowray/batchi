@@ -1386,6 +1386,11 @@ body.sidebar-resizing {
     font-size: 12px;
     white-space: nowrap;
 }
+.status-toast.status-toast-info {
+    background: rgba(180, 150, 40, 0.9);
+    border: 1px solid rgba(220, 190, 60, 0.6);
+    color: #ffe;
+}
 
 /* ── Layer panels (shared popover style) ────────────────────────────────── */
 

@@ -1,5 +1,5 @@
 use leptos::prelude::*;
-use crate::state::AppState;
+use crate::state::{AppState, StatusLevel};
 use crate::audio::playback;
 
 #[component]
@@ -39,8 +39,13 @@ pub fn PlayControls() -> impl IntoView {
                     wasm_bindgen_futures::JsFuture::from(p).await.ok();
                     state2.status_message.set(None);
                 });
+                let cls = if state.status_level.get_untracked() == StatusLevel::Info {
+                    "status-toast status-toast-info"
+                } else {
+                    "status-toast"
+                };
                 view! {
-                    <span class="status-toast">{msg}</span>
+                    <span class=cls>{msg}</span>
                 }
             })}
 

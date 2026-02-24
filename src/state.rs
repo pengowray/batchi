@@ -242,6 +242,13 @@ pub struct Bookmark {
     pub time: f64,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Default)]
+pub enum StatusLevel {
+    #[default]
+    Error,
+    Info,
+}
+
 // ── AppState ─────────────────────────────────────────────────────────────────
 
 #[derive(Clone, Copy)]
@@ -364,6 +371,7 @@ pub struct AppState {
 
     // Transient status message (e.g. permission errors)
     pub status_message: RwSignal<Option<String>>,
+    pub status_level: RwSignal<StatusLevel>,
 
     // Platform detection
     pub is_mobile: RwSignal<bool>,
@@ -484,6 +492,7 @@ impl AppState {
             mic_samples_recorded: RwSignal::new(0),
             mic_bits_per_sample: RwSignal::new(16),
             status_message: RwSignal::new(None),
+            status_level: RwSignal::new(StatusLevel::Error),
             is_mobile: RwSignal::new(detect_mobile()),
             is_tauri: detect_tauri(),
             xc_browser_open: RwSignal::new(false),
@@ -501,5 +510,15 @@ impl AppState {
         let files = self.files.get();
         let idx = self.current_file_index.get()?;
         files.get(idx).cloned()
+    }
+
+    pub fn show_info_toast(&self, msg: impl Into<String>) {
+        self.status_level.set(StatusLevel::Info);
+        self.status_message.set(Some(msg.into()));
+    }
+
+    pub fn show_error_toast(&self, msg: impl Into<String>) {
+        self.status_level.set(StatusLevel::Error);
+        self.status_message.set(Some(msg.into()));
     }
 }
