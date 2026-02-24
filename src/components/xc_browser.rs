@@ -62,6 +62,7 @@ struct RecordingInfo {
     rec: String,
     date: String,
     sound_type: String,
+    smp: String,
 }
 
 #[derive(Clone, Debug)]
@@ -129,6 +130,7 @@ fn parse_recordings(val: &JsValue) -> Vec<RecordingInfo> {
             rec: s("rec"),
             date: s("date"),
             sound_type: s("sound_type"),
+            smp: s("smp"),
         });
     }
     result
@@ -139,6 +141,28 @@ fn parse_num_pages(val: &JsValue) -> u32 {
         .ok()
         .and_then(|v| v.as_f64())
         .unwrap_or(1.0) as u32
+}
+
+fn parse_current_page(val: &JsValue) -> u32 {
+    js_sys::Reflect::get(val, &"page".into())
+        .ok()
+        .and_then(|v| v.as_f64())
+        .unwrap_or(1.0) as u32
+}
+
+fn parse_num_recordings(val: &JsValue) -> u32 {
+    js_sys::Reflect::get(val, &"num_recordings".into())
+        .ok()
+        .and_then(|v| v.as_f64())
+        .unwrap_or(0.0) as u32
+}
+
+fn format_sample_rate(smp: &str) -> String {
+    match smp.parse::<u64>() {
+        Ok(hz) if hz >= 1000 => format!("{}kHz", hz / 1000),
+        Ok(hz) => format!("{hz}Hz"),
+        Err(_) => smp.to_string(),
+    }
 }
 
 fn parse_cached_file(val: &JsValue) -> Option<CachedFile> {
@@ -194,6 +218,8 @@ pub fn XcBrowser() -> impl IntoView {
     let recordings_page = RwSignal::new(1u32);
     let recordings_total_pages = RwSignal::new(1u32);
     let downloading: RwSignal<Option<u64>> = RwSignal::new(None);
+    let recordings_total: RwSignal<u32> = RwSignal::new(0);
+    let cached_ids: RwSignal<std::collections::HashSet<u64>> = RwSignal::new(std::collections::HashSet::new());
 
     // Check if API key is already set
     spawn_local(async move {
@@ -299,6 +325,22 @@ pub fn XcBrowser() -> impl IntoView {
         });
     };
 
+    let check_cached = move |ids: Vec<u64>| {
+        spawn_local(async move {
+            let mut set = std::collections::HashSet::new();
+            for id in ids {
+                let args = js_obj();
+                set_u64(&args, "id", id);
+                if let Ok(val) = invoke_with("xc_is_cached", &args).await {
+                    if val.as_bool().unwrap_or(false) {
+                        set.insert(id);
+                    }
+                }
+            }
+            cached_ids.set(set);
+        });
+    };
+
     let load_species_recordings = move |genus: String, species: String, en: String| {
         view.set(BrowserView::SpeciesRecordings {
             genus: genus.clone(),
@@ -319,7 +361,11 @@ pub fn XcBrowser() -> impl IntoView {
             match invoke_with("xc_species_recordings", &args).await {
                 Ok(val) => {
                     recordings.set(parse_recordings(&val));
+                    recordings_page.set(parse_current_page(&val));
                     recordings_total_pages.set(parse_num_pages(&val));
+                    recordings_total.set(parse_num_recordings(&val));
+                    let ids: Vec<u64> = recordings.get_untracked().iter().map(|r| r.id).collect();
+                    check_cached(ids);
                 }
                 Err(e) => error_msg.set(Some(e)),
             }
@@ -345,7 +391,11 @@ pub fn XcBrowser() -> impl IntoView {
             match invoke_with("xc_search", &args).await {
                 Ok(val) => {
                     recordings.set(parse_recordings(&val));
+                    recordings_page.set(parse_current_page(&val));
                     recordings_total_pages.set(parse_num_pages(&val));
+                    recordings_total.set(parse_num_recordings(&val));
+                    let ids: Vec<u64> = recordings.get_untracked().iter().map(|r| r.id).collect();
+                    check_cached(ids);
                 }
                 Err(e) => error_msg.set(Some(e)),
             }
@@ -359,9 +409,54 @@ pub fn XcBrowser() -> impl IntoView {
         }
     };
 
+    let on_country_keydown = move |ev: web_sys::KeyboardEvent| {
+        if ev.key() == "Enter" {
+            load_group();
+        }
+    };
+
     let on_back = move |_: web_sys::MouseEvent| {
         view.set(BrowserView::GroupBrowse);
         recordings.set(Vec::new());
+    };
+
+    let load_recordings_page = move |page_num: u32| {
+        let current_view = view.get_untracked();
+        loading.set(true);
+        recordings.set(Vec::new());
+        error_msg.set(None);
+
+        spawn_local(async move {
+            let result = match &current_view {
+                BrowserView::SpeciesRecordings { genus, species, .. } => {
+                    let args = js_obj();
+                    set_str(&args, "genus", genus);
+                    set_str(&args, "species", species);
+                    set_opt_u32(&args, "page", Some(page_num));
+                    invoke_with("xc_species_recordings", &args).await
+                }
+                BrowserView::SearchResults => {
+                    let args = js_obj();
+                    set_str(&args, "query", &search_input.get_untracked());
+                    set_opt_u32(&args, "page", Some(page_num));
+                    invoke_with("xc_search", &args).await
+                }
+                _ => return,
+            };
+
+            match result {
+                Ok(val) => {
+                    recordings.set(parse_recordings(&val));
+                    recordings_page.set(parse_current_page(&val));
+                    recordings_total_pages.set(parse_num_pages(&val));
+                    recordings_total.set(parse_num_recordings(&val));
+                    let ids: Vec<u64> = recordings.get_untracked().iter().map(|r| r.id).collect();
+                    check_cached(ids);
+                }
+                Err(e) => error_msg.set(Some(e)),
+            }
+            loading.set(false);
+        });
     };
 
     let download_and_load = move |id: u64| {
@@ -378,13 +473,14 @@ pub fn XcBrowser() -> impl IntoView {
                         set_str(&path_args, "path", &cached.path);
                         match invoke_with("audio_decode_full", &path_args).await {
                             Ok(decode_result) => {
-                                // Load from decoded result
                                 load_from_tauri_decode(
                                     &cached.filename,
                                     &decode_result,
                                     cached.metadata,
                                     state,
                                 );
+                                cached_ids.update(|s| { s.insert(id); });
+                                state.xc_browser_open.set(false);
                             }
                             Err(e) => {
                                 log::error!("Failed to decode XC audio: {e}");
@@ -495,6 +591,7 @@ pub fn XcBrowser() -> impl IntoView {
                                                 placeholder="All"
                                                 prop:value=move || country_input.get()
                                                 on:input=move |ev| country_input.set(event_target_value(&ev))
+                                                on:keydown=on_country_keydown
                                             />
                                             <button class="xc-btn" on:click=on_load_group>"Go"</button>
                                         </div>
@@ -537,7 +634,9 @@ pub fn XcBrowser() -> impl IntoView {
                     let list = species_list.get();
                     if list.is_empty() && !loading.get() { return None; }
 
+                    let count = list.len();
                     Some(view! {
+                        <div class="xc-result-summary">{format!("{count} species")}</div>
                         <div class="xc-species-list">
                             <div class="xc-list-header">
                                 <span class="xc-col-name">"Species"</span>
@@ -582,7 +681,19 @@ pub fn XcBrowser() -> impl IntoView {
                     };
 
                     Some(view! {
-                        <div class="xc-recordings-header">{title}</div>
+                        <div class="xc-recordings-header">
+                            {title}
+                            <span class="xc-result-count">
+                                {move || {
+                                    let total = recordings_total.get();
+                                    if total > 0 {
+                                        format!(" \u{2014} {} recordings", total)
+                                    } else {
+                                        String::new()
+                                    }
+                                }}
+                            </span>
+                        </div>
                         <div class="xc-recordings-list">
                             <div class="xc-rec-header">
                                 <span class="xc-rec-id">"ID"</span>
@@ -595,26 +706,95 @@ pub fn XcBrowser() -> impl IntoView {
                             {recs.into_iter().map(|rec| {
                                 let id = rec.id;
                                 let dl = download_and_load.clone();
+                                let q_class = match rec.q.as_str() {
+                                    "A" => "xc-rec-quality xc-q-a",
+                                    "B" => "xc-rec-quality xc-q-b",
+                                    "C" => "xc-rec-quality xc-q-c",
+                                    "D" => "xc-rec-quality xc-q-d",
+                                    "E" => "xc-rec-quality xc-q-e",
+                                    _ => "xc-rec-quality",
+                                };
+                                let has_details = !rec.sound_type.is_empty()
+                                    || !rec.smp.is_empty()
+                                    || !rec.date.is_empty()
+                                    || !rec.rec.is_empty();
                                 view! {
                                     <div class="xc-rec-row">
-                                        <span class="xc-rec-id">{format!("XC{}", rec.id)}</span>
-                                        <span class="xc-rec-species">{rec.en}</span>
-                                        <span class="xc-rec-quality">{rec.q}</span>
-                                        <span class="xc-rec-length">{rec.length}</span>
-                                        <span class="xc-rec-loc" title=rec.loc.clone()>{rec.cnt}</span>
-                                        <span class="xc-rec-action">
-                                            <button
-                                                class="xc-btn xc-btn-load"
-                                                disabled=move || downloading.get() == Some(id)
-                                                on:click=move |_| dl(id)
-                                            >
-                                                {move || if downloading.get() == Some(id) { "..." } else { "Load" }}
-                                            </button>
-                                        </span>
+                                        <div class="xc-rec-main">
+                                            <span class="xc-rec-id">
+                                                <a
+                                                    href=format!("https://xeno-canto.org/{}", rec.id)
+                                                    target="_blank"
+                                                    class="xc-rec-link"
+                                                    on:click=move |ev: web_sys::MouseEvent| ev.stop_propagation()
+                                                >
+                                                    {format!("XC{}", rec.id)}
+                                                </a>
+                                            </span>
+                                            <span class="xc-rec-species">{rec.en}</span>
+                                            <span class=q_class>{rec.q}</span>
+                                            <span class="xc-rec-length">{rec.length}</span>
+                                            <span class="xc-rec-loc" title=rec.loc.clone()>{rec.cnt}</span>
+                                            <span class="xc-rec-action">
+                                                {move || cached_ids.get().contains(&id).then(|| view! {
+                                                    <span class="xc-rec-cached" title="Cached locally">{"\u{2713}"}</span>
+                                                })}
+                                                <button
+                                                    class="xc-btn xc-btn-load"
+                                                    disabled=move || downloading.get() == Some(id)
+                                                    on:click=move |_| dl(id)
+                                                >
+                                                    {move || if downloading.get() == Some(id) { "..." } else { "Load" }}
+                                                </button>
+                                            </span>
+                                        </div>
+                                        {has_details.then(|| view! {
+                                            <div class="xc-rec-detail">
+                                                {(!rec.sound_type.is_empty()).then(|| view! {
+                                                    <span class="xc-rec-tag">{rec.sound_type}</span>
+                                                })}
+                                                {(!rec.smp.is_empty()).then(|| view! {
+                                                    <span class="xc-rec-tag xc-rec-smp">{format_sample_rate(&rec.smp)}</span>
+                                                })}
+                                                {(!rec.date.is_empty()).then(|| view! {
+                                                    <span class="xc-rec-tag">{rec.date}</span>
+                                                })}
+                                                {(!rec.rec.is_empty()).then(|| view! {
+                                                    <span class="xc-rec-tag xc-rec-recordist">{rec.rec}</span>
+                                                })}
+                                            </div>
+                                        })}
                                     </div>
                                 }
                             }).collect::<Vec<_>>()}
                         </div>
+
+                        // Pagination
+                        {move || {
+                            let total = recordings_total_pages.get();
+                            if total <= 1 { return None; }
+                            Some(view! {
+                                <div class="xc-pagination">
+                                    <button
+                                        class="xc-btn xc-btn-small"
+                                        disabled=move || recordings_page.get() <= 1
+                                        on:click=move |_| load_recordings_page(recordings_page.get_untracked().saturating_sub(1))
+                                    >
+                                        {"\u{2190} Prev"}
+                                    </button>
+                                    <span class="xc-page-info">
+                                        {move || format!("Page {} of {}", recordings_page.get(), recordings_total_pages.get())}
+                                    </span>
+                                    <button
+                                        class="xc-btn xc-btn-small"
+                                        disabled=move || recordings_page.get() >= recordings_total_pages.get()
+                                        on:click=move |_| load_recordings_page(recordings_page.get_untracked() + 1)
+                                    >
+                                        {"Next \u{2192}"}
+                                    </button>
+                                </div>
+                            })
+                        }}
                     })
                 }}
             </div>

@@ -1932,9 +1932,9 @@ body.sidebar-resizing {
     min-height: 0;
 }
 
-.xc-rec-header, .xc-rec-row {
+.xc-rec-header, .xc-rec-main {
     display: grid;
-    grid-template-columns: 80px 1fr 30px 50px 1fr 50px;
+    grid-template-columns: 70px 1fr 24px 42px 1fr 56px;
     gap: 6px;
     padding: 5px 16px;
     font-size: 11px;
@@ -1959,13 +1959,27 @@ body.sidebar-resizing {
 }
 
 .xc-rec-id {
-    color: #6ea8fe;
     font-size: 11px;
+}
+
+.xc-rec-link {
+    color: #6ea8fe;
+    text-decoration: none;
+}
+
+.xc-rec-link:hover {
+    text-decoration: underline;
 }
 
 .xc-rec-quality {
     text-align: center;
 }
+
+.xc-q-a { color: #4caf50; font-weight: 600; }
+.xc-q-b { color: #8bc34a; }
+.xc-q-c { color: #ffc107; }
+.xc-q-d { color: #ff9800; }
+.xc-q-e { color: #f44336; }
 
 .xc-rec-length {
     text-align: right;
@@ -1980,4 +1994,62 @@ body.sidebar-resizing {
 
 .xc-rec-action {
     text-align: right;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 4px;
+}
+
+.xc-rec-cached {
+    color: #4caf50;
+    font-size: 12px;
+}
+
+.xc-rec-detail {
+    display: flex;
+    gap: 6px;
+    padding: 0 16px 4px 16px;
+    flex-wrap: wrap;
+}
+
+.xc-rec-tag {
+    font-size: 10px;
+    color: #888;
+    background: #2a2a3a;
+    padding: 1px 6px;
+    border-radius: 3px;
+}
+
+.xc-rec-smp {
+    color: #9d8aef;
+}
+
+.xc-rec-recordist {
+    color: #7aa;
+}
+
+.xc-result-count {
+    color: #888;
+    font-size: 11px;
+    font-weight: 400;
+}
+
+.xc-result-summary {
+    color: #888;
+    font-size: 11px;
+    padding: 4px 16px;
+}
+
+.xc-pagination {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 8px 16px;
+    border-top: 1px solid #333;
+}
+
+.xc-page-info {
+    color: #888;
+    font-size: 11px;
 }
