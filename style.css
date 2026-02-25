@@ -1098,7 +1098,7 @@ body.sidebar-resizing {
     flex-shrink: 0;
     position: relative;
     background: #000;
-    border-bottom: 1px solid #2a2a2a;
+    border-bottom: 10px solid #000;
     /* overflow: visible so the View panel can extend upward into the toolbar area */
     overflow: visible;
     cursor: crosshair;
