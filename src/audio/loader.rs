@@ -30,8 +30,68 @@ fn is_mp3(bytes: &[u8]) -> bool {
     false
 }
 
+/// Rebuild a minimal RIFF/WAVE with only the `fmt` and `data` chunks.
+/// Hound 3.5 doesn't handle RIFF word-alignment padding on odd-length chunks
+/// (e.g. a 651-byte `bext` chunk), so we strip extraneous chunks and produce
+/// a clean WAV that hound can always parse.
+fn normalize_riff(bytes: &[u8]) -> Option<Vec<u8>> {
+    if bytes.len() < 12 || &bytes[0..4] != b"RIFF" || &bytes[8..12] != b"WAVE" {
+        return None;
+    }
+
+    let mut pos = 12usize;
+    let mut fmt_data: Option<&[u8]> = None;
+    let mut audio_data: Option<&[u8]> = None;
+
+    while pos + 8 <= bytes.len() {
+        let chunk_id = &bytes[pos..pos + 4];
+        let chunk_size = u32::from_le_bytes(
+            bytes[pos + 4..pos + 8].try_into().ok()?,
+        ) as usize;
+        let data_start = pos + 8;
+        let data_end = data_start + chunk_size;
+        if data_end > bytes.len() {
+            break;
+        }
+
+        match chunk_id {
+            b"fmt " => fmt_data = Some(&bytes[data_start..data_end]),
+            b"data" => {
+                audio_data = Some(&bytes[data_start..data_end]);
+                break; // data is always last useful chunk
+            }
+            _ => {}
+        }
+
+        // Advance with RIFF word-alignment (same as guano.rs)
+        pos = data_start + ((chunk_size + 1) & !1);
+    }
+
+    let fmt = fmt_data?;
+    let data = audio_data?;
+
+    // WAVE + fmt chunk header + fmt body + data chunk header + data body
+    let riff_body_len = 4 + 8 + fmt.len() + 8 + data.len();
+    let mut out = Vec::with_capacity(12 + riff_body_len - 4);
+    out.extend_from_slice(b"RIFF");
+    out.extend_from_slice(&(riff_body_len as u32).to_le_bytes());
+    out.extend_from_slice(b"WAVE");
+    out.extend_from_slice(b"fmt ");
+    out.extend_from_slice(&(fmt.len() as u32).to_le_bytes());
+    out.extend_from_slice(fmt);
+    out.extend_from_slice(b"data");
+    out.extend_from_slice(&(data.len() as u32).to_le_bytes());
+    out.extend_from_slice(data);
+    Some(out)
+}
+
 fn load_wav(bytes: &[u8]) -> Result<AudioData, String> {
-    let cursor = Cursor::new(bytes);
+    let normalized;
+    let wav_bytes = match normalize_riff(bytes) {
+        Some(clean) => { normalized = clean; &normalized[..] }
+        None => bytes,
+    };
+    let cursor = Cursor::new(wav_bytes);
     let reader = hound::WavReader::new(cursor).map_err(|e| format!("WAV error: {e}"))?;
     let spec = reader.spec();
     let sample_rate = spec.sample_rate;
