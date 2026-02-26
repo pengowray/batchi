@@ -16,18 +16,37 @@ pub fn HfrButton() -> impl IntoView {
             .unwrap_or(96_000.0);
 
         if enabled {
-            // Set default HFR range: 18kHz to Nyquist
-            state.ff_freq_lo.set(18_000.0);
-            state.ff_freq_hi.set(nyquist);
+            // Restore saved HFR settings, or use defaults
+            let saved_lo = state.hfr_saved_ff_lo.get_untracked();
+            let saved_hi = state.hfr_saved_ff_hi.get_untracked();
+            let saved_mode = state.hfr_saved_playback_mode.get_untracked();
 
-            // Set playback mode to PS if currently Normal
-            if state.playback_mode.get_untracked() == PlaybackMode::Normal {
-                state.playback_mode.set(PlaybackMode::PitchShift);
+            state.ff_freq_lo.set(saved_lo.unwrap_or(18_000.0));
+            state.ff_freq_hi.set(saved_hi.unwrap_or(nyquist));
+
+            match saved_mode {
+                Some(mode) => state.playback_mode.set(mode),
+                None => {
+                    if state.playback_mode.get_untracked() == PlaybackMode::Normal {
+                        state.playback_mode.set(PlaybackMode::PitchShift);
+                    }
+                }
             }
 
             state.min_display_freq.set(None);
             state.max_display_freq.set(None);
         } else {
+            // Save current HFR settings before clearing
+            let current_lo = state.ff_freq_lo.get_untracked();
+            let current_hi = state.ff_freq_hi.get_untracked();
+            let current_mode = state.playback_mode.get_untracked();
+
+            if current_hi > current_lo {
+                state.hfr_saved_ff_lo.set(Some(current_lo));
+                state.hfr_saved_ff_hi.set(Some(current_hi));
+                state.hfr_saved_playback_mode.set(Some(current_mode));
+            }
+
             // HFR OFF: reset to 1:1
             state.ff_freq_lo.set(0.0);
             state.ff_freq_hi.set(0.0);

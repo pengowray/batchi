@@ -293,6 +293,18 @@ pub struct AppState {
 
     // XC browser
     pub xc_browser_open: RwSignal<bool>,
+
+    // HFR saved settings (restored when toggling HFR back on)
+    pub hfr_saved_ff_lo: RwSignal<Option<f64>>,
+    pub hfr_saved_ff_hi: RwSignal<Option<f64>>,
+    pub hfr_saved_playback_mode: RwSignal<Option<PlaybackMode>>,
+
+    // Axis drag (left axis frequency range selection)
+    pub axis_drag_start_freq: RwSignal<Option<f64>>,
+    pub axis_drag_current_freq: RwSignal<Option<f64>>,
+
+    // Cursor time at mouse position (for bottom bar feedback)
+    pub cursor_time: RwSignal<Option<f64>>,
 }
 
 fn detect_tauri() -> bool {
@@ -409,6 +421,12 @@ impl AppState {
             is_mobile: RwSignal::new(detect_mobile()),
             is_tauri: detect_tauri(),
             xc_browser_open: RwSignal::new(false),
+            hfr_saved_ff_lo: RwSignal::new(None),
+            hfr_saved_ff_hi: RwSignal::new(None),
+            hfr_saved_playback_mode: RwSignal::new(None),
+            axis_drag_start_freq: RwSignal::new(None),
+            axis_drag_current_freq: RwSignal::new(None),
+            cursor_time: RwSignal::new(None),
         };
 
         // On mobile, start with sidebar collapsed

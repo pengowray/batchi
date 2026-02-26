@@ -233,6 +233,8 @@ pub fn Spectrogram() -> impl IntoView {
         let het_cutoff_auto = state.het_cutoff_auto.get();
         let hfr_enabled = state.hfr_enabled.get();
         let mv_on = state.mv_enabled.get_untracked();
+        let axis_drag_start = state.axis_drag_start_freq.get();
+        let axis_drag_current = state.axis_drag_current_freq.get();
         let _pre = pre_rendered.track();
         let _coh = coherence_frames.track();
 
@@ -307,12 +309,23 @@ pub fn Spectrogram() -> impl IntoView {
             });
 
             // Always draw freq markers and playhead on top of the heatmap.
+            let (adl, adh) = match (axis_drag_start, axis_drag_current) {
+                (Some(a), Some(b)) => (Some(a.min(b)), Some(a.max(b))),
+                _ => (None, None),
+            };
+            let ff_drag_active = matches!(spec_drag, Some(SpectrogramHandle::FfUpper) | Some(SpectrogramHandle::FfLower) | Some(SpectrogramHandle::FfMiddle));
             let marker_state = FreqMarkerState {
                 mouse_freq,
                 mouse_in_label_area: mouse_freq.is_some() && mouse_cx < LABEL_AREA_WIDTH,
                 label_hover_opacity: label_opacity,
                 has_selection: selection.is_some() || dragging,
                 file_max_freq,
+                axis_drag_lo: adl,
+                axis_drag_hi: adh,
+                ff_drag_active,
+                ff_lo,
+                ff_hi,
+                ff_handles_active: spec_hover.is_some() || spec_drag.is_some(),
             };
             spectrogram_renderer::draw_freq_markers(
                 &ctx,
@@ -371,12 +384,23 @@ pub fn Spectrogram() -> impl IntoView {
                     }
                 };
 
+                let (adl2, adh2) = match (axis_drag_start, axis_drag_current) {
+                    (Some(a), Some(b)) => (Some(a.min(b)), Some(a.max(b))),
+                    _ => (None, None),
+                };
+                let ff_drag_active2 = matches!(spec_drag, Some(SpectrogramHandle::FfUpper) | Some(SpectrogramHandle::FfLower) | Some(SpectrogramHandle::FfMiddle));
                 let marker_state = FreqMarkerState {
                     mouse_freq,
                     mouse_in_label_area: mouse_freq.is_some() && mouse_cx < LABEL_AREA_WIDTH,
                     label_hover_opacity: label_opacity,
                     has_selection: selection.is_some() || dragging,
                     file_max_freq,
+                    axis_drag_lo: adl2,
+                    axis_drag_hi: adh2,
+                    ff_drag_active: ff_drag_active2,
+                    ff_lo,
+                    ff_hi,
+                    ff_handles_active: spec_hover.is_some() || spec_drag.is_some(),
                 };
 
                 spectrogram_renderer::draw_freq_markers(
@@ -582,6 +606,17 @@ pub fn Spectrogram() -> impl IntoView {
             return;
         }
 
+        // Check for axis drag (left axis frequency range selection)
+        if let Some((px_x, _, _, freq)) = mouse_to_xtf(&ev) {
+            if px_x < LABEL_AREA_WIDTH {
+                state.axis_drag_start_freq.set(Some(freq));
+                state.axis_drag_current_freq.set(Some(freq));
+                state.is_dragging.set(true);
+                ev.prevent_default();
+                return;
+            }
+        }
+
         match state.canvas_tool.get_untracked() {
             CanvasTool::Hand => {
                 // Bookmark tap while playing
@@ -609,6 +644,7 @@ pub fn Spectrogram() -> impl IntoView {
             // Always track hover position
             state.mouse_freq.set(Some(f));
             state.mouse_canvas_x.set(px_x);
+            state.cursor_time.set(Some(t));
 
             // Update label hover target and in-label-area state
             let in_label_area = px_x < LABEL_AREA_WIDTH;
@@ -676,6 +712,12 @@ pub fn Spectrogram() -> impl IntoView {
                     return;
                 }
 
+                // Axis drag takes second priority (after spec handle drag)
+                if state.axis_drag_start_freq.get_untracked().is_some() {
+                    state.axis_drag_current_freq.set(Some(f));
+                    return;
+                }
+
                 match state.canvas_tool.get_untracked() {
                     CanvasTool::Hand => {
                         // Pan view
@@ -708,20 +750,25 @@ pub fn Spectrogram() -> impl IntoView {
                 }
             } else {
                 // Not dragging — do spec handle hover detection (FF + HET)
-                let Some(canvas_el) = canvas_ref.get() else { return };
-                let canvas: &HtmlCanvasElement = canvas_el.as_ref();
-                let ch = canvas.height() as f64;
-                let files = state.files.get_untracked();
-                let idx = state.current_file_index.get_untracked();
-                let file = idx.and_then(|i| files.get(i));
-                let file_max_freq = file.map(|f| f.spectrogram.max_freq).unwrap_or(96_000.0);
-                let min_freq_val = state.min_display_freq.get_untracked().unwrap_or(0.0);
-                let max_freq_val = state.max_display_freq.get_untracked().unwrap_or(file_max_freq);
+                // Skip handle hover when in label area (to allow axis drag)
+                if !in_label_area {
+                    let Some(canvas_el) = canvas_ref.get() else { return };
+                    let canvas: &HtmlCanvasElement = canvas_el.as_ref();
+                    let ch = canvas.height() as f64;
+                    let files = state.files.get_untracked();
+                    let idx = state.current_file_index.get_untracked();
+                    let file = idx.and_then(|i| files.get(i));
+                    let file_max_freq = file.map(|f| f.spectrogram.max_freq).unwrap_or(96_000.0);
+                    let min_freq_val = state.min_display_freq.get_untracked().unwrap_or(0.0);
+                    let max_freq_val = state.max_display_freq.get_untracked().unwrap_or(file_max_freq);
 
-                let handle = hit_test_spec_handles(
-                    &state, px_y, min_freq_val, max_freq_val, ch, 8.0,
-                );
-                state.spec_hover_handle.set(handle);
+                    let handle = hit_test_spec_handles(
+                        &state, px_y, min_freq_val, max_freq_val, ch, 8.0,
+                    );
+                    state.spec_hover_handle.set(handle);
+                } else {
+                    state.spec_hover_handle.set(None);
+                }
             }
         }
     };
@@ -729,16 +776,19 @@ pub fn Spectrogram() -> impl IntoView {
     let on_mouseleave = move |_ev: MouseEvent| {
         state.mouse_freq.set(None);
         state.mouse_in_label_area.set(false);
+        state.cursor_time.set(None);
         label_hover_target.set(0.0);
         state.is_dragging.set(false);
         state.spec_drag_handle.set(None);
         state.spec_hover_handle.set(None);
+        state.axis_drag_start_freq.set(None);
+        state.axis_drag_current_freq.set(None);
     };
 
     let on_mouseup = move |ev: MouseEvent| {
         if !state.is_dragging.get_untracked() { return; }
 
-        // End HET handle drag
+        // End HET/FF handle drag
         if state.spec_drag_handle.get_untracked().is_some() {
             state.spec_drag_handle.set(None);
             state.is_dragging.set(false);
@@ -746,6 +796,27 @@ pub fn Spectrogram() -> impl IntoView {
             if state.is_playing.get_untracked() {
                 playback::replay_het(&state);
             }
+            return;
+        }
+
+        // End axis drag
+        if let Some(start_freq) = state.axis_drag_start_freq.get_untracked() {
+            if let Some((_, _, _, end_freq)) = mouse_to_xtf(&ev) {
+                let lo = start_freq.min(end_freq);
+                let hi = start_freq.max(end_freq);
+                // Only set FF range if the drag covers a meaningful range (> 1 kHz)
+                if hi - lo > 1000.0 {
+                    state.ff_freq_lo.set(lo);
+                    state.ff_freq_hi.set(hi);
+                    // Enable HFR if not already
+                    if !state.hfr_enabled.get_untracked() {
+                        state.hfr_enabled.set(true);
+                    }
+                }
+            }
+            state.axis_drag_start_freq.set(None);
+            state.axis_drag_current_freq.set(None);
+            state.is_dragging.set(false);
             return;
         }
 
@@ -905,7 +976,13 @@ pub fn Spectrogram() -> impl IntoView {
     view! {
         <div class="spectrogram-container"
             style=move || {
+                if state.axis_drag_start_freq.get().is_some() {
+                    return "cursor: ns-resize; touch-action: none;".to_string();
+                }
                 if state.spec_drag_handle.get().is_some() || state.spec_hover_handle.get().is_some() {
+                    return "cursor: ns-resize; touch-action: none;".to_string();
+                }
+                if state.mouse_in_label_area.get() {
                     return "cursor: ns-resize; touch-action: none;".to_string();
                 }
                 match state.canvas_tool.get() {

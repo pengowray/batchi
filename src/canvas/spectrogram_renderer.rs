@@ -487,6 +487,15 @@ pub struct FreqMarkerState {
     pub label_hover_opacity: f64,
     pub has_selection: bool,
     pub file_max_freq: f64,
+    /// Axis drag range for lighting up color bars
+    pub axis_drag_lo: Option<f64>,
+    pub axis_drag_hi: Option<f64>,
+    /// FF handle drag is active (light up FF range bars)
+    pub ff_drag_active: bool,
+    pub ff_lo: f64,
+    pub ff_hi: f64,
+    /// FF handles are hovered or being dragged (hide cursor indicator)
+    pub ff_handles_active: bool,
 }
 
 /// Draw horizontal frequency marker lines with subtle, interactive UI.
@@ -546,8 +555,13 @@ pub fn draw_freq_markers(
         // e.g. 40kHz marker (yellow) covers 40–50kHz
         let bar_top_freq = (freq + 10_000.0).min(max_freq);
         let mouse_in_range = ms.mouse_freq.map_or(false, |mf| mf >= freq && mf < bar_top_freq);
-        if ms.has_selection || mouse_in_range {
-            let bar_alpha = if ms.has_selection { 0.6 } else { 0.8 };
+        let axis_drag_in_range = match (ms.axis_drag_lo, ms.axis_drag_hi) {
+            (Some(lo), Some(hi)) => bar_top_freq > lo && freq < hi,
+            _ => false,
+        };
+        let ff_drag_in_range = ms.ff_drag_active && ms.ff_hi > ms.ff_lo && bar_top_freq > ms.ff_lo && freq < ms.ff_hi;
+        if ms.has_selection || mouse_in_range || axis_drag_in_range || ff_drag_in_range {
+            let bar_alpha = if axis_drag_in_range || ff_drag_in_range { 0.8 } else if ms.has_selection { 0.6 } else { 0.8 };
             let bar_y_top = freq_to_y(bar_top_freq, min_freq, max_freq, canvas_height);
             let bar_y_bot = freq_to_y(freq, min_freq, max_freq, canvas_height);
             ctx.set_fill_style_str(&format!("rgba({},{},{},{:.2})", color[0], color[1], color[2], bar_alpha));
@@ -563,28 +577,29 @@ pub fn draw_freq_markers(
         // Build label with optional kHz suffix and shift info
         let label = match shift_mode {
             FreqShiftMode::Heterodyne(hf) => {
-                let diff = (freq - hf).abs();
-                if diff <= cutoff {
-                    let diff_khz = (diff / 1000.0).round() as u32;
-                    if ms.label_hover_opacity > 0.01 {
+                if ms.label_hover_opacity > 0.01 {
+                    let diff = (freq - hf).abs();
+                    if diff <= cutoff {
+                        let diff_khz = (diff / 1000.0).round() as u32;
                         format!("{base_label} kHz \u{2192} {diff_khz} kHz")
                     } else {
-                        format!("{base_label} \u{2192} {diff_khz}")
+                        format!("{base_label} kHz")
                     }
-                } else if ms.label_hover_opacity > 0.01 {
-                    format!("{base_label} kHz")
                 } else {
                     base_label.clone()
                 }
             }
             FreqShiftMode::Divide(factor) if factor > 1.0 => {
-                let shifted = freq / factor;
-                let shifted_khz = shifted / 1000.0;
-                let suffix = if ms.label_hover_opacity > 0.01 { " kHz" } else { "" };
-                if shifted_khz >= 1.0 {
-                    format!("{base_label}{suffix} \u{2192} {:.0} kHz", shifted_khz)
+                if ms.label_hover_opacity > 0.01 {
+                    let shifted = freq / factor;
+                    let shifted_khz = shifted / 1000.0;
+                    if shifted_khz >= 1.0 {
+                        format!("{base_label} kHz \u{2192} {:.0} kHz", shifted_khz)
+                    } else {
+                        format!("{base_label} kHz \u{2192} {:.0} Hz", shifted)
+                    }
                 } else {
-                    format!("{base_label}{suffix} \u{2192} {:.0} Hz", shifted)
+                    base_label.clone()
                 }
             }
             _ => {
@@ -598,6 +613,18 @@ pub fn draw_freq_markers(
         let khz_fade = ms.label_hover_opacity * ms.label_hover_opacity;
         if matches!(shift_mode, FreqShiftMode::None) && ms.label_hover_opacity > 0.001 {
             // Split rendering: number at full alpha, " kHz" suffix fading
+            // Dark background behind label
+            let full_label_for_measure = if khz_fade > 0.01 {
+                format!("{} kHz", base_label)
+            } else {
+                base_label.clone()
+            };
+            let bg_metrics = ctx.measure_text(&full_label_for_measure).unwrap();
+            let bg_w = bg_metrics.width() + 4.0;
+            let bg_h = 14.0;
+            ctx.set_fill_style_str("rgba(0,0,0,0.6)");
+            ctx.fill_rect(label_x - 2.0, y - 2.0 - bg_h, bg_w, bg_h);
+
             ctx.set_fill_style_str(&format!("rgba(255,255,255,{:.2})", label_alpha));
             let _ = ctx.fill_text(&base_label, label_x, y - 2.0);
             let khz_alpha = label_alpha * khz_fade;
@@ -608,6 +635,13 @@ pub fn draw_freq_markers(
                 let _ = ctx.fill_text(" kHz", label_x + num_w, y - 2.0);
             }
         } else {
+            // Dark background behind label
+            let bg_metrics = ctx.measure_text(&label).unwrap();
+            let bg_w = bg_metrics.width() + 4.0;
+            let bg_h = 14.0;
+            ctx.set_fill_style_str("rgba(0,0,0,0.6)");
+            ctx.fill_rect(label_x - 2.0, y - 2.0 - bg_h, bg_w, bg_h);
+
             ctx.set_fill_style_str(&format!("rgba(255,255,255,{:.2})", label_alpha));
             let _ = ctx.fill_text(&label, label_x, y - 2.0);
         }
@@ -630,10 +664,10 @@ pub fn draw_freq_markers(
         ctx.line_to(canvas_width, y);
         ctx.stroke();
 
-        // --- Full-width line (fades in when hovering label area, colored) ---
+        // --- Full-width line (fades in when hovering label area, white) ---
         if ms.label_hover_opacity > 0.001 {
             let full_alpha = ms.label_hover_opacity * 0.7 * base_alpha;
-            ctx.set_stroke_style_str(&format!("rgba({},{},{},{:.3})", color[0], color[1], color[2], full_alpha));
+            ctx.set_stroke_style_str(&format!("rgba(255,255,255,{:.3})", full_alpha));
             ctx.set_line_width(1.0);
             ctx.begin_path();
             ctx.move_to(tick_len, y);
@@ -668,9 +702,9 @@ pub fn draw_freq_markers(
         ctx.stroke();
     }
 
-    // --- Cursor frequency indicator ---
+    // --- Cursor frequency indicator (hidden when FF handles are active) ---
     if let Some(mf) = ms.mouse_freq {
-        if !ms.mouse_in_label_area && mf > min_freq && mf < max_freq {
+        if !ms.mouse_in_label_area && !ms.ff_handles_active && mf > min_freq && mf < max_freq {
             let y = freq_to_y(mf, min_freq, max_freq, canvas_height);
 
             // Label (above the dashed line, starting around midpoint)
@@ -778,12 +812,23 @@ pub fn draw_ff_overlay(
     ctx.close_path();
     let _ = ctx.fill();
 
-    // FF range label (only when handles are active)
+    // FF range labels (only when handles are active): top and bottom frequencies
     if hover_handle.is_some() || drag_handle.is_some() {
         ctx.set_fill_style_str("rgba(255, 180, 60, 0.8)");
         ctx.set_font("11px sans-serif");
-        let label = format!("FF {:.1}–{:.1} kHz", ff_lo / 1000.0, ff_hi / 1000.0);
-        let _ = ctx.fill_text(&label, 55.0, y_bottom + 14.0);
+        let label_x = canvas_width * 0.35;
+
+        // Top frequency label: just above the upper FF line
+        let top_label = format!("{:.1} kHz", ff_hi / 1000.0);
+        ctx.set_text_baseline("bottom");
+        let _ = ctx.fill_text(&top_label, label_x, y_top - 4.0);
+
+        // Bottom frequency label: just below the lower FF line
+        let bottom_label = format!("{:.1} kHz", ff_lo / 1000.0);
+        ctx.set_text_baseline("top");
+        let _ = ctx.fill_text(&bottom_label, label_x, y_bottom + 4.0);
+
+        ctx.set_text_baseline("alphabetic");
     }
 }
 
