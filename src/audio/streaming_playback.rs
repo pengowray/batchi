@@ -177,7 +177,16 @@ async fn chunk_loop(
         let chunk_end = (pos + CHUNK_SAMPLES).min(end_sample);
         let warmup_len = pos - warmup_start;
 
-        let chunk_with_warmup = &source[warmup_start..chunk_end];
+        // For PitchShift, add trailing overlap to avoid OLA edge artifacts
+        // at the end of each chunk (incomplete window coverage → clicks).
+        let trailing_end = if matches!(params.mode, PlaybackMode::PitchShift) {
+            (chunk_end + FILTER_WARMUP).min(end_sample)
+        } else {
+            chunk_end
+        };
+        let trailing_len = trailing_end - chunk_end;
+
+        let chunk_with_warmup = &source[warmup_start..trailing_end];
 
         // Apply EQ/bandpass filter
         let filtered = apply_filters(chunk_with_warmup, source_rate, &params);
@@ -185,23 +194,13 @@ async fn chunk_loop(
         // Apply DSP mode transform
         let processed = apply_dsp_mode(&filtered, source_rate, &params);
 
-        // Trim warmup samples from the output.
-        // For most modes, output length == input length, so trimming by
-        // warmup_len is correct. For PitchShift, the output length differs
-        // proportionally, so we scale.
-        let trim = match params.mode {
-            PlaybackMode::PitchShift if params.ps_factor > 1.0 => {
-                // Shift-down: warmup maps to fewer output samples
-                ((warmup_len as f64) / params.ps_factor) as usize
-            }
-            PlaybackMode::ZeroCrossing => {
-                // zc_divide output matches input length
-                warmup_len
-            }
-            _ => warmup_len,
-        };
-        let trimmed = if trim > 0 && trim < processed.len() {
-            &processed[trim..]
+        // Trim warmup and trailing overlap from the output.
+        // All DSP modes preserve input length (output.len() == input.len()),
+        // so warmup_len and trailing_len map 1:1 to output positions.
+        let trim_start = warmup_len;
+        let trim_end = processed.len().saturating_sub(trailing_len);
+        let trimmed = if trim_start < trim_end {
+            &processed[trim_start..trim_end]
         } else {
             &processed[..]
         };
