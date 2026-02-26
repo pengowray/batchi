@@ -815,6 +815,10 @@ pub fn Spectrogram() -> impl IntoView {
             let lo = state.ff_freq_lo.get_untracked();
             let hi = state.ff_freq_hi.get_untracked();
             if hi - lo > 500.0 && !state.hfr_enabled.get_untracked() {
+                // Save dragged bounds before enabling HFR so the effect
+                // restores them instead of resetting to defaults.
+                state.hfr_saved_ff_lo.set(Some(lo));
+                state.hfr_saved_ff_hi.set(Some(hi));
                 state.hfr_enabled.set(true);
             }
             state.axis_drag_start_freq.set(None);
