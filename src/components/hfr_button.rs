@@ -50,14 +50,15 @@ pub fn HfrButton() -> impl IntoView {
                 state.hfr_saved_ff_lo.set(Some(current_lo));
                 state.hfr_saved_ff_hi.set(Some(current_hi));
                 state.hfr_saved_playback_mode.set(Some(current_mode));
+                state.hfr_saved_bandpass_mode.set(Some(current_bp));
+                // Only force bandpass off when HFR was actually active
+                state.bandpass_mode.set(BandpassMode::Off);
             }
-            state.hfr_saved_bandpass_mode.set(Some(current_bp));
 
-            // HFR OFF: reset to 1:1, disable bandpass
+            // HFR OFF: reset to 1:1
             state.ff_freq_lo.set(0.0);
             state.ff_freq_hi.set(0.0);
             state.playback_mode.set(PlaybackMode::Normal);
-            state.bandpass_mode.set(BandpassMode::Off);
             state.min_display_freq.set(None);
             state.max_display_freq.set(None);
         }
