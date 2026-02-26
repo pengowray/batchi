@@ -979,13 +979,10 @@ pub fn Spectrogram() -> impl IntoView {
     view! {
         <div class="spectrogram-container"
             style=move || {
-                if state.axis_drag_start_freq.get().is_some() {
-                    return "cursor: ns-resize; touch-action: none;".to_string();
+                if state.axis_drag_start_freq.get().is_some() || state.mouse_in_label_area.get() {
+                    return "cursor: crosshair; touch-action: none;".to_string();
                 }
                 if state.spec_drag_handle.get().is_some() || state.spec_hover_handle.get().is_some() {
-                    return "cursor: ns-resize; touch-action: none;".to_string();
-                }
-                if state.mouse_in_label_area.get() {
                     return "cursor: ns-resize; touch-action: none;".to_string();
                 }
                 match state.canvas_tool.get() {
