@@ -1,10 +1,10 @@
 [package]
-name = "batchi-desktop"
-version = "0.1.9"
+name = "batblip-desktop"
+version = "0.1.10"
 edition = "2021"
 
 [lib]
-name = "batchi_desktop"
+name = "batblip_desktop"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [dependencies]

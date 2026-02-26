@@ -1,8 +1,8 @@
 {
   "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/dev/crates/tauri-cli/schema.json",
-  "productName": "Batchi",
-  "version": "0.1.9",
-  "identifier": "com.batchi.app",
+  "productName": "batblip",
+  "version": "0.1.10",
+  "identifier": "com.batblip.app",
   "build": {
     "beforeDevCommand": "trunk serve",
     "devUrl": "http://localhost:8080",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "Batchi",
+        "title": "batblip",
         "width": 1280,
         "height": 800,
         "resizable": true,

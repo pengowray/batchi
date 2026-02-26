@@ -2,8 +2,8 @@
 members = [".", "src-tauri", "xc-lib", "xc-cli"]
 
 [package]
-name = "batchi"
-version = "0.1.9"
+name = "batblip"
+version = "0.1.10"
 edition = "2021"
 
 [lib]
