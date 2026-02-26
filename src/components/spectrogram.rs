@@ -94,6 +94,7 @@ pub fn Spectrogram() -> impl IntoView {
     let drag_start = RwSignal::new((0.0f64, 0.0f64));
     // Hand-tool drag state: (initial_client_x, initial_scroll_offset)
     let hand_drag_start = RwSignal::new((0.0f64, 0.0f64));
+    let axis_drag_raw_start = RwSignal::new(0.0f64);
 
     // Label hover animation: lerp label_hover_opacity toward target.
     // The Effect subscribes to BOTH label_hover_target and label_hover_opacity.
@@ -612,6 +613,7 @@ pub fn Spectrogram() -> impl IntoView {
             if px_x < LABEL_AREA_WIDTH {
                 let snap = if ev.shift_key() { 10_000.0 } else { 5_000.0 };
                 let snapped = (freq / snap).round() * snap;
+                axis_drag_raw_start.set(freq);
                 state.axis_drag_start_freq.set(Some(snapped));
                 state.axis_drag_current_freq.set(Some(snapped));
                 state.is_dragging.set(true);
@@ -716,13 +718,24 @@ pub fn Spectrogram() -> impl IntoView {
                 }
 
                 // Axis drag takes second priority (after spec handle drag)
-                if let Some(start_freq) = state.axis_drag_start_freq.get_untracked() {
+                if state.axis_drag_start_freq.get_untracked().is_some() {
+                    let raw_start = axis_drag_raw_start.get_untracked();
                     let snap = if ev.shift_key() { 10_000.0 } else { 5_000.0 };
                     let snapped = (f / snap).round() * snap;
+                    // Snap start away from drag direction to include the
+                    // interval the user clicked in
+                    let snapped_start = if snapped > raw_start {
+                        (raw_start / snap).floor() * snap
+                    } else if snapped < raw_start {
+                        (raw_start / snap).ceil() * snap
+                    } else {
+                        (raw_start / snap).round() * snap
+                    };
+                    state.axis_drag_start_freq.set(Some(snapped_start));
                     state.axis_drag_current_freq.set(Some(snapped));
                     // Live update FF range
-                    let lo = start_freq.min(snapped);
-                    let hi = start_freq.max(snapped);
+                    let lo = snapped_start.min(snapped);
+                    let hi = snapped_start.max(snapped);
                     if hi - lo > 500.0 {
                         state.ff_freq_lo.set(lo);
                         state.ff_freq_hi.set(hi);
