@@ -72,6 +72,12 @@ pub fn Waveform() -> impl IntoView {
         let idx = state.current_file_index.get();
         let mode = state.playback_mode.get();
         let hfr = state.hfr_enabled.get();
+        let auto_gain = state.auto_gain.get();
+        let gain_db = if auto_gain {
+            state.compute_auto_gain()
+        } else {
+            state.gain_db.get()
+        };
 
         let Some(canvas_el) = canvas_ref.get() else { return };
         let canvas: &HtmlCanvasElement = canvas_el.as_ref();
@@ -127,6 +133,7 @@ pub fn Waveform() -> impl IntoView {
                         display_w as f64,
                         display_h as f64,
                         sel_time,
+                        gain_db,
                     );
                 } else {
                     waveform_renderer::draw_waveform(
@@ -139,6 +146,7 @@ pub fn Waveform() -> impl IntoView {
                         display_w as f64,
                         display_h as f64,
                         sel_time,
+                        gain_db,
                     );
                 }
             } else {
@@ -152,6 +160,7 @@ pub fn Waveform() -> impl IntoView {
                     display_w as f64,
                     display_h as f64,
                     sel_time,
+                    gain_db,
                 );
             }
 

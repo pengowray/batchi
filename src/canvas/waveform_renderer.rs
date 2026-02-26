@@ -34,6 +34,7 @@ fn draw_waveform_layer(
     vp: &WaveViewport,
     canvas_width: f64,
     color: &str,
+    gain_linear: f64,
 ) {
     ctx.set_stroke_style_str(color);
     ctx.set_line_width(1.0);
@@ -47,7 +48,7 @@ fn draw_waveform_layer(
             if idx >= samples.len() {
                 break;
             }
-            let y = vp.mid_y - (samples[idx] as f64 * vp.mid_y * 0.9);
+            let y = vp.mid_y - (samples[idx] as f64 * gain_linear * vp.mid_y * 0.9);
             if first {
                 ctx.move_to(px as f64, y);
                 first = false;
@@ -74,8 +75,8 @@ fn draw_waveform_layer(
                 if s > max_val { max_val = s; }
             }
 
-            let y_min = vp.mid_y - (max_val as f64 * vp.mid_y * 0.9);
-            let y_max = vp.mid_y - (min_val as f64 * vp.mid_y * 0.9);
+            let y_min = vp.mid_y - (max_val as f64 * gain_linear * vp.mid_y * 0.9);
+            let y_max = vp.mid_y - (min_val as f64 * gain_linear * vp.mid_y * 0.9);
 
             ctx.begin_path();
             ctx.move_to(px as f64, y_min);
@@ -125,6 +126,7 @@ pub fn draw_waveform(
     canvas_width: f64,
     canvas_height: f64,
     selection: Option<(f64, f64)>,
+    gain_db: f64,
 ) {
     ctx.set_fill_style_str("#0a0a0a");
     ctx.fill_rect(0.0, 0.0, canvas_width, canvas_height);
@@ -133,10 +135,11 @@ pub fn draw_waveform(
         return;
     }
 
+    let gain_linear = 10.0_f64.powf(gain_db / 20.0);
     let vp = compute_viewport(samples, sample_rate, scroll_offset, zoom, time_resolution, canvas_width, canvas_height);
     draw_selection(ctx, selection, &vp, canvas_width, canvas_height);
     draw_center_line(ctx, vp.mid_y, canvas_width);
-    draw_waveform_layer(ctx, samples, sample_rate, &vp, canvas_width, "#6a6");
+    draw_waveform_layer(ctx, samples, sample_rate, &vp, canvas_width, "#6a6", gain_linear);
 }
 
 /// Draw dual waveform for HFR mode: original in dim color, bandpass-filtered overlay in bright cyan.
@@ -151,6 +154,7 @@ pub fn draw_waveform_hfr(
     canvas_width: f64,
     canvas_height: f64,
     selection: Option<(f64, f64)>,
+    gain_db: f64,
 ) {
     ctx.set_fill_style_str("#0a0a0a");
     ctx.fill_rect(0.0, 0.0, canvas_width, canvas_height);
@@ -159,16 +163,17 @@ pub fn draw_waveform_hfr(
         return;
     }
 
+    let gain_linear = 10.0_f64.powf(gain_db / 20.0);
     let vp = compute_viewport(samples, sample_rate, scroll_offset, zoom, time_resolution, canvas_width, canvas_height);
     draw_selection(ctx, selection, &vp, canvas_width, canvas_height);
     draw_center_line(ctx, vp.mid_y, canvas_width);
 
     // Original waveform in dim color
-    draw_waveform_layer(ctx, samples, sample_rate, &vp, canvas_width, "#444");
+    draw_waveform_layer(ctx, samples, sample_rate, &vp, canvas_width, "#444", gain_linear);
 
     // Filtered (HFR content) waveform overlay in bright cyan
     if !filtered_samples.is_empty() {
-        draw_waveform_layer(ctx, filtered_samples, sample_rate, &vp, canvas_width, "#0cf");
+        draw_waveform_layer(ctx, filtered_samples, sample_rate, &vp, canvas_width, "#0cf", gain_linear);
     }
 }
 

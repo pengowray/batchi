@@ -192,6 +192,7 @@ fn draw_overview_waveform(
     zoom: f64,
     main_canvas_width: f64,
     bookmarks: &[(f64,)],
+    gain_db: f64,
 ) {
     let cw = canvas.width() as f64;
     let ch = canvas.height() as f64;
@@ -206,6 +207,7 @@ fn draw_overview_waveform(
         time_resolution,
         cw, ch,
         None,
+        gain_db,
     );
 
     // Viewport highlight (full height — no freq axis on waveform)
@@ -317,6 +319,8 @@ pub fn OverviewPanel() -> impl IntoView {
         let playhead = state.playhead_time.get();
         let is_playing = state.is_playing.get();
         let main_canvas_w = state.spectrogram_canvas_width.get();
+        let auto_gain = state.auto_gain.get();
+        let gain_db = if auto_gain { state.compute_auto_gain() } else { state.gain_db.get() };
 
         let Some(canvas_el) = canvas_ref.get() else { return };
         let canvas: &HtmlCanvasElement = canvas_el.as_ref();
@@ -403,6 +407,7 @@ pub fn OverviewPanel() -> impl IntoView {
                     scroll, zoom,
                     main_canvas_w,
                     &bm_tuples,
+                    gain_db,
                 );
             }
         }
