@@ -84,7 +84,7 @@ pub fn FileSidebar() -> impl IntoView {
                             }
                             title=move || if state.sidebar_collapsed.get() { "Show sidebar" } else { "Hide sidebar" }
                         >
-                            {move || if state.sidebar_collapsed.get() { "\u{25B6}" } else { "\u{25C0}" }}
+                            {"\u{25E7}"}
                         </button>
                     })
                 } else {

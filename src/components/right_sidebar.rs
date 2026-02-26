@@ -102,7 +102,7 @@ pub fn RightSidebar() -> impl IntoView {
                             }
                             title=move || if state.right_sidebar_collapsed.get() { "Show settings" } else { "Hide settings" }
                         >
-                            {move || if state.right_sidebar_collapsed.get() { "\u{25C0}" } else { "\u{25B6}" }}
+                            {"\u{25E8}"}
                         </button>
                     })
                 } else {
