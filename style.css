@@ -1682,6 +1682,19 @@ body.sidebar-resizing {
     border-left: none;
 }
 
+.right-sidebar .sidebar-collapse-btn {
+    position: fixed;
+    top: 4px;
+    right: 4px;
+    left: auto;
+    z-index: 100;
+    width: 28px;
+    height: 32px;
+    background: #222;
+    border: 1px solid #333;
+    border-radius: 4px;
+}
+
 .right-sidebar.collapsed .sidebar-collapse-btn {
     left: auto;
     right: 4px;
