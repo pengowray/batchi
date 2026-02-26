@@ -1,0 +1,44 @@
+#!/bin/bash
+# Auto-bump patch version on every commit.
+# Reads the version from Cargo.toml, increments the patch number,
+# and updates all version files in the workspace.
+
+set -e
+
+ROOT="$(git rev-parse --show-toplevel)"
+CARGO_TOML="$ROOT/Cargo.toml"
+
+# Read current version from root Cargo.toml
+CURRENT=$(grep -m1 '^version' "$CARGO_TOML" | sed 's/.*"\(.*\)"/\1/')
+
+if [ -z "$CURRENT" ]; then
+    echo "pre-commit: could not read version from Cargo.toml"
+    exit 1
+fi
+
+# Split into major.minor.patch and bump patch
+IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
+NEW_PATCH=$((PATCH + 1))
+NEW_VERSION="$MAJOR.$MINOR.$NEW_PATCH"
+
+echo "pre-commit: bumping version $CURRENT → $NEW_VERSION"
+
+# Update root Cargo.toml (first version = line in [package])
+sed -i "0,/^version = \"$CURRENT\"/{s/^version = \"$CURRENT\"/version = \"$NEW_VERSION\"/}" "$CARGO_TOML"
+
+# Update src-tauri/Cargo.toml
+TAURI_CARGO="$ROOT/src-tauri/Cargo.toml"
+if [ -f "$TAURI_CARGO" ]; then
+    sed -i "0,/^version = \".*\"/{s/^version = \".*\"/version = \"$NEW_VERSION\"/}" "$TAURI_CARGO"
+fi
+
+# Update src-tauri/tauri.conf.json
+TAURI_CONF="$ROOT/src-tauri/tauri.conf.json"
+if [ -f "$TAURI_CONF" ]; then
+    sed -i "s/\"version\": \".*\"/\"version\": \"$NEW_VERSION\"/" "$TAURI_CONF"
+fi
+
+# Stage the bumped files
+git add "$CARGO_TOML"
+[ -f "$TAURI_CARGO" ] && git add "$TAURI_CARGO"
+[ -f "$TAURI_CONF" ] && git add "$TAURI_CONF"

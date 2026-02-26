@@ -93,7 +93,7 @@ pub fn Toolbar() -> impl IntoView {
                     <div class="about-dialog" on:click=move |ev: web_sys::MouseEvent| ev.stop_propagation()>
                         <div class="about-header">
                             <span class="about-title">"Batchi by Pengo Wray"</span>
-                            <span class="about-version">"v0.1.5"</span>
+                            <span class="about-version">{concat!("v", env!("CARGO_PKG_VERSION"))}</span>
                         </div>
                         <p class="about-desc">"Bat call viewer and acoustic analysis tool."</p>
                         <div class="about-modes">
