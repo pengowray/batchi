@@ -695,7 +695,7 @@ body.sidebar-resizing {
     display: flex;
     align-items: center;
     gap: 12px;
-    padding: calc(8px + env(safe-area-inset-top, 0px)) 16px 8px 16px;
+    padding: calc(8px + env(safe-area-inset-top, 0px)) 40px 8px 16px;
     background: #181818;
     border-bottom: 1px solid #333;
     flex-shrink: 0;
@@ -1271,23 +1271,24 @@ body.sidebar-resizing {
 }
 
 .toolbar-listen-btn {
-    background: #333;
-    color: #ccc;
-    border: 1px solid #555;
-    padding: 4px 12px;
+    background: transparent;
+    color: #bbb;
+    border: none;
+    padding: 6px 14px;
     cursor: pointer;
-    border-radius: 3px;
+    border-radius: 4px;
     font-size: 13px;
     white-space: nowrap;
+    transition: background 0.15s, color 0.15s;
 }
 
 .toolbar-listen-btn:hover {
-    background: #444;
+    background: rgba(255, 255, 255, 0.1);
+    color: #eee;
 }
 
 .toolbar-listen-btn.active {
-    background: rgba(40, 40, 20, 0.92);
-    border-color: rgba(200, 180, 60, 0.8);
+    background: rgba(200, 180, 60, 0.15);
     color: #fc8;
 }
 
@@ -1297,30 +1298,31 @@ body.sidebar-resizing {
 }
 
 .toolbar-record-btn {
-    background: #333;
-    color: #ccc;
-    border: 1px solid #555;
-    padding: 4px 12px;
+    background: transparent;
+    color: #bbb;
+    border: none;
+    padding: 6px 14px;
     cursor: pointer;
-    border-radius: 3px;
+    border-radius: 4px;
     font-size: 13px;
     white-space: nowrap;
+    transition: background 0.15s, color 0.15s;
 }
 
 .toolbar-record-btn:hover {
-    background: #444;
+    background: rgba(255, 255, 255, 0.1);
+    color: #eee;
 }
 
 .toolbar-record-btn.active {
-    background: rgba(60, 20, 20, 0.92);
-    border-color: rgba(220, 60, 60, 0.8);
+    background: rgba(220, 60, 60, 0.15);
     color: #f66;
     animation: rec-pulse 1s ease-in-out infinite;
 }
 
 @keyframes rec-pulse {
-    0%, 100% { border-color: rgba(220, 60, 60, 0.6); }
-    50% { border-color: rgba(220, 60, 60, 1.0); }
+    0%, 100% { background: rgba(220, 60, 60, 0.1); }
+    50% { background: rgba(220, 60, 60, 0.22); }
 }
 
 /* Unsaved recording indicators */
