@@ -143,12 +143,12 @@ async fn chunk_loop(
     // Small initial delay so the first chunk has time to be created
     let mut scheduled_time = ctx.current_time() + 0.02;
 
-    // For auto-gain: pre-scan the full selection so quiet intros/fade-ins
-    // don't cause excessive gain.  This is a cheap single pass over the
-    // raw source samples — DSP hasn't been applied yet, but the raw peak
-    // is a good proxy and avoids the "first-chunk-is-quiet" problem.
+    // For auto-gain: pre-scan up to ~15s of the selection so quiet intros
+    // don't cause excessive gain, without stalling on very long files.
     let cached_gain: Option<f64> = if params.auto_gain {
-        let peak = source[start_sample..end_sample]
+        let max_scan = (source_rate as usize) * 15; // ~15 seconds
+        let scan_end = end_sample.min(start_sample + max_scan);
+        let peak = source[start_sample..scan_end]
             .iter()
             .fold(0.0f32, |mx, s| mx.max(s.abs()));
         if peak < 1e-10 {

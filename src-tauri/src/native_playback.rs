@@ -146,10 +146,12 @@ pub fn start(
         let start_time_secs = start_sample as f64 / source_rate as f64;
         let mut pos = start_sample;
 
-        // For auto-gain: pre-scan full selection so quiet intros don't
-        // cause excessive gain.
+        // For auto-gain: pre-scan up to ~15s so quiet intros don't cause
+        // excessive gain, without stalling on very long files.
         let cached_gain: Option<f64> = if params_clone.auto_gain {
-            let peak = all_samples[start_sample..end_sample]
+            let max_scan = (source_rate as usize) * 15;
+            let scan_end = end_sample.min(start_sample + max_scan);
+            let peak = all_samples[start_sample..scan_end]
                 .iter()
                 .fold(0.0f32, |mx, s| mx.max(s.abs()));
             if peak < 1e-10 {
