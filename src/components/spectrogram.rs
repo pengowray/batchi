@@ -721,21 +721,23 @@ pub fn Spectrogram() -> impl IntoView {
                 if state.axis_drag_start_freq.get_untracked().is_some() {
                     let raw_start = axis_drag_raw_start.get_untracked();
                     let snap = if ev.shift_key() { 10_000.0 } else { 5_000.0 };
-                    let snapped = (f / snap).round() * snap;
-                    // Snap start away from drag direction to include the
-                    // interval the user clicked in
-                    let snapped_start = if snapped > raw_start {
-                        (raw_start / snap).floor() * snap
-                    } else if snapped < raw_start {
-                        (raw_start / snap).ceil() * snap
+                    // Snap both start and end away from each other to include
+                    // the full segment under each endpoint
+                    let (snapped_start, snapped_end) = if f > raw_start {
+                        // Dragging up: start floors down, end ceils up
+                        ((raw_start / snap).floor() * snap, (f / snap).ceil() * snap)
+                    } else if f < raw_start {
+                        // Dragging down: start ceils up, end floors down
+                        ((raw_start / snap).ceil() * snap, (f / snap).floor() * snap)
                     } else {
-                        (raw_start / snap).round() * snap
+                        let s = (raw_start / snap).round() * snap;
+                        (s, s)
                     };
                     state.axis_drag_start_freq.set(Some(snapped_start));
-                    state.axis_drag_current_freq.set(Some(snapped));
+                    state.axis_drag_current_freq.set(Some(snapped_end));
                     // Live update FF range
-                    let lo = snapped_start.min(snapped);
-                    let hi = snapped_start.max(snapped);
+                    let lo = snapped_start.min(snapped_end);
+                    let hi = snapped_start.max(snapped_end);
                     if hi - lo > 500.0 {
                         state.ff_freq_lo.set(lo);
                         state.ff_freq_hi.set(hi);
