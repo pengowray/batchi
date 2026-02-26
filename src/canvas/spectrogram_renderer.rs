@@ -1,4 +1,4 @@
-use crate::canvas::colors::{freq_marker_color, freq_marker_label, greyscale_to_viridis, magnitude_to_greyscale, movement_rgb};
+use crate::canvas::colors::{freq_marker_color, freq_marker_label, greyscale_to_viridis, greyscale_to_inferno, magnitude_to_greyscale, movement_rgb};
 use crate::state::{SpectrogramHandle, Selection};
 use crate::types::SpectrogramData;
 use wasm_bindgen::JsCast;
@@ -311,6 +311,17 @@ pub fn y_to_freq(y: f64, min_freq: f64, max_freq: f64, canvas_height: f64) -> f6
     min_freq + (max_freq - min_freq) * (1.0 - y / canvas_height)
 }
 
+/// Which colormap to apply when blitting the spectrogram.
+pub enum ColormapMode {
+    /// Viridis everywhere (default non-HFR view).
+    Viridis,
+    /// Greyscale everywhere (movement overlay mode).
+    Greyscale,
+    /// Inferno inside HFR focus band, greyscale outside.
+    /// Fractions are relative to the full image (0 Hz = 0.0, file_max_freq = 1.0).
+    HfrFocus { ff_lo_frac: f64, ff_hi_frac: f64 },
+}
+
 /// Blit the pre-rendered spectrogram to a visible canvas, handling scroll, zoom, and freq crop.
 /// `freq_crop_lo` / `freq_crop_hi` are fractions (0..1) of the full image height:
 /// lo = min_display_freq / file_max_freq, hi = max_display_freq / file_max_freq.
@@ -322,7 +333,7 @@ pub fn blit_viewport(
     zoom: f64,
     freq_crop_lo: f64,
     freq_crop_hi: f64,
-    use_viridis: bool,
+    colormap: ColormapMode,
 ) {
     let cw = canvas.width() as f64;
     let ch = canvas.height() as f64;
@@ -367,22 +378,49 @@ pub fn blit_viewport(
         (0.0, sh, ch * (1.0 - data_frac), ch * data_frac)
     };
 
-    // Apply viridis colormap if requested (remap greyscale pixels to viridis RGB)
-    let viridis_pixels;
-    let pixel_data: &[u8] = if use_viridis {
-        viridis_pixels = {
-            let mut buf = pre_rendered.pixels.clone();
-            for chunk in buf.chunks_exact_mut(4) {
-                let [r, g, b] = greyscale_to_viridis(chunk[0]);
-                chunk[0] = r;
-                chunk[1] = g;
-                chunk[2] = b;
-            }
-            buf
-        };
-        &viridis_pixels
-    } else {
-        &pre_rendered.pixels
+    // Apply colormap (remap greyscale pixels to RGB)
+    let mapped_pixels;
+    let pixel_data: &[u8] = match colormap {
+        ColormapMode::Viridis => {
+            mapped_pixels = {
+                let mut buf = pre_rendered.pixels.clone();
+                for chunk in buf.chunks_exact_mut(4) {
+                    let [r, g, b] = greyscale_to_viridis(chunk[0]);
+                    chunk[0] = r;
+                    chunk[1] = g;
+                    chunk[2] = b;
+                }
+                buf
+            };
+            &mapped_pixels
+        }
+        ColormapMode::Greyscale => &pre_rendered.pixels,
+        ColormapMode::HfrFocus { ff_lo_frac, ff_hi_frac } => {
+            mapped_pixels = {
+                let mut buf = pre_rendered.pixels.clone();
+                let h = pre_rendered.height as f64;
+                let w = pre_rendered.width as usize;
+                // Row 0 = highest freq; last row = 0 Hz
+                let focus_top = (h * (1.0 - ff_hi_frac)).round() as usize;
+                let focus_bot = (h * (1.0 - ff_lo_frac)).round() as usize;
+                for row in 0..pre_rendered.height as usize {
+                    if row >= focus_top && row < focus_bot {
+                        // Focus band: inferno
+                        let base = row * w * 4;
+                        for col in 0..w {
+                            let i = base + col * 4;
+                            let [r, g, b] = greyscale_to_inferno(buf[i]);
+                            buf[i] = r;
+                            buf[i + 1] = g;
+                            buf[i + 2] = b;
+                        }
+                    }
+                    // Outside focus: keep greyscale
+                }
+                buf
+            };
+            &mapped_pixels
+        }
     };
 
     // Create ImageData from pixel buffer and draw it

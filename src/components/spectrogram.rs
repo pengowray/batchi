@@ -4,7 +4,7 @@ use wasm_bindgen::closure::Closure;
 use std::cell::Cell;
 use std::rc::Rc;
 use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement, ImageData, MouseEvent};
-use crate::canvas::spectrogram_renderer::{self, FreqMarkerState, FreqShiftMode, MovementAlgo, MovementData, PreRendered};
+use crate::canvas::spectrogram_renderer::{self, ColormapMode, FreqMarkerState, FreqShiftMode, MovementAlgo, MovementData, PreRendered};
 use crate::dsp::harmonics;
 use crate::audio::playback;
 use crate::state::{AppState, CanvasTool, SpectrogramHandle, PlaybackMode, Selection, RightSidebarTab, SpectrogramDisplay};
@@ -233,7 +233,6 @@ pub fn Spectrogram() -> impl IntoView {
         let het_cutoff_auto = state.het_cutoff_auto.get();
         let hfr_enabled = state.hfr_enabled.get();
         let mv_on = state.mv_enabled.get_untracked();
-        let use_viridis = !hfr_enabled && !mv_on;
         let _pre = pre_rendered.track();
         let _coh = coherence_frames.track();
 
@@ -344,7 +343,19 @@ pub fn Spectrogram() -> impl IntoView {
         // --- Normal spectrogram mode ---
         pre_rendered.with_untracked(|pr| {
             if let Some(rendered) = pr {
-                spectrogram_renderer::blit_viewport(&ctx, rendered, canvas, scroll_col, zoom, freq_crop_lo, freq_crop_hi, use_viridis);
+                let colormap = if mv_on {
+                    ColormapMode::Greyscale
+                } else if hfr_enabled && ff_hi > ff_lo {
+                    ColormapMode::HfrFocus {
+                        ff_lo_frac: ff_lo / file_max_freq,
+                        ff_hi_frac: ff_hi / file_max_freq,
+                    }
+                } else if hfr_enabled {
+                    ColormapMode::Greyscale
+                } else {
+                    ColormapMode::Viridis
+                };
+                spectrogram_renderer::blit_viewport(&ctx, rendered, canvas, scroll_col, zoom, freq_crop_lo, freq_crop_hi, colormap);
 
                 // Determine frequency shift mode for marker labels
                 let show_het = het_interacting
