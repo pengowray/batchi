@@ -312,7 +312,11 @@ pub fn Waveform() -> impl IntoView {
     view! {
         <div class="waveform-container"
             style=move || match state.canvas_tool.get() {
-                CanvasTool::Hand => "cursor: grab; touch-action: none;",
+                CanvasTool::Hand => if state.is_dragging.get() {
+                    "cursor: grabbing; touch-action: none;"
+                } else {
+                    "cursor: grab; touch-action: none;"
+                },
                 CanvasTool::Selection => "cursor: crosshair; touch-action: none;",
             }
         >

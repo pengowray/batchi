@@ -1228,7 +1228,11 @@ pub fn Spectrogram() -> impl IntoView {
                     return "cursor: ns-resize; touch-action: none;".to_string();
                 }
                 match state.canvas_tool.get() {
-                    CanvasTool::Hand => "cursor: grab; touch-action: none;".to_string(),
+                    CanvasTool::Hand => if state.is_dragging.get() {
+                        "cursor: grabbing; touch-action: none;".to_string()
+                    } else {
+                        "cursor: grab; touch-action: none;".to_string()
+                    },
                     CanvasTool::Selection => "cursor: crosshair; touch-action: none;".to_string(),
                 }
             }
