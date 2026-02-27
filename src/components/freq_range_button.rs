@@ -36,6 +36,23 @@ pub fn FreqRangeButton() -> impl IntoView {
             .unwrap_or(96_000.0)
     };
 
+    let visible = move || {
+        if state.always_show_view_range.get() {
+            return true;
+        }
+        let min_f = state.min_display_freq.get();
+        let max_f = state.max_display_freq.get();
+        let fm = file_max();
+        let is_full = match (min_f, max_f) {
+            (None, None) | (Some(0.0), None) => true,
+            (_, Some(m)) if (m - fm).abs() < 100.0 => {
+                min_f.is_none() || min_f == Some(0.0)
+            }
+            _ => false,
+        };
+        !is_full
+    };
+
     let set_range = move |lo: Option<f64>, hi: Option<f64>| {
         move |_: web_sys::MouseEvent| {
             state.min_display_freq.set(lo);
@@ -45,8 +62,9 @@ pub fn FreqRangeButton() -> impl IntoView {
 
     view! {
         <div
-            style=move || format!("position: absolute; top: 46px; left: 56px; pointer-events: none; z-index: 20; opacity: {}; transition: opacity 0.1s;",
-                if state.mouse_in_label_area.get() { "0" } else { "1" })
+            style=move || format!("position: absolute; top: 46px; left: 56px; pointer-events: none; z-index: 20; opacity: {}; transition: opacity 0.1s;{}",
+                if state.mouse_in_label_area.get() { "0" } else { "1" },
+                if visible() { "" } else { " display: none;" })
             on:click=|ev: web_sys::MouseEvent| ev.stop_propagation()
         >
             <div style=move || format!("position: relative; pointer-events: {};",

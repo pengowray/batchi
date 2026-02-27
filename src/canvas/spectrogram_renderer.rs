@@ -1,4 +1,8 @@
-use crate::canvas::colors::{freq_marker_color, freq_marker_label, greyscale_to_viridis, greyscale_to_inferno, magnitude_to_greyscale, movement_rgb};
+use crate::canvas::colors::{
+    freq_marker_color, freq_marker_label, magnitude_to_greyscale, movement_rgb,
+    greyscale_to_viridis, greyscale_to_inferno,
+    greyscale_to_magma, greyscale_to_plasma, greyscale_to_cividis, greyscale_to_turbo,
+};
 use crate::state::{SpectrogramHandle, Selection};
 use crate::types::SpectrogramData;
 use wasm_bindgen::JsCast;
@@ -311,17 +315,41 @@ pub fn y_to_freq(y: f64, min_freq: f64, max_freq: f64, canvas_height: f64) -> f6
     min_freq + (max_freq - min_freq) * (1.0 - y / canvas_height)
 }
 
+/// A base colormap LUT choice.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Colormap {
+    Viridis,
+    Inferno,
+    Magma,
+    Plasma,
+    Cividis,
+    Turbo,
+    Greyscale,
+}
+
+impl Colormap {
+    /// Apply this colormap's LUT to a greyscale value.
+    #[inline]
+    pub fn apply(self, grey: u8) -> [u8; 3] {
+        match self {
+            Colormap::Viridis => greyscale_to_viridis(grey),
+            Colormap::Inferno => greyscale_to_inferno(grey),
+            Colormap::Magma => greyscale_to_magma(grey),
+            Colormap::Plasma => greyscale_to_plasma(grey),
+            Colormap::Cividis => greyscale_to_cividis(grey),
+            Colormap::Turbo => greyscale_to_turbo(grey),
+            Colormap::Greyscale => [grey, grey, grey],
+        }
+    }
+}
+
 /// Which colormap to apply when blitting the spectrogram.
 pub enum ColormapMode {
-    /// Viridis everywhere (default non-HFR view).
-    Viridis,
-    /// Inferno everywhere.
-    Inferno,
-    /// Greyscale everywhere (movement overlay mode).
-    Greyscale,
-    /// Inferno inside HFR focus band, greyscale outside.
+    /// Uniform colormap across the entire spectrogram.
+    Uniform(Colormap),
+    /// Colormap inside HFR focus band, greyscale outside.
     /// Fractions are relative to the full image (0 Hz = 0.0, file_max_freq = 1.0).
-    HfrFocus { ff_lo_frac: f64, ff_hi_frac: f64 },
+    HfrFocus { colormap: Colormap, ff_lo_frac: f64, ff_hi_frac: f64 },
 }
 
 /// Blit the pre-rendered spectrogram to a visible canvas, handling scroll, zoom, and freq crop.
@@ -383,34 +411,24 @@ pub fn blit_viewport(
     // Apply colormap (remap greyscale pixels to RGB)
     let mapped_pixels;
     let pixel_data: &[u8] = match colormap {
-        ColormapMode::Viridis => {
-            mapped_pixels = {
-                let mut buf = pre_rendered.pixels.clone();
-                for chunk in buf.chunks_exact_mut(4) {
-                    let [r, g, b] = greyscale_to_viridis(chunk[0]);
-                    chunk[0] = r;
-                    chunk[1] = g;
-                    chunk[2] = b;
-                }
-                buf
-            };
-            &mapped_pixels
+        ColormapMode::Uniform(cm) => {
+            if cm == Colormap::Greyscale {
+                &pre_rendered.pixels
+            } else {
+                mapped_pixels = {
+                    let mut buf = pre_rendered.pixels.clone();
+                    for chunk in buf.chunks_exact_mut(4) {
+                        let [r, g, b] = cm.apply(chunk[0]);
+                        chunk[0] = r;
+                        chunk[1] = g;
+                        chunk[2] = b;
+                    }
+                    buf
+                };
+                &mapped_pixels
+            }
         }
-        ColormapMode::Inferno => {
-            mapped_pixels = {
-                let mut buf = pre_rendered.pixels.clone();
-                for chunk in buf.chunks_exact_mut(4) {
-                    let [r, g, b] = greyscale_to_inferno(chunk[0]);
-                    chunk[0] = r;
-                    chunk[1] = g;
-                    chunk[2] = b;
-                }
-                buf
-            };
-            &mapped_pixels
-        }
-        ColormapMode::Greyscale => &pre_rendered.pixels,
-        ColormapMode::HfrFocus { ff_lo_frac, ff_hi_frac } => {
+        ColormapMode::HfrFocus { colormap: cm, ff_lo_frac, ff_hi_frac } => {
             mapped_pixels = {
                 let mut buf = pre_rendered.pixels.clone();
                 let h = pre_rendered.height as f64;
@@ -420,11 +438,10 @@ pub fn blit_viewport(
                 let focus_bot = (h * (1.0 - ff_lo_frac)).round() as usize;
                 for row in 0..pre_rendered.height as usize {
                     if row >= focus_top && row < focus_bot {
-                        // Focus band: inferno
                         let base = row * w * 4;
                         for col in 0..w {
                             let i = base + col * 4;
-                            let [r, g, b] = greyscale_to_inferno(buf[i]);
+                            let [r, g, b] = cm.apply(buf[i]);
                             buf[i] = r;
                             buf[i + 1] = g;
                             buf[i + 2] = b;

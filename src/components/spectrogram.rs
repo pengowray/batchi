@@ -4,7 +4,7 @@ use wasm_bindgen::closure::Closure;
 use std::cell::Cell;
 use std::rc::Rc;
 use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement, ImageData, MouseEvent};
-use crate::canvas::spectrogram_renderer::{self, ColormapMode, FreqMarkerState, FreqShiftMode, MovementAlgo, MovementData, PreRendered};
+use crate::canvas::spectrogram_renderer::{self, Colormap, ColormapMode, FreqMarkerState, FreqShiftMode, MovementAlgo, MovementData, PreRendered};
 use crate::dsp::harmonics;
 use crate::state::{AppState, CanvasTool, ColormapPreference, SpectrogramHandle, PlaybackMode, Selection, RightSidebarTab, SpectrogramDisplay};
 
@@ -234,6 +234,7 @@ pub fn Spectrogram() -> impl IntoView {
         let hfr_enabled = state.hfr_enabled.get();
         let mv_on = state.mv_enabled.get_untracked();
         let colormap_pref = state.colormap_preference.get();
+        let hfr_colormap_pref = state.hfr_colormap_preference.get();
         let axis_drag_start = state.axis_drag_start_freq.get();
         let axis_drag_current = state.axis_drag_current_freq.get();
         let _pre = pre_rendered.track();
@@ -357,21 +358,29 @@ pub fn Spectrogram() -> impl IntoView {
         // --- Normal spectrogram mode ---
         pre_rendered.with_untracked(|pr| {
             if let Some(rendered) = pr {
+                let pref_to_colormap = |p: ColormapPreference| -> Colormap {
+                    match p {
+                        ColormapPreference::Viridis => Colormap::Viridis,
+                        ColormapPreference::Inferno => Colormap::Inferno,
+                        ColormapPreference::Magma => Colormap::Magma,
+                        ColormapPreference::Plasma => Colormap::Plasma,
+                        ColormapPreference::Cividis => Colormap::Cividis,
+                        ColormapPreference::Turbo => Colormap::Turbo,
+                        ColormapPreference::Greyscale => Colormap::Greyscale,
+                    }
+                };
                 let colormap = if mv_on {
-                    ColormapMode::Greyscale
+                    ColormapMode::Uniform(Colormap::Greyscale)
                 } else if hfr_enabled && ff_hi > ff_lo {
                     ColormapMode::HfrFocus {
+                        colormap: pref_to_colormap(hfr_colormap_pref),
                         ff_lo_frac: ff_lo / file_max_freq,
                         ff_hi_frac: ff_hi / file_max_freq,
                     }
                 } else if hfr_enabled {
-                    ColormapMode::Greyscale
+                    ColormapMode::Uniform(pref_to_colormap(hfr_colormap_pref))
                 } else {
-                    match colormap_pref {
-                        ColormapPreference::Viridis => ColormapMode::Viridis,
-                        ColormapPreference::Inferno => ColormapMode::Inferno,
-                        ColormapPreference::Greyscale => ColormapMode::Greyscale,
-                    }
+                    ColormapMode::Uniform(pref_to_colormap(colormap_pref))
                 };
                 spectrogram_renderer::blit_viewport(&ctx, rendered, canvas, scroll_col, zoom, freq_crop_lo, freq_crop_hi, colormap);
 

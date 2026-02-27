@@ -164,6 +164,10 @@ pub enum ColormapPreference {
     #[default]
     Viridis,
     Inferno,
+    Magma,
+    Plasma,
+    Cividis,
+    Turbo,
     Greyscale,
 }
 
@@ -189,8 +193,6 @@ pub struct AppState {
     pub is_playing: RwSignal<bool>,
     pub playhead_time: RwSignal<f64>,
     pub loading_count: RwSignal<usize>,
-    pub join_files: RwSignal<bool>,
-    pub auto_advance: RwSignal<bool>,
     pub ps_factor: RwSignal<f64>,
     pub zc_factor: RwSignal<f64>,
     pub het_interacting: RwSignal<bool>,
@@ -320,6 +322,10 @@ pub struct AppState {
 
     // User colormap preference (when not overridden by HFR/movement)
     pub colormap_preference: RwSignal<ColormapPreference>,
+    // Colormap preference used when HFR mode is active
+    pub hfr_colormap_preference: RwSignal<ColormapPreference>,
+    // When false, the Range button is hidden at full range
+    pub always_show_view_range: RwSignal<bool>,
 }
 
 fn detect_tauri() -> bool {
@@ -362,8 +368,6 @@ impl AppState {
             is_playing: RwSignal::new(false),
             playhead_time: RwSignal::new(0.0),
             loading_count: RwSignal::new(0),
-            join_files: RwSignal::new(false),
-            auto_advance: RwSignal::new(true),
             ps_factor: RwSignal::new(10.0),
             zc_factor: RwSignal::new(8.0),
             het_interacting: RwSignal::new(false),
@@ -445,6 +449,8 @@ impl AppState {
             cursor_time: RwSignal::new(None),
             settings_page_open: RwSignal::new(false),
             colormap_preference: RwSignal::new(ColormapPreference::Viridis),
+            hfr_colormap_preference: RwSignal::new(ColormapPreference::Inferno),
+            always_show_view_range: RwSignal::new(false),
         };
 
         // On mobile, start with sidebar collapsed
