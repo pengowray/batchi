@@ -53,12 +53,12 @@ pub enum RightSidebarTab {
 impl RightSidebarTab {
     pub fn label(self) -> &'static str {
         match self {
+            Self::Metadata => "Info",
             Self::Spectrogram => "Display",
             Self::Selection => "Selection",
             Self::Analysis => "Analysis",
             Self::Harmonics => "Harmonics (beta)",
             Self::Notch => "Noise Filter",
-            Self::Metadata => "Info",
         }
     }
 
@@ -386,7 +386,7 @@ impl AppState {
             is_dragging: RwSignal::new(false),
             spectrogram_display: RwSignal::new(SpectrogramDisplay::MovementFlow),
             mv_enabled: RwSignal::new(false),
-            right_sidebar_tab: RwSignal::new(RightSidebarTab::Spectrogram),
+            right_sidebar_tab: RwSignal::new(RightSidebarTab::Metadata),
             right_sidebar_collapsed: RwSignal::new(true),
             right_sidebar_width: RwSignal::new(220.0),
             right_sidebar_dropdown_open: RwSignal::new(false),
