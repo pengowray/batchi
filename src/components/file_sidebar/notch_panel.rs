@@ -206,7 +206,7 @@ pub(crate) fn NotchPanel() -> impl IntoView {
     let on_sensitivity_change = move |ev: web_sys::Event| {
         let target: web_sys::HtmlInputElement = ev.target().unwrap().unchecked_into();
         if let Ok(val) = target.value().parse::<f64>() {
-            sensitivity.set(val / 10.0); // slider 30–120 → 3.0–12.0
+            sensitivity.set((150.0 - val) / 10.0); // slider 30–120 → threshold 12.0–3.0 (inverted: higher sensitivity = lower threshold = more bands)
         }
     };
 
@@ -260,7 +260,7 @@ pub(crate) fn NotchPanel() -> impl IntoView {
                         min="30"
                         max="120"
                         step="5"
-                        prop:value=move || (sensitivity.get() * 10.0) as i32
+                        prop:value=move || (150.0 - sensitivity.get() * 10.0) as i32
                         on:input=on_sensitivity_change
                         title=move || format!("Threshold: {:.1}x ({:.0} dB)", sensitivity.get(), 20.0 * sensitivity.get().log10())
                     />
