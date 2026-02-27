@@ -5,6 +5,7 @@ pub mod harmonics;
 pub mod heterodyne;
 pub mod notch;
 pub mod pitch_shift;
+pub mod spectral_sub;
 pub mod zc_divide;
 pub mod wsnr;
 pub mod zero_crossing;

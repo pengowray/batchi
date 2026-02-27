@@ -87,6 +87,9 @@ pub fn App() -> impl IntoView {
             let _ = state.bandpass_mode.get();
             let _ = state.notch_enabled.get();
             let _ = state.notch_bands.get();
+            let _ = state.noise_reduce_enabled.get();
+            let _ = state.noise_reduce_strength.get();
+            let _ = state.noise_reduce_floor.get();
 
             if first_run.get() {
                 first_run.set(false);

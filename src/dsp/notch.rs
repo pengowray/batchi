@@ -21,6 +21,9 @@ pub struct NoiseProfile {
     pub bands: Vec<NoiseBand>,
     pub source_sample_rate: u32,
     pub created: String,
+    /// Learned spectral noise floor for spectral subtraction (optional).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub noise_floor: Option<crate::dsp::spectral_sub::NoiseFloor>,
 }
 
 // ── Biquad notch filter ─────────────────────────────────────────────────────

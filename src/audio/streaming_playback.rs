@@ -59,6 +59,9 @@ pub(crate) struct PlaybackParams {
     pub has_selection: bool,
     pub notch_enabled: bool,
     pub notch_bands: Vec<crate::dsp::notch::NoiseBand>,
+    pub noise_reduce_enabled: bool,
+    pub noise_reduce_strength: f64,
+    pub noise_reduce_floor: Option<crate::dsp::spectral_sub::NoiseFloor>,
 }
 
 /// Stop any active streaming playback.
@@ -272,6 +275,15 @@ fn apply_filters(samples: &[f32], sample_rate: u32, params: &PlaybackParams) -> 
     // Apply notch filters after EQ/bandpass
     if params.notch_enabled && !params.notch_bands.is_empty() {
         result = crate::dsp::notch::apply_notch_filters(&result, sample_rate, &params.notch_bands);
+    }
+
+    // Apply spectral subtraction after notch
+    if params.noise_reduce_enabled {
+        if let Some(ref floor) = params.noise_reduce_floor {
+            result = crate::dsp::spectral_sub::apply_spectral_subtraction(
+                &result, sample_rate, floor, params.noise_reduce_strength, 0.05,
+            );
+        }
     }
 
     result

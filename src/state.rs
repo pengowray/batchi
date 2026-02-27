@@ -338,6 +338,12 @@ pub struct AppState {
     pub notch_bands: RwSignal<Vec<crate::dsp::notch::NoiseBand>>,
     pub notch_detecting: RwSignal<bool>,
     pub notch_profile_name: RwSignal<String>,
+
+    // Spectral subtraction noise reduction
+    pub noise_reduce_enabled: RwSignal<bool>,
+    pub noise_reduce_strength: RwSignal<f64>,
+    pub noise_reduce_floor: RwSignal<Option<crate::dsp::spectral_sub::NoiseFloor>>,
+    pub noise_reduce_learning: RwSignal<bool>,
 }
 
 fn detect_tauri() -> bool {
@@ -468,6 +474,11 @@ impl AppState {
             notch_bands: RwSignal::new(Vec::new()),
             notch_detecting: RwSignal::new(false),
             notch_profile_name: RwSignal::new(String::new()),
+
+            noise_reduce_enabled: RwSignal::new(false),
+            noise_reduce_strength: RwSignal::new(1.0),
+            noise_reduce_floor: RwSignal::new(None),
+            noise_reduce_learning: RwSignal::new(false),
         };
 
         // On mobile, start with sidebar collapsed
