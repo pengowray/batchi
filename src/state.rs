@@ -42,12 +42,12 @@ pub enum SpectrogramDisplay {
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
 pub enum RightSidebarTab {
     #[default]
+    Metadata,
     Spectrogram,
     Selection,
     Analysis,
     Harmonics,
     Notch,
-    Metadata,
 }
 
 impl RightSidebarTab {
@@ -63,12 +63,12 @@ impl RightSidebarTab {
     }
 
     pub const ALL: &'static [RightSidebarTab] = &[
+        Self::Metadata,
         Self::Spectrogram,
         Self::Selection,
         Self::Analysis,
         Self::Harmonics,
         Self::Notch,
-        Self::Metadata,
     ];
 }
 
