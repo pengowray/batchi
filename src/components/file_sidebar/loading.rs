@@ -156,7 +156,7 @@ pub(crate) async fn load_named_bytes(name: String, bytes: &[u8], xc_metadata: Op
             .map(|f| f.name == name_check)
             .unwrap_or(false);
         if !still_present {
-            spectral_store::clear();
+            spectral_store::clear_file(file_index);
             return Ok(());
         }
 

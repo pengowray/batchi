@@ -168,9 +168,11 @@ pub fn schedule_tile_with_max(
         // Yield to let the browser process events before heavy FFT work
         yield_to_browser().await;
 
-        // Check if still relevant (user might have switched files)
-        let still_needed = state.current_file_index.get_untracked() == Some(file_idx);
-        if !still_needed {
+        // Check if still relevant (file might have been removed)
+        let still_loaded = state.files.with_untracked(|files| {
+            files.get(file_idx).map(|f| f.name == file.name).unwrap_or(false)
+        });
+        if !still_loaded {
             IN_FLIGHT.with(|s| s.borrow_mut().remove(&key));
             return;
         }
@@ -225,8 +227,11 @@ pub fn schedule_tile_from_store(state: AppState, file_idx: usize, tile_idx: usiz
     spawn_local(async move {
         yield_to_browser().await;
 
-        let still_needed = state.current_file_index.get_untracked() == Some(file_idx);
-        if !still_needed {
+        // Check if the file is still loaded (not removed by user)
+        let still_loaded = state.files.with_untracked(|files| {
+            file_idx < files.len()
+        });
+        if !still_loaded {
             IN_FLIGHT.with(|s| s.borrow_mut().remove(&key));
             return;
         }
