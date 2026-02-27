@@ -140,6 +140,19 @@ pub fn evict_far(file_idx: usize, center_tile: usize, keep_radius: usize) {
 
 /// Schedule background generation of a tile if not already cached or in-flight.
 pub fn schedule_tile(state: AppState, file: LoadedFile, file_idx: usize, tile_idx: usize) {
+    let max_mag = spectrogram_renderer::global_max_magnitude(&file.spectrogram);
+    schedule_tile_with_max(state, file, file_idx, tile_idx, max_mag);
+}
+
+/// Like `schedule_tile` but accepts a pre-computed max magnitude to avoid
+/// redundantly scanning all columns for each tile.
+pub fn schedule_tile_with_max(
+    state: AppState,
+    file: LoadedFile,
+    file_idx: usize,
+    tile_idx: usize,
+    max_mag: f32,
+) {
     let key = (file_idx, tile_idx);
     // Skip if already cached
     if CACHE.with(|c| c.borrow().tiles.contains_key(&key)) {
@@ -170,8 +183,6 @@ pub fn schedule_tile(state: AppState, file: LoadedFile, file_idx: usize, tile_id
             return;
         }
 
-        // Compute global max for normalisation (so tiles have consistent brightness)
-        let max_mag = spectrogram_renderer::global_max_magnitude(&file.spectrogram);
         let rendered = spectrogram_renderer::pre_render_columns(
             &file.spectrogram.columns[col_start..col_end],
             max_mag,
@@ -193,9 +204,47 @@ pub fn schedule_all_tiles(state: AppState, file: LoadedFile, file_idx: usize) {
     if total_cols == 0 { return; }
     let n_tiles = (total_cols + TILE_COLS - 1) / TILE_COLS;
 
+    // Compute global max once and share across all tiles
+    let max_mag = spectrogram_renderer::global_max_magnitude(&file.spectrogram);
+
     for tile_idx in 0..n_tiles {
-        schedule_tile(state.clone(), file.clone(), file_idx, tile_idx);
+        schedule_tile_with_max(state.clone(), file.clone(), file_idx, tile_idx, max_mag);
     }
+}
+
+/// Schedule tile generation from the spectral column store (used during
+/// progressive loading when full SpectrogramData isn't assembled yet).
+pub fn schedule_tile_from_store(state: AppState, file_idx: usize, tile_idx: usize) {
+    use crate::canvas::spectral_store;
+
+    let key = (file_idx, tile_idx);
+    if CACHE.with(|c| c.borrow().tiles.contains_key(&key)) { return; }
+    if IN_FLIGHT.with(|s| s.borrow().contains(&key)) { return; }
+    IN_FLIGHT.with(|s| s.borrow_mut().insert(key));
+
+    spawn_local(async move {
+        yield_to_browser().await;
+
+        let still_needed = state.current_file_index.get_untracked() == Some(file_idx);
+        if !still_needed {
+            IN_FLIGHT.with(|s| s.borrow_mut().remove(&key));
+            return;
+        }
+
+        let col_start = tile_idx * TILE_COLS;
+        let col_end = col_start + TILE_COLS; // with_columns clamps to store len
+
+        let rendered = spectral_store::with_columns(file_idx, col_start, col_end, |cols, max_mag| {
+            spectrogram_renderer::pre_render_columns(cols, max_mag)
+        });
+
+        IN_FLIGHT.with(|s| s.borrow_mut().remove(&key));
+
+        if let Some(rendered) = rendered {
+            CACHE.with(|c| c.borrow_mut().insert(file_idx, tile_idx, rendered));
+            state.tile_ready_signal.update(|n| *n = n.wrapping_add(1));
+        }
+    });
 }
 
 /// Returns the number of complete tiles for a file currently in the cache.

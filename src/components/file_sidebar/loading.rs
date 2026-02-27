@@ -54,8 +54,8 @@ pub(crate) async fn load_named_bytes(name: String, bytes: &[u8], xc_metadata: Op
 
     let placeholder_spec = SpectrogramData {
         columns: Arc::new(Vec::new()),
-        freq_resolution: 0.0,
-        time_resolution: 0.0,
+        freq_resolution: audio.sample_rate as f64 / FFT_SIZE as f64,
+        time_resolution: HOP_SIZE as f64 / audio.sample_rate as f64,
         max_freq: audio.sample_rate as f64 / 2.0,
         sample_rate: audio.sample_rate,
     };
@@ -107,6 +107,10 @@ pub(crate) async fn load_named_bytes(name: String, bytes: &[u8], xc_metadata: Op
     // stays responsive.  Chunks are computed viewport-first (expanding
     // outward from the current scroll position) so the visible region
     // appears quickly even for very long files.
+    //
+    // Columns are inserted into the spectral store as they are computed,
+    // and completed TILE_COLS-wide tiles are scheduled for rendering
+    // immediately — so the user sees tiles appearing progressively.
     const FFT_SIZE: usize = 2048;
     const HOP_SIZE: usize = 512;
     const CHUNK_COLS: usize = 32; // ~50 ms of work per chunk on typical hardware
@@ -117,9 +121,10 @@ pub(crate) async fn load_named_bytes(name: String, bytes: &[u8], xc_metadata: Op
         0
     };
 
-    // Pre-allocate with Option so we can insert chunks in any order
-    let mut all_columns: Vec<Option<crate::types::SpectrogramColumn>> =
-        (0..total_cols).map(|_| None).collect();
+    // Initialise the spectral column store for incremental tile generation
+    use crate::canvas::spectral_store;
+    use crate::canvas::tile_cache::{self, TILE_COLS};
+    spectral_store::init(file_index, total_cols);
 
     // Build chunk schedule: viewport-first expanding order
     let time_resolution = HOP_SIZE as f64 / audio_for_stft.sample_rate as f64;
@@ -135,6 +140,10 @@ pub(crate) async fn load_named_bytes(name: String, bytes: &[u8], xc_metadata: Op
     let center_chunk = center_col / CHUNK_COLS;
     let chunk_order = expanding_chunk_order(center_chunk, total_chunks);
 
+    // Track which tile-width ranges have been fully computed
+    let n_tiles = (total_cols + TILE_COLS - 1) / TILE_COLS;
+    let mut tile_scheduled = vec![false; n_tiles];
+
     for chunk_idx in chunk_order {
         let chunk_start = chunk_idx * CHUNK_COLS;
         if chunk_start >= total_cols {
@@ -146,7 +155,10 @@ pub(crate) async fn load_named_bytes(name: String, bytes: &[u8], xc_metadata: Op
             .get(file_index)
             .map(|f| f.name == name_check)
             .unwrap_or(false);
-        if !still_present { return Ok(()); }
+        if !still_present {
+            spectral_store::clear();
+            return Ok(());
+        }
 
         let chunk = compute_spectrogram_partial(
             &audio_for_stft,
@@ -155,10 +167,20 @@ pub(crate) async fn load_named_bytes(name: String, bytes: &[u8], xc_metadata: Op
             chunk_start,
             CHUNK_COLS,
         );
-        for (i, col) in chunk.into_iter().enumerate() {
-            let idx = chunk_start + i;
-            if idx < total_cols {
-                all_columns[idx] = Some(col);
+
+        // Insert into spectral store (updates running max magnitude)
+        spectral_store::insert_columns(file_index, chunk_start, &chunk);
+
+        // Check if any tile-width ranges are now complete and schedule them
+        let first_affected_tile = chunk_start / TILE_COLS;
+        let last_affected_tile = ((chunk_start + chunk.len()).saturating_sub(1)) / TILE_COLS;
+        for tile_idx in first_affected_tile..=last_affected_tile.min(n_tiles.saturating_sub(1)) {
+            if tile_scheduled[tile_idx] { continue; }
+            let tile_start = tile_idx * TILE_COLS;
+            let tile_end = (tile_start + TILE_COLS).min(total_cols);
+            if spectral_store::tile_complete(file_index, tile_start, tile_end) {
+                tile_cache::schedule_tile_from_store(state.clone(), file_index, tile_idx);
+                tile_scheduled[tile_idx] = true;
             }
         }
 
@@ -169,14 +191,9 @@ pub(crate) async fn load_named_bytes(name: String, bytes: &[u8], xc_metadata: Op
         JsFuture::from(p).await.ok();
     }
 
-    // Unwrap all columns (all should be Some at this point)
-    let final_columns: Vec<crate::types::SpectrogramColumn> = all_columns
-        .into_iter()
-        .map(|opt| opt.unwrap_or_else(|| crate::types::SpectrogramColumn {
-            magnitudes: Vec::new(),
-            time_offset: 0.0,
-        }))
-        .collect();
+    // All columns computed — drain from the store and assemble the final SpectrogramData
+    let final_columns = spectral_store::drain_columns(file_index)
+        .unwrap_or_default();
 
     let freq_resolution = audio_for_stft.sample_rate as f64 / FFT_SIZE as f64;
     let max_freq = audio_for_stft.sample_rate as f64 / 2.0;
@@ -203,6 +220,14 @@ pub(crate) async fn load_named_bytes(name: String, bytes: &[u8], xc_metadata: Op
             }
         }
     });
+
+    // Re-schedule all tiles with the final (accurate) max magnitude.
+    // During progressive loading, early tiles may have used a provisional max;
+    // if the final max differs significantly, re-render for consistent brightness.
+    let file_for_tiles = state.files.get_untracked().get(file_index).cloned();
+    if let Some(file) = file_for_tiles {
+        tile_cache::schedule_all_tiles(state, file, file_index);
+    }
 
     // Signal the spectrogram canvas to repaint with the new data
     state.tile_ready_signal.update(|n| *n = n.wrapping_add(1));

@@ -140,16 +140,11 @@ pub fn Spectrogram() -> impl IntoView {
         if let Some(i) = idx {
             if let Some(file) = files.get(i) {
                 if file.spectrogram.columns.is_empty() {
+                    // Columns not yet computed — don't store the low-res
+                    // preview as PreRendered (it has wrong column dimensions).
+                    // Effect 3 will call blit_preview_as_background() instead.
                     movement_cache.set(None);
-                    if let Some(ref pv) = file.preview {
-                        pre_rendered.set(Some(PreRendered {
-                            width: pv.width,
-                            height: pv.height,
-                            pixels: pv.pixels.to_vec(),
-                        }));
-                    } else {
-                        pre_rendered.set(None);
-                    }
+                    pre_rendered.set(None);
                 } else if !enabled {
                     movement_cache.set(None);
                     pre_rendered.set(Some(spectrogram_renderer::pre_render(&file.spectrogram)));
@@ -342,111 +337,164 @@ pub fn Spectrogram() -> impl IntoView {
         }
 
         // --- Normal spectrogram mode ---
-        pre_rendered.with_untracked(|pr| {
-            if let Some(rendered) = pr {
-                let pref_to_colormap = |p: ColormapPreference| -> Colormap {
-                    match p {
-                        ColormapPreference::Viridis => Colormap::Viridis,
-                        ColormapPreference::Inferno => Colormap::Inferno,
-                        ColormapPreference::Magma => Colormap::Magma,
-                        ColormapPreference::Plasma => Colormap::Plasma,
-                        ColormapPreference::Cividis => Colormap::Cividis,
-                        ColormapPreference::Turbo => Colormap::Turbo,
-                        ColormapPreference::Greyscale => Colormap::Greyscale,
-                    }
-                };
-                let colormap = if mv_on {
-                    ColormapMode::Uniform(Colormap::Greyscale)
-                } else if hfr_enabled && ff_hi > ff_lo {
-                    ColormapMode::HfrFocus {
-                        colormap: pref_to_colormap(hfr_colormap_pref),
-                        ff_lo_frac: ff_lo / file_max_freq,
-                        ff_hi_frac: ff_hi / file_max_freq,
-                    }
-                } else if hfr_enabled {
-                    ColormapMode::Uniform(pref_to_colormap(hfr_colormap_pref))
-                } else {
-                    ColormapMode::Uniform(pref_to_colormap(colormap_pref))
-                };
-                spectrogram_renderer::blit_viewport(&ctx, rendered, canvas, scroll_col, zoom, freq_crop_lo, freq_crop_hi, colormap);
 
-                // Determine frequency shift mode for marker labels
-                let show_het = het_interacting
-                    || playback_mode == PlaybackMode::Heterodyne;
-                let shift_mode = if show_het {
-                    FreqShiftMode::Heterodyne(het_freq)
-                } else {
-                    match playback_mode {
-                        PlaybackMode::TimeExpansion if te_factor > 1.0 => FreqShiftMode::Divide(te_factor),
-                        PlaybackMode::TimeExpansion if te_factor < -1.0 => FreqShiftMode::Multiply(te_factor.abs()),
-                        PlaybackMode::PitchShift if ps_factor > 1.0 => FreqShiftMode::Divide(ps_factor),
-                        PlaybackMode::PitchShift if ps_factor < -1.0 => FreqShiftMode::Multiply(ps_factor.abs()),
-                        PlaybackMode::ZeroCrossing => FreqShiftMode::Divide(state.zc_factor.get()),
-                        _ => FreqShiftMode::None,
-                    }
-                };
+        // Build colormap
+        let pref_to_colormap = |p: ColormapPreference| -> Colormap {
+            match p {
+                ColormapPreference::Viridis => Colormap::Viridis,
+                ColormapPreference::Inferno => Colormap::Inferno,
+                ColormapPreference::Magma => Colormap::Magma,
+                ColormapPreference::Plasma => Colormap::Plasma,
+                ColormapPreference::Cividis => Colormap::Cividis,
+                ColormapPreference::Turbo => Colormap::Turbo,
+                ColormapPreference::Greyscale => Colormap::Greyscale,
+            }
+        };
+        let colormap = if mv_on {
+            ColormapMode::Uniform(Colormap::Greyscale)
+        } else if hfr_enabled && ff_hi > ff_lo {
+            ColormapMode::HfrFocus {
+                colormap: pref_to_colormap(hfr_colormap_pref),
+                ff_lo_frac: ff_lo / file_max_freq,
+                ff_hi_frac: ff_hi / file_max_freq,
+            }
+        } else if hfr_enabled {
+            ColormapMode::Uniform(pref_to_colormap(hfr_colormap_pref))
+        } else {
+            ColormapMode::Uniform(pref_to_colormap(colormap_pref))
+        };
 
-                let (adl2, adh2) = match (axis_drag_start, axis_drag_current) {
-                    (Some(a), Some(b)) => (Some(a.min(b)), Some(a.max(b))),
-                    _ => (None, None),
-                };
-                let ff_drag_active2 = matches!(spec_drag, Some(SpectrogramHandle::FfUpper) | Some(SpectrogramHandle::FfLower) | Some(SpectrogramHandle::FfMiddle));
-                let marker_state = FreqMarkerState {
-                    mouse_freq,
-                    mouse_in_label_area: mouse_freq.is_some() && mouse_cx < LABEL_AREA_WIDTH,
-                    label_hover_opacity: label_opacity,
-                    has_selection: selection.is_some() || (dragging && axis_drag_start.is_none()),
-                    file_max_freq,
-                    axis_drag_lo: adl2,
-                    axis_drag_hi: adh2,
-                    ff_drag_active: ff_drag_active2,
-                    ff_lo,
-                    ff_hi,
-                    ff_handles_active: spec_hover.is_some() || spec_drag.is_some(),
-                };
+        let file = idx.and_then(|i| files.get(i));
+        let total_cols = file.map(|f| f.spectrogram.columns.len()).unwrap_or(0);
+        let file_idx_val = idx.unwrap_or(0);
+        let visible_time = (display_w as f64 / zoom) * time_res;
+        let duration = file.map(|f| f.audio.duration_secs).unwrap_or(0.0);
 
-                spectrogram_renderer::draw_freq_markers(
+        // Step 1: Render base spectrogram.
+        // Priority: tiles (normal mode) > pre_rendered (movement mode) > preview > black
+        let base_drawn = if !mv_on && total_cols > 0 {
+            // Try tile-based rendering
+            spectrogram_renderer::blit_tiles_viewport(
+                &ctx, canvas, file_idx_val, total_cols,
+                scroll_col, zoom, freq_crop_lo, freq_crop_hi, colormap,
+                file.and_then(|f| f.preview.as_ref()),
+                scroll, visible_time, duration,
+            )
+        } else if pre_rendered.with_untracked(|pr| pr.is_some()) {
+            // Movement mode or no tile data — use monolithic pre_rendered
+            pre_rendered.with_untracked(|pr| {
+                if let Some(rendered) = pr {
+                    spectrogram_renderer::blit_viewport(
+                        &ctx, rendered, canvas, scroll_col, zoom,
+                        freq_crop_lo, freq_crop_hi, colormap,
+                    );
+                }
+            });
+            true
+        } else if let Some(pv) = file.and_then(|f| f.preview.as_ref()) {
+            // Preview fallback during loading
+            spectrogram_renderer::blit_preview_as_background(
+                &ctx, pv, canvas,
+                scroll, visible_time, duration,
+                freq_crop_lo, freq_crop_hi,
+            );
+            true
+        } else {
+            ctx.set_fill_style_str("#000");
+            ctx.fill_rect(0.0, 0.0, display_w as f64, display_h as f64);
+            false
+        };
+
+        // Step 2: Draw overlays on top of the base spectrogram
+        if base_drawn {
+            let show_het = het_interacting
+                || playback_mode == PlaybackMode::Heterodyne;
+            let shift_mode = if show_het {
+                FreqShiftMode::Heterodyne(het_freq)
+            } else {
+                match playback_mode {
+                    PlaybackMode::TimeExpansion if te_factor > 1.0 => FreqShiftMode::Divide(te_factor),
+                    PlaybackMode::TimeExpansion if te_factor < -1.0 => FreqShiftMode::Multiply(te_factor.abs()),
+                    PlaybackMode::PitchShift if ps_factor > 1.0 => FreqShiftMode::Divide(ps_factor),
+                    PlaybackMode::PitchShift if ps_factor < -1.0 => FreqShiftMode::Multiply(ps_factor.abs()),
+                    PlaybackMode::ZeroCrossing => FreqShiftMode::Divide(state.zc_factor.get()),
+                    _ => FreqShiftMode::None,
+                }
+            };
+
+            let (adl2, adh2) = match (axis_drag_start, axis_drag_current) {
+                (Some(a), Some(b)) => (Some(a.min(b)), Some(a.max(b))),
+                _ => (None, None),
+            };
+            let ff_drag_active2 = matches!(spec_drag, Some(SpectrogramHandle::FfUpper) | Some(SpectrogramHandle::FfLower) | Some(SpectrogramHandle::FfMiddle));
+            let marker_state = FreqMarkerState {
+                mouse_freq,
+                mouse_in_label_area: mouse_freq.is_some() && mouse_cx < LABEL_AREA_WIDTH,
+                label_hover_opacity: label_opacity,
+                has_selection: selection.is_some() || (dragging && axis_drag_start.is_none()),
+                file_max_freq,
+                axis_drag_lo: adl2,
+                axis_drag_hi: adh2,
+                ff_drag_active: ff_drag_active2,
+                ff_lo,
+                ff_hi,
+                ff_handles_active: spec_hover.is_some() || spec_drag.is_some(),
+            };
+
+            spectrogram_renderer::draw_freq_markers(
+                &ctx,
+                min_freq,
+                max_freq,
+                display_h as f64,
+                display_w as f64,
+                shift_mode,
+                &marker_state,
+                het_cutoff,
+            );
+
+            // FF overlay (dim outside focus range)
+            if ff_hi > ff_lo {
+                spectrogram_renderer::draw_ff_overlay(
                     &ctx,
+                    ff_lo, ff_hi,
+                    min_freq, max_freq,
+                    display_h as f64, display_w as f64,
+                    spec_hover, spec_drag,
+                );
+            }
+
+            // HET overlay (cyan lines on top, no dimming)
+            if show_het {
+                let het_interactive = !het_freq_auto || !het_cutoff_auto;
+                spectrogram_renderer::draw_het_overlay(
+                    &ctx,
+                    het_freq,
+                    het_cutoff,
                     min_freq,
                     max_freq,
                     display_h as f64,
                     display_w as f64,
-                    shift_mode,
-                    &marker_state,
-                    het_cutoff,
+                    spec_hover,
+                    spec_drag,
+                    het_interactive,
                 );
+            }
 
-                // FF overlay (dim outside focus range)
-                if ff_hi > ff_lo {
-                    spectrogram_renderer::draw_ff_overlay(
-                        &ctx,
-                        ff_lo, ff_hi,
-                        min_freq, max_freq,
-                        display_h as f64, display_w as f64,
-                        spec_hover, spec_drag,
-                    );
-                }
-
-                // HET overlay (cyan lines on top, no dimming)
-                if show_het {
-                    let het_interactive = !het_freq_auto || !het_cutoff_auto;
-                    spectrogram_renderer::draw_het_overlay(
-                        &ctx,
-                        het_freq,
-                        het_cutoff,
-                        min_freq,
-                        max_freq,
-                        display_h as f64,
-                        display_w as f64,
-                        spec_hover,
-                        spec_drag,
-                        het_interactive,
-                    );
-                }
-
-                // Draw selection overlay
-                if let Some(sel) = selection {
-                    spectrogram_renderer::draw_selection(
+            // Draw selection overlay
+            if let Some(sel) = selection {
+                spectrogram_renderer::draw_selection(
+                    &ctx,
+                    &sel,
+                    min_freq,
+                    max_freq,
+                    scroll,
+                    time_res,
+                    zoom,
+                    display_w as f64,
+                    display_h as f64,
+                );
+                if dragging {
+                    spectrogram_renderer::draw_harmonic_shadows(
                         &ctx,
                         &sel,
                         min_freq,
@@ -457,76 +505,57 @@ pub fn Spectrogram() -> impl IntoView {
                         display_w as f64,
                         display_h as f64,
                     );
-                    if dragging {
-                        spectrogram_renderer::draw_harmonic_shadows(
-                            &ctx,
-                            &sel,
-                            min_freq,
-                            max_freq,
-                            scroll,
-                            time_res,
-                            zoom,
-                            display_w as f64,
-                            display_h as f64,
-                        );
-                    }
                 }
-
-                // Draw filter band overlay when hovering a slider
-                if filter_enabled {
-                    if let Some(band) = filter_hovering {
-                        spectrogram_renderer::draw_filter_overlay(
-                            &ctx,
-                            band,
-                            state.filter_freq_low.get_untracked(),
-                            state.filter_freq_high.get_untracked(),
-                            state.filter_band_mode.get_untracked(),
-                            min_freq,
-                            max_freq,
-                            display_w as f64,
-                            display_h as f64,
-                        );
-                    }
-                }
-
-                let visible_time = (display_w as f64 / zoom) * time_res;
-                let px_per_sec = display_w as f64 / visible_time;
-
-                // Draw static position marker when not playing
-                if !is_playing && canvas_tool == CanvasTool::Hand {
-                    // Static "play from here" position at 10% from left
-                    let here_x = display_w as f64 * 0.10;
-                    let here_time = scroll + visible_time * 0.10;
-                    // Update play_from_here_time signal (untracked to avoid loop)
-                    state.play_from_here_time.set(here_time);
-                    ctx.set_stroke_style_str("rgba(100, 160, 255, 0.35)");
-                    ctx.set_line_width(1.5);
-                    let _ = ctx.set_line_dash(&js_sys::Array::of2(
-                        &wasm_bindgen::JsValue::from_f64(4.0),
-                        &wasm_bindgen::JsValue::from_f64(3.0),
-                    ));
-                    ctx.begin_path();
-                    ctx.move_to(here_x, 0.0);
-                    ctx.line_to(here_x, display_h as f64);
-                    ctx.stroke();
-                    let _ = ctx.set_line_dash(&js_sys::Array::new()); // reset
-                }
-
-                // Draw bookmark dots (yellow circles at top edge)
-                ctx.set_fill_style_str("rgba(255, 200, 50, 0.9)");
-                for bm in &bookmarks {
-                    let x = (bm.time - scroll) * px_per_sec;
-                    if x >= 0.0 && x <= display_w as f64 {
-                        ctx.begin_path();
-                        let _ = ctx.arc(x, 6.0, 4.0, 0.0, std::f64::consts::TAU);
-                        let _ = ctx.fill();
-                    }
-                }
-            } else {
-                ctx.set_fill_style_str("#000");
-                ctx.fill_rect(0.0, 0.0, display_w as f64, display_h as f64);
             }
-        });
+
+            // Draw filter band overlay when hovering a slider
+            if filter_enabled {
+                if let Some(band) = filter_hovering {
+                    spectrogram_renderer::draw_filter_overlay(
+                        &ctx,
+                        band,
+                        state.filter_freq_low.get_untracked(),
+                        state.filter_freq_high.get_untracked(),
+                        state.filter_band_mode.get_untracked(),
+                        min_freq,
+                        max_freq,
+                        display_w as f64,
+                        display_h as f64,
+                    );
+                }
+            }
+
+            let px_per_sec = display_w as f64 / visible_time;
+
+            // Draw static position marker when not playing
+            if !is_playing && canvas_tool == CanvasTool::Hand {
+                let here_x = display_w as f64 * 0.10;
+                let here_time = scroll + visible_time * 0.10;
+                state.play_from_here_time.set(here_time);
+                ctx.set_stroke_style_str("rgba(100, 160, 255, 0.35)");
+                ctx.set_line_width(1.5);
+                let _ = ctx.set_line_dash(&js_sys::Array::of2(
+                    &wasm_bindgen::JsValue::from_f64(4.0),
+                    &wasm_bindgen::JsValue::from_f64(3.0),
+                ));
+                ctx.begin_path();
+                ctx.move_to(here_x, 0.0);
+                ctx.line_to(here_x, display_h as f64);
+                ctx.stroke();
+                let _ = ctx.set_line_dash(&js_sys::Array::new());
+            }
+
+            // Draw bookmark dots (yellow circles at top edge)
+            ctx.set_fill_style_str("rgba(255, 200, 50, 0.9)");
+            for bm in &bookmarks {
+                let x = (bm.time - scroll) * px_per_sec;
+                if x >= 0.0 && x <= display_w as f64 {
+                    ctx.begin_path();
+                    let _ = ctx.arc(x, 6.0, 4.0, 0.0, std::f64::consts::TAU);
+                    let _ = ctx.fill();
+                }
+            }
+        }
     });
 
     // Effect 4: auto-scroll to follow playhead during playback

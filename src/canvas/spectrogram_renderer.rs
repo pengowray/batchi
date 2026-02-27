@@ -4,7 +4,7 @@ use crate::canvas::colors::{
     greyscale_to_magma, greyscale_to_plasma, greyscale_to_cividis, greyscale_to_turbo,
 };
 use crate::state::{SpectrogramHandle, Selection};
-use crate::types::SpectrogramData;
+use crate::types::{PreviewImage, SpectrogramData};
 use wasm_bindgen::JsCast;
 use wasm_bindgen::Clamped;
 use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement, ImageData};
@@ -344,6 +344,7 @@ impl Colormap {
 }
 
 /// Which colormap to apply when blitting the spectrogram.
+#[derive(Clone, Copy)]
 pub enum ColormapMode {
     /// Uniform colormap across the entire spectrogram.
     Uniform(Colormap),
@@ -499,6 +500,277 @@ pub fn blit_viewport(
             log::error!("Failed to create ImageData: {e:?}");
         }
     }
+}
+
+/// Blit a `PreviewImage` as a viewport background, correctly mapping its time
+/// axis to the current scroll position and visible time range.  Used as a
+/// fallback while the full-resolution spectrogram tiles are being computed.
+pub fn blit_preview_as_background(
+    ctx: &CanvasRenderingContext2d,
+    preview: &PreviewImage,
+    canvas: &HtmlCanvasElement,
+    scroll_offset: f64,    // left edge of viewport in seconds
+    visible_time: f64,     // seconds of audio visible in viewport
+    total_duration: f64,   // total file duration in seconds
+    freq_crop_lo: f64,     // 0..1 fraction of Nyquist
+    freq_crop_hi: f64,     // 0..1 fraction of Nyquist
+) {
+    let cw = canvas.width() as f64;
+    let ch = canvas.height() as f64;
+
+    ctx.set_fill_style_str("#000");
+    ctx.fill_rect(0.0, 0.0, cw, ch);
+
+    if preview.width == 0 || preview.height == 0 || total_duration <= 0.0 {
+        return;
+    }
+
+    // Map viewport time range to preview pixel columns.
+    // The preview spans the entire file: column 0 = time 0, column W = total_duration.
+    let pw = preview.width as f64;
+    let src_x = (scroll_offset / total_duration * pw).clamp(0.0, pw);
+    let src_w = (visible_time / total_duration * pw).clamp(1.0, pw - src_x);
+
+    // For short files where the entire file fits in the viewport, scale the
+    // destination width proportionally (same logic as blit_viewport).
+    let dst_w = if visible_time > total_duration {
+        cw * (total_duration / visible_time)
+    } else {
+        cw
+    };
+
+    // Vertical crop: row 0 = highest freq, last row = 0 Hz
+    let fc_lo = freq_crop_lo.max(0.0);
+    let fc_hi = freq_crop_hi.max(0.01);
+    let full_h = preview.height as f64;
+    let (src_y, src_h, dst_y, dst_h) = if fc_hi <= 1.0 {
+        let sy = full_h * (1.0 - fc_hi);
+        let sh = full_h * (fc_hi - fc_lo).max(0.001);
+        (sy, sh, 0.0, ch)
+    } else {
+        let fc_range = (fc_hi - fc_lo).max(0.001);
+        let data_frac = (1.0 - fc_lo) / fc_range;
+        let sh = full_h * (1.0 - fc_lo);
+        (0.0, sh, ch * (1.0 - data_frac), ch * data_frac)
+    };
+
+    let clamped = Clamped(&preview.pixels[..]);
+    let Ok(img) = ImageData::new_with_u8_clamped_array_and_sh(
+        clamped, preview.width, preview.height,
+    ) else { return };
+
+    let doc = web_sys::window().unwrap().document().unwrap();
+    let tmp = doc.create_element("canvas").unwrap()
+        .dyn_into::<HtmlCanvasElement>().unwrap();
+    tmp.set_width(preview.width);
+    tmp.set_height(preview.height);
+    let Some(tmp_ctx) = tmp.get_context("2d").ok().flatten()
+        .and_then(|c| c.dyn_into::<CanvasRenderingContext2d>().ok())
+    else { return };
+    let _ = tmp_ctx.put_image_data(&img, 0.0, 0.0);
+
+    let _ = ctx.draw_image_with_html_canvas_element_and_sw_and_sh_and_dx_and_dy_and_dw_and_dh(
+        &tmp,
+        src_x, src_y, src_w, src_h,
+        0.0, dst_y, dst_w, dst_h,
+    );
+}
+
+// ── Tile-based rendering ─────────────────────────────────────────────────────
+
+use crate::canvas::tile_cache::{self, TILE_COLS};
+use std::cell::RefCell;
+
+thread_local! {
+    /// Reusable off-screen canvas for blitting tile ImageData.
+    /// Avoids creating a new canvas element every frame for each tile.
+    static TMP_CANVAS: RefCell<Option<(HtmlCanvasElement, CanvasRenderingContext2d)>> =
+        const { RefCell::new(None) };
+}
+
+/// Get or create a reusable off-screen canvas of at least the given dimensions.
+fn get_tmp_canvas(w: u32, h: u32) -> Option<(HtmlCanvasElement, CanvasRenderingContext2d)> {
+    TMP_CANVAS.with(|cell| {
+        let mut slot = cell.borrow_mut();
+        if let Some((ref c, ref ctx)) = *slot {
+            if c.width() >= w && c.height() >= h {
+                return Some((c.clone(), ctx.clone()));
+            }
+        }
+        // Create new
+        let doc = web_sys::window()?.document()?;
+        let c = doc.create_element("canvas").ok()?
+            .dyn_into::<HtmlCanvasElement>().ok()?;
+        c.set_width(w);
+        c.set_height(h);
+        let ctx = c.get_context("2d").ok()??.dyn_into::<CanvasRenderingContext2d>().ok()?;
+        *slot = Some((c.clone(), ctx.clone()));
+        Some((c, ctx))
+    })
+}
+
+/// Apply a colormap LUT to greyscale RGBA pixels in-place.
+fn apply_colormap_to_tile(pixels: &mut [u8], colormap: Colormap) {
+    if colormap == Colormap::Greyscale {
+        return;
+    }
+    for chunk in pixels.chunks_exact_mut(4) {
+        let [r, g, b] = colormap.apply(chunk[0]);
+        chunk[0] = r;
+        chunk[1] = g;
+        chunk[2] = b;
+    }
+}
+
+/// Apply HFR-focus colormap: color inside focus band, greyscale outside.
+fn apply_hfr_colormap_to_tile(
+    pixels: &mut [u8], width: u32, height: u32,
+    colormap: Colormap, ff_lo_frac: f64, ff_hi_frac: f64,
+) {
+    let h = height as f64;
+    let w = width as usize;
+    let focus_top = (h * (1.0 - ff_hi_frac)).round() as usize;
+    let focus_bot = (h * (1.0 - ff_lo_frac)).round() as usize;
+    for row in 0..height as usize {
+        if row >= focus_top && row < focus_bot {
+            let base = row * w * 4;
+            for col in 0..w {
+                let i = base + col * 4;
+                let [r, g, b] = colormap.apply(pixels[i]);
+                pixels[i] = r;
+                pixels[i + 1] = g;
+                pixels[i + 2] = b;
+            }
+        }
+    }
+}
+
+/// Composite spectrogram tiles from the tile cache onto the canvas.
+/// Falls back to a preview image for tiles not yet cached.
+/// Returns true if at least one tile was drawn, false if nothing was available.
+pub fn blit_tiles_viewport(
+    ctx: &CanvasRenderingContext2d,
+    canvas: &HtmlCanvasElement,
+    file_idx: usize,
+    total_cols: usize,
+    scroll_col: f64,
+    zoom: f64,
+    freq_crop_lo: f64,
+    freq_crop_hi: f64,
+    colormap: ColormapMode,
+    // Preview fallback for missing tiles
+    preview: Option<&PreviewImage>,
+    scroll_offset: f64,    // seconds (for preview mapping)
+    visible_time: f64,     // seconds (for preview mapping)
+    total_duration: f64,   // seconds (for preview mapping)
+) -> bool {
+    let cw = canvas.width() as f64;
+    let ch = canvas.height() as f64;
+
+    ctx.set_fill_style_str("#000");
+    ctx.fill_rect(0.0, 0.0, cw, ch);
+
+    if total_cols == 0 || zoom <= 0.0 {
+        return false;
+    }
+
+    // Visible column range
+    let visible_cols = cw / zoom;
+    let src_start = scroll_col.max(0.0).min((total_cols as f64 - 1.0).max(0.0));
+    let src_end = (src_start + visible_cols).min(total_cols as f64);
+
+    // Tile index range
+    let first_tile = (src_start / TILE_COLS as f64).floor() as usize;
+    let last_tile = ((src_end - 1.0).max(0.0) / TILE_COLS as f64).floor() as usize;
+    let n_tiles = (total_cols + TILE_COLS - 1) / TILE_COLS;
+
+    // Vertical crop
+    let fc_lo = freq_crop_lo.max(0.0);
+    let fc_hi = freq_crop_hi.max(0.01);
+
+    let mut any_drawn = false;
+
+    for tile_idx in first_tile..=last_tile.min(n_tiles.saturating_sub(1)) {
+        let tile_col_start = tile_idx * TILE_COLS;
+
+        let drawn = tile_cache::borrow_tile(file_idx, tile_idx, |tile| {
+            let tw = tile.rendered.width as f64;
+            let th = tile.rendered.height as f64;
+            if tw == 0.0 || th == 0.0 { return; }
+
+            // Clone pixels for colormap application
+            let mut pixels = tile.rendered.pixels.clone();
+            match colormap {
+                ColormapMode::Uniform(cm) => apply_colormap_to_tile(&mut pixels, cm),
+                ColormapMode::HfrFocus { colormap: cm, ff_lo_frac, ff_hi_frac } => {
+                    apply_hfr_colormap_to_tile(
+                        &mut pixels, tile.rendered.width, tile.rendered.height,
+                        cm, ff_lo_frac, ff_hi_frac,
+                    );
+                }
+            }
+
+            // Create ImageData and draw to off-screen canvas
+            let clamped = Clamped(&pixels[..]);
+            let Ok(img) = ImageData::new_with_u8_clamped_array_and_sh(
+                clamped, tile.rendered.width, tile.rendered.height,
+            ) else { return };
+
+            let Some((tmp, tmp_ctx)) = get_tmp_canvas(tile.rendered.width, tile.rendered.height) else { return };
+            // Resize if needed (get_tmp_canvas guarantees >= size)
+            if tmp.width() != tile.rendered.width || tmp.height() != tile.rendered.height {
+                tmp.set_width(tile.rendered.width);
+                tmp.set_height(tile.rendered.height);
+            }
+            let _ = tmp_ctx.put_image_data(&img, 0.0, 0.0);
+
+            // Source rect within this tile
+            let tile_src_x = (src_start - tile_col_start as f64).max(0.0);
+            let tile_src_end = (src_end - tile_col_start as f64).min(tw);
+            let tile_src_w = (tile_src_end - tile_src_x).max(0.0);
+            if tile_src_w <= 0.0 { return; }
+
+            // Vertical crop
+            let (src_y, src_h, dst_y, dst_h) = if fc_hi <= 1.0 {
+                let sy = th * (1.0 - fc_hi);
+                let sh = th * (fc_hi - fc_lo).max(0.001);
+                (sy, sh, 0.0, ch)
+            } else {
+                let fc_range = (fc_hi - fc_lo).max(0.001);
+                let data_frac = (1.0 - fc_lo) / fc_range;
+                let sh = th * (1.0 - fc_lo);
+                (0.0, sh, ch * (1.0 - data_frac), ch * data_frac)
+            };
+
+            // Destination x: where this tile's visible portion starts on canvas
+            let dst_x = ((tile_col_start as f64 + tile_src_x) - src_start) * zoom;
+            let dst_w = tile_src_w * zoom;
+
+            let _ = ctx.draw_image_with_html_canvas_element_and_sw_and_sh_and_dx_and_dy_and_dw_and_dh(
+                &tmp,
+                tile_src_x, src_y, tile_src_w, src_h,
+                dst_x, dst_y, dst_w, dst_h,
+            );
+        });
+
+        if drawn.is_some() {
+            any_drawn = true;
+        }
+    }
+
+    // If some tiles were missing, draw preview as background for the gaps
+    if !any_drawn {
+        if let Some(pv) = preview {
+            blit_preview_as_background(
+                ctx, pv, canvas,
+                scroll_offset, visible_time, total_duration,
+                freq_crop_lo, freq_crop_hi,
+            );
+            return true;
+        }
+    }
+
+    any_drawn
 }
 
 /// Describes how frequency markers should show shifted output frequencies.

@@ -566,8 +566,8 @@ fn finalize_recording_tauri(result: JsValue, state: AppState) {
 
     let placeholder_spec = SpectrogramData {
         columns: Vec::new().into(),
-        freq_resolution: 0.0,
-        time_resolution: 0.0,
+        freq_resolution: sample_rate as f64 / 2048.0,
+        time_resolution: 512.0 / sample_rate as f64,
         max_freq: sample_rate as f64 / 2.0,
         sample_rate,
     };
@@ -806,8 +806,8 @@ pub fn finalize_recording(samples: Vec<f32>, sample_rate: u32, state: AppState) 
 
     let placeholder_spec = SpectrogramData {
         columns: Vec::new().into(),
-        freq_resolution: 0.0,
-        time_resolution: 0.0,
+        freq_resolution: sample_rate as f64 / 2048.0,
+        time_resolution: 512.0 / sample_rate as f64,
         max_freq: sample_rate as f64 / 2.0,
         sample_rate,
     };
