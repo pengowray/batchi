@@ -4,6 +4,7 @@ pub mod settings_panel;
 pub mod analysis;
 pub mod metadata_panel;
 pub mod harmonics;
+pub mod notch_panel;
 mod loading;
 
 use leptos::prelude::*;
@@ -18,6 +19,7 @@ pub(crate) use settings_panel::{SpectrogramSettingsPanel, SelectionPanel};
 pub(crate) use analysis::AnalysisPanel as SidebarAnalysisPanel;
 pub(crate) use metadata_panel::MetadataPanel;
 pub(crate) use harmonics::HarmonicsPanel;
+pub(crate) use notch_panel::NotchPanel;
 pub(crate) use loading::{load_named_bytes, fetch_demo_index, load_single_demo};
 
 fn copy_to_clipboard(text: &str) {

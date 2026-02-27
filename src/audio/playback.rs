@@ -235,6 +235,8 @@ fn snapshot_params(state: &AppState, selection: Option<Selection>, sample_rate: 
             .map(|s| s.freq_high)
             .unwrap_or(sample_rate as f64 / 2.0),
         has_selection: selection.is_some(),
+        notch_enabled: state.notch_enabled.get_untracked(),
+        notch_bands: state.notch_bands.get_untracked(),
     }
 }
 

@@ -46,6 +46,7 @@ pub enum RightSidebarTab {
     Selection,
     Analysis,
     Harmonics,
+    Notch,
     Metadata,
 }
 
@@ -56,6 +57,7 @@ impl RightSidebarTab {
             Self::Selection => "Selection",
             Self::Analysis => "Analysis",
             Self::Harmonics => "Harmonics (beta)",
+            Self::Notch => "Noise Filter",
             Self::Metadata => "Info",
         }
     }
@@ -65,6 +67,7 @@ impl RightSidebarTab {
         Self::Selection,
         Self::Analysis,
         Self::Harmonics,
+        Self::Notch,
         Self::Metadata,
     ];
 }
@@ -329,6 +332,12 @@ pub struct AppState {
     pub hfr_colormap_preference: RwSignal<ColormapPreference>,
     // When false, the Range button is hidden at full range
     pub always_show_view_range: RwSignal<bool>,
+
+    // Notch noise filtering
+    pub notch_enabled: RwSignal<bool>,
+    pub notch_bands: RwSignal<Vec<crate::dsp::notch::NoiseBand>>,
+    pub notch_detecting: RwSignal<bool>,
+    pub notch_profile_name: RwSignal<String>,
 }
 
 fn detect_tauri() -> bool {
@@ -454,6 +463,11 @@ impl AppState {
             colormap_preference: RwSignal::new(ColormapPreference::Viridis),
             hfr_colormap_preference: RwSignal::new(ColormapPreference::Inferno),
             always_show_view_range: RwSignal::new(false),
+
+            notch_enabled: RwSignal::new(false),
+            notch_bands: RwSignal::new(Vec::new()),
+            notch_detecting: RwSignal::new(false),
+            notch_profile_name: RwSignal::new(String::new()),
         };
 
         // On mobile, start with sidebar collapsed

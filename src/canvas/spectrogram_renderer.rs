@@ -1525,3 +1525,60 @@ pub fn pixel_to_time_freq(
     let freq = y_to_freq(px_y, min_freq, max_freq, canvas_height);
     (time, freq)
 }
+
+/// Draw notch filter band markers as semi-transparent horizontal overlays.
+pub fn draw_notch_bands(
+    ctx: &web_sys::CanvasRenderingContext2d,
+    min_freq: f64,
+    max_freq: f64,
+    canvas_height: f64,
+    canvas_width: f64,
+    bands: &[crate::dsp::notch::NoiseBand],
+    notch_enabled: bool,
+) {
+    for band in bands {
+        let center = band.center_hz;
+        let half_bw = band.bandwidth_hz / 2.0;
+        let freq_lo = center - half_bw;
+        let freq_hi = center + half_bw;
+
+        // Skip if entirely outside visible range
+        if freq_hi < min_freq || freq_lo > max_freq {
+            continue;
+        }
+
+        let y_top = freq_to_y(freq_hi.min(max_freq), min_freq, max_freq, canvas_height);
+        let y_bot = freq_to_y(freq_lo.max(min_freq), min_freq, max_freq, canvas_height);
+        let y_center = freq_to_y(center, min_freq, max_freq, canvas_height);
+        let band_h = (y_bot - y_top).max(1.0);
+
+        let (fill, line, label_color) = if notch_enabled && band.enabled {
+            ("rgba(255, 40, 40, 0.12)", "rgba(255, 60, 60, 0.6)", "rgba(255, 100, 100, 0.8)")
+        } else {
+            ("rgba(128, 128, 128, 0.08)", "rgba(128, 128, 128, 0.3)", "rgba(160, 160, 160, 0.5)")
+        };
+
+        // Band fill
+        ctx.set_fill_style_str(fill);
+        ctx.fill_rect(0.0, y_top, canvas_width, band_h);
+
+        // Center line
+        ctx.set_stroke_style_str(line);
+        ctx.set_line_width(1.0);
+        ctx.begin_path();
+        ctx.move_to(0.0, y_center);
+        ctx.line_to(canvas_width, y_center);
+        ctx.stroke();
+
+        // Frequency label
+        ctx.set_fill_style_str(label_color);
+        ctx.set_font("10px sans-serif");
+        ctx.set_text_baseline("bottom");
+        let label = if center >= 1000.0 {
+            format!("{:.1}k", center / 1000.0)
+        } else {
+            format!("{:.0}", center)
+        };
+        let _ = ctx.fill_text(&label, canvas_width - 40.0, y_center - 2.0);
+    }
+}

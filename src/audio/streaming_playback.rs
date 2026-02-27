@@ -57,6 +57,8 @@ pub(crate) struct PlaybackParams {
     pub sel_freq_low: f64,
     pub sel_freq_high: f64,
     pub has_selection: bool,
+    pub notch_enabled: bool,
+    pub notch_bands: Vec<crate::dsp::notch::NoiseBand>,
 }
 
 /// Stop any active streaming playback.
@@ -234,7 +236,7 @@ async fn chunk_loop(
 }
 
 fn apply_filters(samples: &[f32], sample_rate: u32, params: &PlaybackParams) -> Vec<f32> {
-    if params.filter_enabled {
+    let mut result = if params.filter_enabled {
         match params.filter_quality {
             FilterQuality::Fast => apply_eq_filter_fast(
                 samples, sample_rate,
@@ -265,7 +267,14 @@ fn apply_filters(samples: &[f32], sample_rate: u32, params: &PlaybackParams) -> 
         apply_bandpass(samples, sample_rate, params.sel_freq_low, params.sel_freq_high)
     } else {
         samples.to_vec()
+    };
+
+    // Apply notch filters after EQ/bandpass
+    if params.notch_enabled && !params.notch_bands.is_empty() {
+        result = crate::dsp::notch::apply_notch_filters(&result, sample_rate, &params.notch_bands);
     }
+
+    result
 }
 
 fn apply_dsp_mode(samples: &[f32], sample_rate: u32, params: &PlaybackParams) -> Vec<f32> {

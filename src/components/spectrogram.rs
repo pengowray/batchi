@@ -238,6 +238,8 @@ pub fn Spectrogram() -> impl IntoView {
         let hfr_colormap_pref = state.hfr_colormap_preference.get();
         let axis_drag_start = state.axis_drag_start_freq.get();
         let axis_drag_current = state.axis_drag_current_freq.get();
+        let notch_bands = state.notch_bands.get();
+        let notch_enabled = state.notch_enabled.get();
         let _pre = pre_rendered.track();
         let _coh = coherence_frames.track();
 
@@ -504,6 +506,16 @@ pub fn Spectrogram() -> impl IntoView {
                 &marker_state,
                 het_cutoff,
             );
+
+            // Notch filter band markers
+            if !notch_bands.is_empty() {
+                spectrogram_renderer::draw_notch_bands(
+                    &ctx,
+                    min_freq, max_freq,
+                    display_h as f64, display_w as f64,
+                    &notch_bands, notch_enabled,
+                );
+            }
 
             // FF overlay (dim outside focus range)
             if ff_hi > ff_lo {
