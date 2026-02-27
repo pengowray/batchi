@@ -7,6 +7,9 @@ pub struct LoadedFile {
     pub audio: AudioData,
     pub spectrogram: SpectrogramData,
     pub preview: Option<PreviewImage>,
+    /// Higher-resolution overview image computed after full spectrogram is ready.
+    /// Falls back to `preview` when not yet available.
+    pub overview_image: Option<PreviewImage>,
     pub xc_metadata: Option<Vec<(String, String)>>,
     pub is_recording: bool,  // true = unsaved recording (show indicator on web)
 }

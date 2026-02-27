@@ -72,8 +72,10 @@ pub fn compute_spectrogram(
     let time_resolution = hop_size as f64 / audio.sample_rate as f64;
     let max_freq = audio.sample_rate as f64 / 2.0;
 
+    let total_columns = columns.len();
     SpectrogramData {
         columns: Arc::new(columns),
+        total_columns,
         freq_resolution,
         time_resolution,
         max_freq,
@@ -184,6 +186,50 @@ pub fn compute_preview(audio: &AudioData, target_width: u32, target_height: u32)
         height: out_h,
         pixels: Arc::new(pixels),
     }
+}
+
+/// Compute a higher-resolution overview image by downsampling existing SpectrogramData.
+/// Produces a ~1024×256 greyscale RGBA image (same format as PreviewImage).
+pub fn compute_overview_from_spectrogram(data: &SpectrogramData) -> Option<PreviewImage> {
+    if data.columns.is_empty() {
+        return None;
+    }
+
+    let src_w = data.columns.len();
+    let src_h = data.columns[0].magnitudes.len();
+    if src_h == 0 { return None; }
+
+    let out_w = (src_w as u32).min(1024);
+    let out_h = (src_h as u32).min(256);
+
+    let max_mag = data.columns.iter()
+        .flat_map(|c| c.magnitudes.iter())
+        .copied()
+        .fold(0.0f32, f32::max);
+    if max_mag <= 0.0 { return None; }
+
+    let mut pixels = vec![0u8; (out_w * out_h * 4) as usize];
+
+    for x in 0..out_w {
+        let src_col = (x as usize * src_w) / out_w as usize;
+        let col = &data.columns[src_col.min(src_w - 1)];
+        for y in 0..out_h {
+            let src_bin = src_h - 1 - ((y as usize * src_h) / out_h as usize).min(src_h - 1);
+            let mag = col.magnitudes[src_bin];
+            let grey = magnitude_to_greyscale(mag, max_mag);
+            let idx = (y * out_w + x) as usize * 4;
+            pixels[idx] = grey;
+            pixels[idx + 1] = grey;
+            pixels[idx + 2] = grey;
+            pixels[idx + 3] = 255;
+        }
+    }
+
+    Some(PreviewImage {
+        width: out_w,
+        height: out_h,
+        pixels: Arc::new(pixels),
+    })
 }
 
 #[cfg(test)]

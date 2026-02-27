@@ -6,16 +6,28 @@
 //! spectrogram to finish.
 //!
 //! Supports multiple concurrent file loads — each file_idx gets its own store.
+//!
+//! For large files, the store persists after loading and uses a memory budget
+//! with LRU-by-distance eviction.  Evicted columns can be recomputed from
+//! `AudioData.samples` via `tile_cache::schedule_tile_on_demand()`.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
 use crate::types::SpectrogramColumn;
 
+/// Memory budget for all spectral stores combined (~200 MB).
+const MAX_STORE_BYTES: usize = 200 * 1024 * 1024;
+
+/// Approximate bytes per column (1025 f32 magnitudes + f64 time_offset + Vec overhead).
+const APPROX_BYTES_PER_COL: usize = 1025 * 4 + 8 + 24;
+
 struct SpectralColumnStore {
-    /// Columns indexed by spectrogram column number.  `None` = not yet computed.
+    /// Columns indexed by spectrogram column number.  `None` = not yet computed / evicted.
     columns: Vec<Option<SpectrogramColumn>>,
     /// Running maximum magnitude across all inserted columns.
     max_magnitude: f32,
+    /// Number of `Some` columns currently stored.
+    present_count: usize,
 }
 
 thread_local! {
@@ -24,18 +36,25 @@ thread_local! {
         RefCell::new(HashMap::new());
 }
 
+/// Total approximate bytes used across all stores.
+fn total_bytes(stores: &HashMap<usize, SpectralColumnStore>) -> usize {
+    stores.values().map(|s| s.present_count * APPROX_BYTES_PER_COL).sum()
+}
+
 /// Initialise (or reset) the store for a file.
 pub fn init(file_idx: usize, total_cols: usize) {
     STORES.with(|s| {
         s.borrow_mut().insert(file_idx, SpectralColumnStore {
             columns: (0..total_cols).map(|_| None).collect(),
             max_magnitude: 0.0,
+            present_count: 0,
         });
     });
 }
 
 /// Insert computed columns into the store, starting at `start_col`.
-/// Updates the running max magnitude.
+/// Updates the running max magnitude.  If the global memory budget is
+/// exceeded, evicts columns from the store furthest from `start_col`.
 pub fn insert_columns(file_idx: usize, start_col: usize, cols: &[SpectrogramColumn]) {
     STORES.with(|s| {
         let mut stores = s.borrow_mut();
@@ -48,10 +67,72 @@ pub fn insert_columns(file_idx: usize, start_col: usize, cols: &[SpectrogramColu
                         store.max_magnitude = mag;
                     }
                 }
+                if store.columns[idx].is_none() {
+                    store.present_count += 1;
+                }
                 store.columns[idx] = Some(col.clone());
             }
         }
+
+        // Enforce memory budget by evicting columns far from the insertion center
+        let center = start_col + cols.len() / 2;
+        evict_over_budget(&mut stores, file_idx, center);
     });
+}
+
+/// Evict columns across all stores until total memory is under budget.
+/// Prefers evicting columns in other files first, then columns far from `center`
+/// in the given `primary_file`.
+fn evict_over_budget(
+    stores: &mut HashMap<usize, SpectralColumnStore>,
+    primary_file: usize,
+    center: usize,
+) {
+    while total_bytes(stores) > MAX_STORE_BYTES {
+        // Try to evict from non-primary files first
+        let mut evicted = false;
+        for (&fi, store) in stores.iter_mut() {
+            if fi == primary_file { continue; }
+            if store.present_count > 0 {
+                // Evict the column furthest from the middle of this store
+                let mid = store.columns.len() / 2;
+                if let Some(idx) = farthest_present(&store.columns, mid) {
+                    store.columns[idx] = None;
+                    store.present_count -= 1;
+                    evicted = true;
+                    break;
+                }
+            }
+        }
+        if evicted { continue; }
+
+        // Evict from primary file: column furthest from `center`
+        if let Some(store) = stores.get_mut(&primary_file) {
+            if store.present_count == 0 { break; }
+            if let Some(idx) = farthest_present(&store.columns, center) {
+                store.columns[idx] = None;
+                store.present_count -= 1;
+            } else {
+                break;
+            }
+        } else {
+            break;
+        }
+    }
+}
+
+/// Find the index of the present column furthest from `center`.
+fn farthest_present(columns: &[Option<SpectrogramColumn>], center: usize) -> Option<usize> {
+    let mut best: Option<(usize, usize)> = None; // (index, distance)
+    for (i, col) in columns.iter().enumerate() {
+        if col.is_some() {
+            let dist = i.abs_diff(center);
+            if best.map_or(true, |(_, d)| dist > d) {
+                best = Some((i, dist));
+            }
+        }
+    }
+    best.map(|(i, _)| i)
 }
 
 /// Check whether all columns in the range `tile_start..tile_end` are present.
@@ -92,6 +173,11 @@ pub fn get_max_magnitude(file_idx: usize) -> f32 {
             .map(|st| st.max_magnitude)
             .unwrap_or(0.0)
     })
+}
+
+/// Check whether a store exists for a file (i.e. it's still alive for large-file mode).
+pub fn has_store(file_idx: usize) -> bool {
+    STORES.with(|s| s.borrow().contains_key(&file_idx))
 }
 
 /// Drain all columns from the store and return them as a contiguous Vec.

@@ -101,6 +101,12 @@ thread_local! {
     /// Set of (file_idx, tile_idx) currently being generated (to avoid duplicate work).
     static IN_FLIGHT: RefCell<std::collections::HashSet<(usize, usize)>> =
         RefCell::new(std::collections::HashSet::new());
+    /// Separate cache for LOD 0 (quick-preview) tiles.
+    /// These are blurry but fast (~5ms vs ~50ms for LOD 1).
+    static LOD0_CACHE: RefCell<HashMap<(usize, usize), Tile>> =
+        RefCell::new(HashMap::new());
+    static LOD0_IN_FLIGHT: RefCell<std::collections::HashSet<(usize, usize)>> =
+        RefCell::new(std::collections::HashSet::new());
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -132,6 +138,8 @@ pub fn borrow_tile<R>(file_idx: usize, tile_idx: usize, f: impl FnOnce(&Tile) ->
 pub fn clear_file(file_idx: usize) {
     CACHE.with(|c| c.borrow_mut().clear_for_file(file_idx));
     IN_FLIGHT.with(|s| s.borrow_mut().retain(|k| k.0 != file_idx));
+    LOD0_CACHE.with(|c| c.borrow_mut().retain(|k, _| k.0 != file_idx));
+    LOD0_IN_FLIGHT.with(|s| s.borrow_mut().retain(|k| k.0 != file_idx));
 }
 
 pub fn evict_far(file_idx: usize, center_tile: usize, keep_radius: usize) {
@@ -168,6 +176,15 @@ pub fn schedule_tile_with_max(
         // Yield to let the browser process events before heavy FFT work
         yield_to_browser().await;
 
+        // Deprioritize non-current files: yield extra times so current-file
+        // tiles run first from the microtask queue.
+        let is_current = state.current_file_index.get_untracked() == Some(file_idx);
+        if !is_current {
+            for _ in 0..3 {
+                yield_to_browser().await;
+            }
+        }
+
         // Check if still relevant (file might have been removed)
         let still_loaded = state.files.with_untracked(|files| {
             files.get(file_idx).map(|f| f.name == file.name).unwrap_or(false)
@@ -190,8 +207,9 @@ pub fn schedule_tile_with_max(
             max_mag,
         );
 
-        // Store in cache
+        // Store in cache and evict corresponding LOD 0 (no longer needed)
         CACHE.with(|c| c.borrow_mut().insert(file_idx, tile_idx, rendered));
+        evict_lod0_for_tile(file_idx, tile_idx);
         IN_FLIGHT.with(|s| s.borrow_mut().remove(&key));
 
         // Signal that a new tile is ready → triggers spectrogram redraw
@@ -202,7 +220,11 @@ pub fn schedule_tile_with_max(
 /// Schedule generation of all tiles for a file (called after file load).
 /// Yields between tiles so the browser stays responsive.
 pub fn schedule_all_tiles(state: AppState, file: LoadedFile, file_idx: usize) {
-    let total_cols = file.spectrogram.columns.len();
+    let total_cols = if file.spectrogram.total_columns > 0 {
+        file.spectrogram.total_columns
+    } else {
+        file.spectrogram.columns.len()
+    };
     if total_cols == 0 { return; }
     let n_tiles = (total_cols + TILE_COLS - 1) / TILE_COLS;
 
@@ -211,6 +233,31 @@ pub fn schedule_all_tiles(state: AppState, file: LoadedFile, file_idx: usize) {
 
     for tile_idx in 0..n_tiles {
         schedule_tile_with_max(state.clone(), file.clone(), file_idx, tile_idx, max_mag);
+    }
+}
+
+/// Render a tile synchronously from the spectral column store.
+/// Used during the loading loop to render tiles immediately before eviction
+/// can discard their columns.  Returns true if the tile was successfully rendered.
+pub fn render_tile_from_store_sync(file_idx: usize, tile_idx: usize) -> bool {
+    use crate::canvas::spectral_store;
+
+    let key = (file_idx, tile_idx);
+    if CACHE.with(|c| c.borrow().tiles.contains_key(&key)) { return true; }
+
+    let col_start = tile_idx * TILE_COLS;
+    let col_end = col_start + TILE_COLS; // with_columns clamps to store len
+
+    let rendered = spectral_store::with_columns(file_idx, col_start, col_end, |cols, max_mag| {
+        spectrogram_renderer::pre_render_columns(cols, max_mag)
+    });
+
+    if let Some(rendered) = rendered {
+        CACHE.with(|c| c.borrow_mut().insert(file_idx, tile_idx, rendered));
+        evict_lod0_for_tile(file_idx, tile_idx);
+        true
+    } else {
+        false
     }
 }
 
@@ -226,6 +273,15 @@ pub fn schedule_tile_from_store(state: AppState, file_idx: usize, tile_idx: usiz
 
     spawn_local(async move {
         yield_to_browser().await;
+
+        // Deprioritize non-current files: yield extra times so current-file
+        // tiles run first from the microtask queue.
+        let is_current = state.current_file_index.get_untracked() == Some(file_idx);
+        if !is_current {
+            for _ in 0..3 {
+                yield_to_browser().await;
+            }
+        }
 
         // Check if the file is still loaded (not removed by user)
         let still_loaded = state.files.with_untracked(|files| {
@@ -247,8 +303,195 @@ pub fn schedule_tile_from_store(state: AppState, file_idx: usize, tile_idx: usiz
 
         if let Some(rendered) = rendered {
             CACHE.with(|c| c.borrow_mut().insert(file_idx, tile_idx, rendered));
+            evict_lod0_for_tile(file_idx, tile_idx);
             state.tile_ready_signal.update(|n| *n = n.wrapping_add(1));
         }
+    });
+}
+
+/// Schedule visible tiles from the spectral store (for large files after loading).
+/// Computes which tiles are near the current viewport and schedules them.
+pub fn schedule_visible_tiles_from_store(state: AppState, file_idx: usize, total_cols: usize) {
+    if total_cols == 0 { return; }
+    let n_tiles = (total_cols + TILE_COLS - 1) / TILE_COLS;
+
+    // Determine viewport center tile
+    let time_res = state.files.with_untracked(|files| {
+        files.get(file_idx).map(|f| f.spectrogram.time_resolution).unwrap_or(0.01)
+    });
+    let scroll = state.scroll_offset.get_untracked();
+    let zoom = state.zoom_level.get_untracked();
+    let canvas_w = state.spectrogram_canvas_width.get_untracked();
+    let visible_time = if zoom > 0.0 { canvas_w / zoom * time_res } else { 1.0 };
+    let center_col = ((scroll + visible_time / 2.0) / time_res) as usize;
+    let center_tile = center_col / TILE_COLS;
+
+    // Schedule tiles in expanding-ring order from center, limited to a reasonable count
+    let max_schedule = 20.min(n_tiles);
+    let mut scheduled = 0;
+    let mut dist = 0usize;
+    while scheduled < max_schedule {
+        let tiles: Vec<usize> = if dist == 0 {
+            vec![center_tile]
+        } else {
+            let mut v = Vec::new();
+            if let Some(l) = center_tile.checked_sub(dist) {
+                if l < n_tiles { v.push(l); }
+            }
+            if center_tile + dist < n_tiles {
+                v.push(center_tile + dist);
+            }
+            v
+        };
+        if tiles.is_empty() { break; }
+        for t in tiles {
+            schedule_tile_from_store(state.clone(), file_idx, t);
+            scheduled += 1;
+        }
+        dist += 1;
+    }
+}
+
+/// Schedule on-demand tile computation from audio samples.
+/// Used when the spectral store has evicted the needed columns.
+pub fn schedule_tile_on_demand(
+    state: AppState,
+    file_idx: usize,
+    tile_idx: usize,
+) {
+    use crate::canvas::spectral_store;
+    use crate::dsp::fft::compute_spectrogram_partial;
+
+    let key = (file_idx, tile_idx);
+    if CACHE.with(|c| c.borrow().tiles.contains_key(&key)) { return; }
+    if IN_FLIGHT.with(|s| s.borrow().contains(&key)) { return; }
+    IN_FLIGHT.with(|s| s.borrow_mut().insert(key));
+
+    spawn_local(async move {
+        yield_to_browser().await;
+
+        // Deprioritize non-current files
+        let is_current = state.current_file_index.get_untracked() == Some(file_idx);
+        if !is_current {
+            for _ in 0..3 {
+                yield_to_browser().await;
+            }
+        }
+
+        // Get audio data for STFT recomputation
+        let audio = state.files.with_untracked(|files| {
+            files.get(file_idx).map(|f| f.audio.clone())
+        });
+        let Some(audio) = audio else {
+            IN_FLIGHT.with(|s| s.borrow_mut().remove(&key));
+            return;
+        };
+
+        let col_start = tile_idx * TILE_COLS;
+
+        // Recompute STFT columns from audio samples
+        let cols = compute_spectrogram_partial(&audio, 2048, 512, col_start, TILE_COLS);
+        if cols.is_empty() {
+            IN_FLIGHT.with(|s| s.borrow_mut().remove(&key));
+            return;
+        }
+
+        // Insert into spectral store so future requests can use them
+        spectral_store::insert_columns(file_idx, col_start, &cols);
+        let max_mag = spectral_store::get_max_magnitude(file_idx);
+
+        // Render the tile
+        let rendered = spectrogram_renderer::pre_render_columns(&cols, max_mag);
+
+        CACHE.with(|c| c.borrow_mut().insert(file_idx, tile_idx, rendered));
+        evict_lod0_for_tile(file_idx, tile_idx);
+        IN_FLIGHT.with(|s| s.borrow_mut().remove(&key));
+        state.tile_ready_signal.update(|n| *n = n.wrapping_add(1));
+    });
+}
+
+// ── LOD 0 (quick-preview) tiles ──────────────────────────────────────────────
+
+/// LOD 0 uses FFT=512, hop=2048 for a fast blurry preview covering the same
+/// time range as a full-quality (LOD 1) tile.
+const LOD0_FFT: usize = 512;
+const LOD0_HOP: usize = 2048;
+
+/// Number of LOD 0 columns per tile (same time range as TILE_COLS at LOD 1).
+/// One LOD 1 tile covers TILE_COLS * 512 = 131072 samples.
+/// LOD 0 columns: 131072 / LOD0_HOP = 64.
+const LOD0_COLS_PER_TILE: usize = (TILE_COLS * 512) / LOD0_HOP;
+
+/// Schedule a LOD 0 (quick-preview) tile if not already cached.
+/// LOD 0 tiles are fast to compute (~5ms) and provide a blurry preview
+/// while full-quality tiles are being generated.
+pub fn schedule_lod0_tile(state: AppState, file_idx: usize, tile_idx: usize) {
+    use crate::canvas::spectral_store;
+    use crate::dsp::fft::compute_spectrogram_partial;
+
+    let key = (file_idx, tile_idx);
+    // Don't compute LOD 0 if LOD 1 is already cached
+    if CACHE.with(|c| c.borrow().tiles.contains_key(&key)) { return; }
+    if LOD0_CACHE.with(|c| c.borrow().contains_key(&key)) { return; }
+    if LOD0_IN_FLIGHT.with(|s| s.borrow().contains(&key)) { return; }
+    LOD0_IN_FLIGHT.with(|s| s.borrow_mut().insert(key));
+
+    spawn_local(async move {
+        yield_to_browser().await;
+
+        let audio = state.files.with_untracked(|files| {
+            files.get(file_idx).map(|f| f.audio.clone())
+        });
+        let Some(audio) = audio else {
+            LOD0_IN_FLIGHT.with(|s| s.borrow_mut().remove(&key));
+            return;
+        };
+
+        // Convert tile index to LOD 0 column space.
+        // LOD 1 col_start corresponds to sample offset: tile_idx * TILE_COLS * 512.
+        // LOD 0 col_start at the same sample offset: sample_offset / LOD0_HOP.
+        let sample_offset = tile_idx * TILE_COLS * 512;
+        let lod0_col_start = sample_offset / LOD0_HOP;
+
+        let cols = compute_spectrogram_partial(
+            &audio, LOD0_FFT, LOD0_HOP, lod0_col_start, LOD0_COLS_PER_TILE,
+        );
+        LOD0_IN_FLIGHT.with(|s| s.borrow_mut().remove(&key));
+
+        if cols.is_empty() { return; }
+
+        // Use global max from spectral store for consistent normalization with LOD 1.
+        // Fall back to per-tile max if the store has no data yet.
+        let store_max = spectral_store::get_max_magnitude(file_idx);
+        let tile_max = cols.iter()
+            .flat_map(|c| c.magnitudes.iter())
+            .copied()
+            .fold(0.0f32, f32::max);
+        let max_mag = if store_max > 0.0 { store_max } else { tile_max };
+
+        let rendered = spectrogram_renderer::pre_render_columns(&cols, max_mag);
+        LOD0_CACHE.with(|c| {
+            c.borrow_mut().insert(key, Tile {
+                tile_idx,
+                file_idx,
+                rendered,
+            });
+        });
+        state.tile_ready_signal.update(|n| *n = n.wrapping_add(1));
+    });
+}
+
+/// Borrow a LOD 0 tile for rendering.
+pub fn borrow_lod0_tile<R>(file_idx: usize, tile_idx: usize, f: impl FnOnce(&Tile) -> R) -> Option<R> {
+    LOD0_CACHE.with(|c| {
+        c.borrow().get(&(file_idx, tile_idx)).map(f)
+    })
+}
+
+/// Evict LOD 0 tiles when LOD 1 tiles are ready (they're no longer needed).
+fn evict_lod0_for_tile(file_idx: usize, tile_idx: usize) {
+    LOD0_CACHE.with(|c| {
+        c.borrow_mut().remove(&(file_idx, tile_idx));
     });
 }
 

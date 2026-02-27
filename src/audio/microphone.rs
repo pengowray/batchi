@@ -4,7 +4,7 @@ use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
 use web_sys::AudioContext;
 use crate::state::{AppState, LoadedFile};
-use crate::types::{AudioData, FileMetadata, SpectrogramData, SpectrogramColumn};
+use crate::types::{AudioData, FileMetadata, SpectrogramData};
 use crate::dsp::fft::{compute_preview, compute_spectrogram_partial};
 use crate::dsp::heterodyne::RealtimeHet;
 use std::cell::RefCell;
@@ -566,6 +566,7 @@ fn finalize_recording_tauri(result: JsValue, state: AppState) {
 
     let placeholder_spec = SpectrogramData {
         columns: Vec::new().into(),
+        total_columns: 0,
         freq_resolution: sample_rate as f64 / 2048.0,
         time_resolution: 512.0 / sample_rate as f64,
         max_freq: sample_rate as f64 / 2.0,
@@ -582,6 +583,7 @@ fn finalize_recording_tauri(result: JsValue, state: AppState) {
                 audio,
                 spectrogram: placeholder_spec,
                 preview: Some(preview),
+                overview_image: None,
                 xc_metadata: None,
                 is_recording: false, // Already saved by backend
             });
@@ -806,6 +808,7 @@ pub fn finalize_recording(samples: Vec<f32>, sample_rate: u32, state: AppState) 
 
     let placeholder_spec = SpectrogramData {
         columns: Vec::new().into(),
+        total_columns: 0,
         freq_resolution: sample_rate as f64 / 2048.0,
         time_resolution: 512.0 / sample_rate as f64,
         max_freq: sample_rate as f64 / 2.0,
@@ -822,6 +825,7 @@ pub fn finalize_recording(samples: Vec<f32>, sample_rate: u32, state: AppState) 
                 audio,
                 spectrogram: placeholder_spec,
                 preview: Some(preview),
+                overview_image: None,
                 xc_metadata: None,
                 is_recording: true,
             });
@@ -876,7 +880,14 @@ fn spawn_spectrogram_computation(
             0
         };
 
-        let mut all_columns: Vec<SpectrogramColumn> = Vec::with_capacity(total_cols);
+        use crate::canvas::spectral_store;
+        use crate::canvas::tile_cache::{self, TILE_COLS};
+
+        // Initialise spectral store for progressive tile generation
+        spectral_store::init(file_index, total_cols);
+
+        let n_tiles = (total_cols + TILE_COLS - 1) / TILE_COLS;
+        let mut tile_scheduled = vec![false; n_tiles];
         let mut chunk_start = 0;
 
         while chunk_start < total_cols {
@@ -884,7 +895,10 @@ fn spawn_spectrogram_computation(
                 .get(file_index)
                 .map(|f| f.name == name_check)
                 .unwrap_or(false);
-            if !still_present { return; }
+            if !still_present {
+                spectral_store::clear_file(file_index);
+                return;
+            }
 
             let chunk = compute_spectrogram_partial(
                 &audio,
@@ -893,7 +907,23 @@ fn spawn_spectrogram_computation(
                 chunk_start,
                 CHUNK_COLS,
             );
-            all_columns.extend(chunk);
+
+            // Insert into spectral store for progressive tile generation
+            spectral_store::insert_columns(file_index, chunk_start, &chunk);
+
+            // Check if any tile is now complete and schedule it
+            let first_tile = chunk_start / TILE_COLS;
+            let last_tile = ((chunk_start + chunk.len()).saturating_sub(1)) / TILE_COLS;
+            for tile_idx in first_tile..=last_tile.min(n_tiles.saturating_sub(1)) {
+                if tile_scheduled[tile_idx] { continue; }
+                let tile_start = tile_idx * TILE_COLS;
+                let tile_end = (tile_start + TILE_COLS).min(total_cols);
+                if spectral_store::tile_complete(file_index, tile_start, tile_end) {
+                    tile_cache::schedule_tile_from_store(state.clone(), file_index, tile_idx);
+                    tile_scheduled[tile_idx] = true;
+                }
+            }
+
             chunk_start += CHUNK_COLS;
 
             let p = js_sys::Promise::new(&mut |resolve, _| {
@@ -904,12 +934,18 @@ fn spawn_spectrogram_computation(
             JsFuture::from(p).await.ok();
         }
 
+        // Drain store and assemble final SpectrogramData
+        let final_columns = spectral_store::drain_columns(file_index)
+            .unwrap_or_default();
+
         let freq_resolution = audio.sample_rate as f64 / FFT_SIZE as f64;
         let time_resolution = HOP_SIZE as f64 / audio.sample_rate as f64;
         let max_freq = audio.sample_rate as f64 / 2.0;
 
+        let col_count = final_columns.len();
         let spectrogram = SpectrogramData {
-            columns: all_columns.into(),
+            columns: final_columns.into(),
+            total_columns: col_count,
             freq_resolution,
             time_resolution,
             max_freq,
@@ -923,13 +959,23 @@ fn spawn_spectrogram_computation(
             spectrogram.time_resolution
         );
 
+        // Compute overview image for the recording
+        let overview_img = crate::dsp::fft::compute_overview_from_spectrogram(&spectrogram);
+
         state.files.update(|files| {
             if let Some(f) = files.get_mut(file_index) {
                 if f.name == name_check {
                     f.spectrogram = spectrogram;
+                    f.overview_image = overview_img;
                 }
             }
         });
+
+        // Re-schedule all tiles with accurate final normalization
+        let file_for_tiles = state.files.get_untracked().get(file_index).cloned();
+        if let Some(file) = file_for_tiles {
+            tile_cache::schedule_all_tiles(state.clone(), file, file_index);
+        }
 
         state.tile_ready_signal.update(|n| *n += 1);
     });

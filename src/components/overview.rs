@@ -351,7 +351,10 @@ pub fn OverviewPanel() -> impl IntoView {
 
         match overview_view {
             OverviewView::Spectrogram => {
-                if let Some(ref preview) = file.preview {
+                // Prefer higher-resolution overview image when available,
+                // fall back to the fast 256×128 preview during loading.
+                let overview_src = file.overview_image.as_ref().or(file.preview.as_ref());
+                if let Some(preview) = overview_src {
                     // Overview freq crop
                     let display_max = match freq_mode {
                         OverviewFreqMode::All => max_freq,

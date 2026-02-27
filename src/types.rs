@@ -28,6 +28,10 @@ pub struct SpectrogramColumn {
 #[derive(Clone, Debug)]
 pub struct SpectrogramData {
     pub columns: Arc<Vec<SpectrogramColumn>>,
+    /// Total number of STFT columns in the full spectrogram.
+    /// For large files, `columns` may be empty while `total_columns` is non-zero
+    /// (columns are kept in the spectral store with LRU eviction instead).
+    pub total_columns: usize,
     pub freq_resolution: f64,
     pub time_resolution: f64,
     pub max_freq: f64,

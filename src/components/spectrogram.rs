@@ -140,9 +140,16 @@ pub fn Spectrogram() -> impl IntoView {
         if let Some(i) = idx {
             if let Some(file) = files.get(i) {
                 if file.spectrogram.columns.is_empty() {
-                    // Columns not yet computed — don't store the low-res
-                    // preview as PreRendered (it has wrong column dimensions).
-                    // Effect 3 will call blit_preview_as_background() instead.
+                    // Columns not loaded in memory.  Either:
+                    //  - Still loading (total_columns > 0 but tiles rendering progressively), or
+                    //  - Large file mode (columns kept in spectral store, not in SpectrogramData).
+                    // Either way, don't store a monolithic PreRendered.  Effect 3 will use
+                    // tile-based rendering or blit_preview_as_background() as fallback.
+                    if enabled && file.spectrogram.total_columns > 0 {
+                        // Large file — movement mode not available
+                        state.show_info_toast("Movement mode not available for large files");
+                        state.mv_enabled.set(false);
+                    }
                     movement_cache.set(None);
                     pre_rendered.set(None);
                 } else if !enabled {
@@ -365,7 +372,10 @@ pub fn Spectrogram() -> impl IntoView {
         };
 
         let file = idx.and_then(|i| files.get(i));
-        let total_cols = file.map(|f| f.spectrogram.columns.len()).unwrap_or(0);
+        let total_cols = file.map(|f| {
+            let tc = f.spectrogram.total_columns;
+            if tc > 0 { tc } else { f.spectrogram.columns.len() }
+        }).unwrap_or(0);
         let file_idx_val = idx.unwrap_or(0);
         let visible_time = (display_w as f64 / zoom) * time_res;
         let duration = file.map(|f| f.audio.duration_secs).unwrap_or(0.0);
@@ -374,12 +384,54 @@ pub fn Spectrogram() -> impl IntoView {
         // Priority: tiles (normal mode) > pre_rendered (movement mode) > preview > black
         let base_drawn = if !mv_on && total_cols > 0 {
             // Try tile-based rendering
-            spectrogram_renderer::blit_tiles_viewport(
+            let drawn = spectrogram_renderer::blit_tiles_viewport(
                 &ctx, canvas, file_idx_val, total_cols,
                 scroll_col, zoom, freq_crop_lo, freq_crop_hi, colormap,
                 file.and_then(|f| f.preview.as_ref()),
                 scroll, visible_time, duration,
-            )
+            );
+
+            // Schedule any missing visible tiles for on-demand generation.
+            // This handles large-file mode where columns may be evicted from
+            // the spectral store and need STFT recomputation from audio.
+            {
+                use crate::canvas::tile_cache::{self, TILE_COLS};
+                use crate::canvas::spectral_store;
+
+                let visible_cols_f = display_w as f64 / zoom;
+                let src_start = scroll_col.max(0.0);
+                let src_end = (src_start + visible_cols_f).min(total_cols as f64);
+                let first_tile = (src_start / TILE_COLS as f64).floor() as usize;
+                let last_tile = ((src_end - 1.0).max(0.0) / TILE_COLS as f64).floor() as usize;
+                let n_tiles = (total_cols + TILE_COLS - 1) / TILE_COLS;
+
+                // Don't schedule on-demand tiles while loading is in progress —
+                // the loading loop already schedules tiles as chunks complete.
+                // Only schedule LOD 0 (fast blurry preview) for instant feedback.
+                let is_loading = state.loading_count.get_untracked() > 0;
+
+                for t in first_tile..=last_tile.min(n_tiles.saturating_sub(1)) {
+                    if tile_cache::get_tile(file_idx_val, t).is_none() {
+                        // Schedule LOD 0 (quick blurry preview) immediately
+                        tile_cache::schedule_lod0_tile(state.clone(), file_idx_val, t);
+
+                        if !is_loading {
+                            // Schedule full-quality LOD 1 tile
+                            let tile_start = t * TILE_COLS;
+                            let tile_end = (tile_start + TILE_COLS).min(total_cols);
+                            if spectral_store::has_store(file_idx_val)
+                                && spectral_store::tile_complete(file_idx_val, tile_start, tile_end)
+                            {
+                                tile_cache::schedule_tile_from_store(state.clone(), file_idx_val, t);
+                            } else {
+                                tile_cache::schedule_tile_on_demand(state.clone(), file_idx_val, t);
+                            }
+                        }
+                    }
+                }
+            }
+
+            drawn
         } else if pre_rendered.with_untracked(|pr| pr.is_some()) {
             // Movement mode or no tile data — use monolithic pre_rendered
             pre_rendered.with_untracked(|pr| {

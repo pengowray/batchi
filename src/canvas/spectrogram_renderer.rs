@@ -742,9 +742,12 @@ pub fn blit_tiles_viewport(
                 (0.0, sh, ch * (1.0 - data_frac), ch * data_frac)
             };
 
-            // Destination x: where this tile's visible portion starts on canvas
-            let dst_x = ((tile_col_start as f64 + tile_src_x) - src_start) * zoom;
-            let dst_w = tile_src_w * zoom;
+            // Destination x: where this tile's visible portion starts on canvas.
+            // Floor left edge & ceil right edge to eliminate sub-pixel gaps between tiles.
+            let dst_x_raw = ((tile_col_start as f64 + tile_src_x) - src_start) * zoom;
+            let dst_x_end_raw = ((tile_col_start as f64 + tile_src_x + tile_src_w) - src_start) * zoom;
+            let dst_x = dst_x_raw.floor();
+            let dst_w = (dst_x_end_raw.ceil() - dst_x).max(1.0);
 
             let _ = ctx.draw_image_with_html_canvas_element_and_sw_and_sh_and_dx_and_dy_and_dw_and_dh(
                 &tmp,
@@ -755,6 +758,77 @@ pub fn blit_tiles_viewport(
 
         if drawn.is_some() {
             any_drawn = true;
+        } else {
+            // LOD 1 tile missing — try LOD 0 (blurry but fast) as fallback
+            let lod0_drawn = tile_cache::borrow_lod0_tile(file_idx, tile_idx, |tile| {
+                let tw = tile.rendered.width as f64;
+                let th = tile.rendered.height as f64;
+                if tw == 0.0 || th == 0.0 { return; }
+
+                let mut pixels = tile.rendered.pixels.clone();
+                match colormap {
+                    ColormapMode::Uniform(cm) => apply_colormap_to_tile(&mut pixels, cm),
+                    ColormapMode::HfrFocus { colormap: cm, ff_lo_frac, ff_hi_frac } => {
+                        apply_hfr_colormap_to_tile(
+                            &mut pixels, tile.rendered.width, tile.rendered.height,
+                            cm, ff_lo_frac, ff_hi_frac,
+                        );
+                    }
+                }
+
+                let clamped = Clamped(&pixels[..]);
+                let Ok(img) = ImageData::new_with_u8_clamped_array_and_sh(
+                    clamped, tile.rendered.width, tile.rendered.height,
+                ) else { return };
+
+                let Some((tmp, tmp_ctx)) = get_tmp_canvas(tile.rendered.width, tile.rendered.height) else { return };
+                if tmp.width() != tile.rendered.width || tmp.height() != tile.rendered.height {
+                    tmp.set_width(tile.rendered.width);
+                    tmp.set_height(tile.rendered.height);
+                }
+                let _ = tmp_ctx.put_image_data(&img, 0.0, 0.0);
+
+                // LOD 0 tile covers the same time range but has fewer columns.
+                // Map source coordinates proportionally: LOD 0's tw columns span
+                // the same range as TILE_COLS at LOD 1.
+                let scale = tw / TILE_COLS as f64;
+                let tile_src_x = ((src_start - tile_col_start as f64).max(0.0)) * scale;
+                let tile_src_end = ((src_end - tile_col_start as f64).min(TILE_COLS as f64)) * scale;
+                let tile_src_w = (tile_src_end - tile_src_x).max(0.0);
+                if tile_src_w <= 0.0 { return; }
+
+                // Vertical crop
+                let (src_y, src_h, dst_y, dst_h) = if fc_hi <= 1.0 {
+                    let sy = th * (1.0 - fc_hi);
+                    let sh = th * (fc_hi - fc_lo).max(0.001);
+                    (sy, sh, 0.0, ch)
+                } else {
+                    let fc_range = (fc_hi - fc_lo).max(0.001);
+                    let data_frac = (1.0 - fc_lo) / fc_range;
+                    let sh = th * (1.0 - fc_lo);
+                    (0.0, sh, ch * (1.0 - data_frac), ch * data_frac)
+                };
+
+                // Destination: same position as the LOD 1 tile would occupy.
+                // Floor/ceil to match LOD 1 tile snapping and avoid sub-pixel gaps.
+                let col_offset = (src_start - tile_col_start as f64).max(0.0);
+                let dst_x_raw = ((tile_col_start as f64 + col_offset) - src_start) * zoom;
+                let visible_cols = ((src_end - tile_col_start as f64).min(TILE_COLS as f64) - col_offset).max(0.0);
+                let dst_x_end_raw = dst_x_raw + visible_cols * zoom;
+                let dst_x = dst_x_raw.floor();
+                let dst_w = (dst_x_end_raw.ceil() - dst_x).max(1.0);
+
+                // Enable image smoothing for stretched LOD 0
+                ctx.set_image_smoothing_enabled(true);
+                let _ = ctx.draw_image_with_html_canvas_element_and_sw_and_sh_and_dx_and_dy_and_dw_and_dh(
+                    &tmp,
+                    tile_src_x, src_y, tile_src_w, src_h,
+                    dst_x, dst_y, dst_w, dst_h,
+                );
+            });
+            if lod0_drawn.is_some() {
+                any_drawn = true;
+            }
         }
     }
 
