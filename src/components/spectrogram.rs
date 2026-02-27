@@ -6,7 +6,7 @@ use std::rc::Rc;
 use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement, ImageData, MouseEvent};
 use crate::canvas::spectrogram_renderer::{self, ColormapMode, FreqMarkerState, FreqShiftMode, MovementAlgo, MovementData, PreRendered};
 use crate::dsp::harmonics;
-use crate::state::{AppState, CanvasTool, SpectrogramHandle, PlaybackMode, Selection, RightSidebarTab, SpectrogramDisplay};
+use crate::state::{AppState, CanvasTool, ColormapPreference, SpectrogramHandle, PlaybackMode, Selection, RightSidebarTab, SpectrogramDisplay};
 
 const LABEL_AREA_WIDTH: f64 = 60.0;
 
@@ -233,6 +233,7 @@ pub fn Spectrogram() -> impl IntoView {
         let het_cutoff_auto = state.het_cutoff_auto.get();
         let hfr_enabled = state.hfr_enabled.get();
         let mv_on = state.mv_enabled.get_untracked();
+        let colormap_pref = state.colormap_preference.get();
         let axis_drag_start = state.axis_drag_start_freq.get();
         let axis_drag_current = state.axis_drag_current_freq.get();
         let _pre = pre_rendered.track();
@@ -366,7 +367,11 @@ pub fn Spectrogram() -> impl IntoView {
                 } else if hfr_enabled {
                     ColormapMode::Greyscale
                 } else {
-                    ColormapMode::Viridis
+                    match colormap_pref {
+                        ColormapPreference::Viridis => ColormapMode::Viridis,
+                        ColormapPreference::Inferno => ColormapMode::Inferno,
+                        ColormapPreference::Greyscale => ColormapMode::Greyscale,
+                    }
                 };
                 spectrogram_renderer::blit_viewport(&ctx, rendered, canvas, scroll_col, zoom, freq_crop_lo, freq_crop_hi, colormap);
 

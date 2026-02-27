@@ -77,6 +77,41 @@ html, body {
     color: #ddd !important;
 }
 
+.sidebar-settings-btn {
+    flex: 0 0 36px;
+    font-size: 16px;
+    padding: 0;
+    color: #777;
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: color 0.15s;
+}
+
+.sidebar-settings-btn:hover {
+    color: #ddd;
+}
+
+.sidebar-settings-btn.active {
+    color: #fc8;
+    border-bottom-color: #fc8;
+}
+
+.sidebar.collapsed .sidebar-settings-btn {
+    display: none;
+}
+
+.setting-checkbox {
+    accent-color: #4a8;
+    cursor: pointer;
+    width: 16px;
+    height: 16px;
+}
+
 .sidebar-resize-handle {
     position: absolute;
     top: 0;

@@ -315,6 +315,8 @@ pub fn y_to_freq(y: f64, min_freq: f64, max_freq: f64, canvas_height: f64) -> f6
 pub enum ColormapMode {
     /// Viridis everywhere (default non-HFR view).
     Viridis,
+    /// Inferno everywhere.
+    Inferno,
     /// Greyscale everywhere (movement overlay mode).
     Greyscale,
     /// Inferno inside HFR focus band, greyscale outside.
@@ -386,6 +388,19 @@ pub fn blit_viewport(
                 let mut buf = pre_rendered.pixels.clone();
                 for chunk in buf.chunks_exact_mut(4) {
                     let [r, g, b] = greyscale_to_viridis(chunk[0]);
+                    chunk[0] = r;
+                    chunk[1] = g;
+                    chunk[2] = b;
+                }
+                buf
+            };
+            &mapped_pixels
+        }
+        ColormapMode::Inferno => {
+            mapped_pixels = {
+                let mut buf = pre_rendered.pixels.clone();
+                for chunk in buf.chunks_exact_mut(4) {
+                    let [r, g, b] = greyscale_to_inferno(chunk[0]);
                     chunk[0] = r;
                     chunk[1] = g;
                     chunk[2] = b;

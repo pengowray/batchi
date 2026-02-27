@@ -160,6 +160,14 @@ pub struct Bookmark {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
+pub enum ColormapPreference {
+    #[default]
+    Viridis,
+    Inferno,
+    Greyscale,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Default)]
 pub enum StatusLevel {
     #[default]
     Error,
@@ -306,6 +314,12 @@ pub struct AppState {
 
     // Cursor time at mouse position (for bottom bar feedback)
     pub cursor_time: RwSignal<Option<f64>>,
+
+    // Left sidebar settings page
+    pub settings_page_open: RwSignal<bool>,
+
+    // User colormap preference (when not overridden by HFR/movement)
+    pub colormap_preference: RwSignal<ColormapPreference>,
 }
 
 fn detect_tauri() -> bool {
@@ -429,6 +443,8 @@ impl AppState {
             axis_drag_start_freq: RwSignal::new(None),
             axis_drag_current_freq: RwSignal::new(None),
             cursor_time: RwSignal::new(None),
+            settings_page_open: RwSignal::new(false),
+            colormap_preference: RwSignal::new(ColormapPreference::Viridis),
         };
 
         // On mobile, start with sidebar collapsed

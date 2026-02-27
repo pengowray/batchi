@@ -1,4 +1,5 @@
 mod files_panel;
+mod config_panel;
 pub mod settings_panel;
 pub mod analysis;
 pub mod metadata_panel;
@@ -12,6 +13,7 @@ use js_sys;
 use crate::state::AppState;
 
 use files_panel::FilesPanel;
+use config_panel::ConfigPanel;
 pub(crate) use settings_panel::{SpectrogramSettingsPanel, SelectionPanel};
 pub(crate) use analysis::AnalysisPanel as SidebarAnalysisPanel;
 pub(crate) use metadata_panel::MetadataPanel;
@@ -90,9 +92,30 @@ pub fn FileSidebar() -> impl IntoView {
                 } else {
                     None
                 }}
-                <div class="sidebar-header-label">"Files"</div>
+                <div class="sidebar-header-label">
+                    {move || if state.settings_page_open.get() { "Settings" } else { "Files" }}
+                </div>
+                <button
+                    class=move || if state.settings_page_open.get() {
+                        "sidebar-settings-btn active"
+                    } else {
+                        "sidebar-settings-btn"
+                    }
+                    on:click=move |_| {
+                        state.settings_page_open.update(|open| *open = !*open);
+                    }
+                    title=move || if state.settings_page_open.get() { "Back to files" } else { "Settings" }
+                >
+                    {"\u{2699}"}
+                </button>
             </div>
-            <FilesPanel />
+            {move || {
+                if state.settings_page_open.get() {
+                    view! { <ConfigPanel /> }.into_any()
+                } else {
+                    view! { <FilesPanel /> }.into_any()
+                }
+            }}
             {if !is_mobile {
                 Some(view! { <div class="sidebar-resize-handle" on:mousedown=on_resize_start></div> })
             } else {
