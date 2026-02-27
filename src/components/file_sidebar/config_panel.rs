@@ -2,18 +2,6 @@ use leptos::prelude::*;
 use wasm_bindgen::JsCast;
 use crate::state::{AppState, ColormapPreference};
 
-fn colormap_pref_str(pref: ColormapPreference) -> &'static str {
-    match pref {
-        ColormapPreference::Viridis => "viridis",
-        ColormapPreference::Inferno => "inferno",
-        ColormapPreference::Magma => "magma",
-        ColormapPreference::Plasma => "plasma",
-        ColormapPreference::Cividis => "cividis",
-        ColormapPreference::Turbo => "turbo",
-        ColormapPreference::Greyscale => "greyscale",
-    }
-}
-
 fn parse_colormap_pref(s: &str) -> ColormapPreference {
     match s {
         "inferno" => ColormapPreference::Inferno,
@@ -78,15 +66,14 @@ pub(super) fn ConfigPanel() -> impl IntoView {
                     <select
                         class="setting-select"
                         on:change=on_colormap_change
-                        prop:value=move || colormap_pref_str(state.colormap_preference.get())
                     >
-                        <option value="viridis">"Viridis"</option>
-                        <option value="inferno">"Inferno"</option>
-                        <option value="magma">"Magma"</option>
-                        <option value="plasma">"Plasma"</option>
-                        <option value="cividis">"Cividis"</option>
-                        <option value="turbo">"Turbo"</option>
-                        <option value="greyscale">"Greyscale"</option>
+                        <option value="viridis" selected=move || state.colormap_preference.get() == ColormapPreference::Viridis>"Viridis"</option>
+                        <option value="inferno" selected=move || state.colormap_preference.get() == ColormapPreference::Inferno>"Inferno"</option>
+                        <option value="magma" selected=move || state.colormap_preference.get() == ColormapPreference::Magma>"Magma"</option>
+                        <option value="plasma" selected=move || state.colormap_preference.get() == ColormapPreference::Plasma>"Plasma"</option>
+                        <option value="cividis" selected=move || state.colormap_preference.get() == ColormapPreference::Cividis>"Cividis"</option>
+                        <option value="turbo" selected=move || state.colormap_preference.get() == ColormapPreference::Turbo>"Turbo"</option>
+                        <option value="greyscale" selected=move || state.colormap_preference.get() == ColormapPreference::Greyscale>"Greyscale"</option>
                     </select>
                 </div>
                 <div class="setting-row">
@@ -94,15 +81,14 @@ pub(super) fn ConfigPanel() -> impl IntoView {
                     <select
                         class="setting-select"
                         on:change=on_hfr_colormap_change
-                        prop:value=move || colormap_pref_str(state.hfr_colormap_preference.get())
                     >
-                        <option value="viridis">"Viridis"</option>
-                        <option value="inferno">"Inferno"</option>
-                        <option value="magma">"Magma"</option>
-                        <option value="plasma">"Plasma"</option>
-                        <option value="cividis">"Cividis"</option>
-                        <option value="turbo">"Turbo"</option>
-                        <option value="greyscale">"Greyscale"</option>
+                        <option value="viridis" selected=move || state.hfr_colormap_preference.get() == ColormapPreference::Viridis>"Viridis"</option>
+                        <option value="inferno" selected=move || state.hfr_colormap_preference.get() == ColormapPreference::Inferno>"Inferno"</option>
+                        <option value="magma" selected=move || state.hfr_colormap_preference.get() == ColormapPreference::Magma>"Magma"</option>
+                        <option value="plasma" selected=move || state.hfr_colormap_preference.get() == ColormapPreference::Plasma>"Plasma"</option>
+                        <option value="cividis" selected=move || state.hfr_colormap_preference.get() == ColormapPreference::Cividis>"Cividis"</option>
+                        <option value="turbo" selected=move || state.hfr_colormap_preference.get() == ColormapPreference::Turbo>"Turbo"</option>
+                        <option value="greyscale" selected=move || state.hfr_colormap_preference.get() == ColormapPreference::Greyscale>"Greyscale"</option>
                     </select>
                 </div>
                 <div class="setting-row">
