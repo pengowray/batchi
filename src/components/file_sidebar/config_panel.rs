@@ -1,6 +1,6 @@
 use leptos::prelude::*;
 use wasm_bindgen::JsCast;
-use crate::state::{AppState, ColormapPreference};
+use crate::state::{AppState, ChromaColormap, ColormapPreference};
 
 fn parse_colormap_pref(s: &str) -> ColormapPreference {
     match s {
@@ -89,6 +89,28 @@ pub(super) fn ConfigPanel() -> impl IntoView {
                         <option value="cividis" selected=move || state.hfr_colormap_preference.get() == ColormapPreference::Cividis>"Cividis"</option>
                         <option value="turbo" selected=move || state.hfr_colormap_preference.get() == ColormapPreference::Turbo>"Turbo"</option>
                         <option value="greyscale" selected=move || state.hfr_colormap_preference.get() == ColormapPreference::Greyscale>"Greyscale"</option>
+                    </select>
+                </div>
+                <div class="setting-row">
+                    <span class="setting-label">"Chromagram colors"</span>
+                    <select
+                        class="setting-select"
+                        on:change=move |ev: web_sys::Event| {
+                            let target = ev.target().unwrap();
+                            let select: web_sys::HtmlSelectElement = target.unchecked_into();
+                            let mode = match select.value().as_str() {
+                                "pitch_class" => ChromaColormap::PitchClass,
+                                "octave" => ChromaColormap::Octave,
+                                "flow" => ChromaColormap::Flow,
+                                _ => ChromaColormap::Warm,
+                            };
+                            state.chroma_colormap.set(mode);
+                        }
+                    >
+                        <option value="warm" selected=move || state.chroma_colormap.get() == ChromaColormap::Warm>"Warm"</option>
+                        <option value="pitch_class" selected=move || state.chroma_colormap.get() == ChromaColormap::PitchClass>"Pitch Class"</option>
+                        <option value="octave" selected=move || state.chroma_colormap.get() == ChromaColormap::Octave>"Octave"</option>
+                        <option value="flow" selected=move || state.chroma_colormap.get() == ChromaColormap::Flow>"Flow"</option>
                     </select>
                 </div>
                 <div class="setting-row">

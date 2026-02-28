@@ -1,6 +1,6 @@
 use leptos::prelude::*;
 use wasm_bindgen::JsCast;
-use crate::state::{AppState, ChromaColormap, MainView, SpectrogramDisplay};
+use crate::state::{AppState, MainView, SpectrogramDisplay};
 use crate::dsp::zero_crossing::zero_crossing_frequency;
 
 #[component]
@@ -144,47 +144,6 @@ pub(crate) fn SpectrogramSettingsPanel() -> impl IntoView {
                                     />
                                     <span class="setting-value">{move || format!("{}%", (state.flow_opacity.get() * 100.0) as u32)}</span>
                                 </div>
-                            </div>
-                        </div>
-                    }.into_any()
-                } else {
-                    view! { <span></span> }.into_any()
-                }
-            }}
-
-            // Chromagram settings (shown when Chromagram view is active)
-            {move || {
-                if state.main_view.get() == MainView::Chromagram {
-                    view! {
-                        <div class="setting-group">
-                            <div class="setting-group-title">"Chromagram"</div>
-                            <div class="setting-row">
-                                <span class="setting-label">"Colormap"</span>
-                                <select
-                                    class="setting-select"
-                                    on:change=move |ev: web_sys::Event| {
-                                        let target = ev.target().unwrap();
-                                        let select: web_sys::HtmlSelectElement = target.unchecked_into();
-                                        let mode = match select.value().as_str() {
-                                            "pitch_class" => ChromaColormap::PitchClass,
-                                            "octave" => ChromaColormap::Octave,
-                                            "flow" => ChromaColormap::Flow,
-                                            _ => ChromaColormap::Warm,
-                                        };
-                                        state.chroma_colormap.set(mode);
-                                    }
-                                    prop:value=move || match state.chroma_colormap.get() {
-                                        ChromaColormap::Warm => "warm",
-                                        ChromaColormap::PitchClass => "pitch_class",
-                                        ChromaColormap::Octave => "octave",
-                                        ChromaColormap::Flow => "flow",
-                                    }
-                                >
-                                    <option value="warm">"Warm"</option>
-                                    <option value="pitch_class">"Pitch Class"</option>
-                                    <option value="octave">"Octave"</option>
-                                    <option value="flow">"Flow"</option>
-                                </select>
                             </div>
                         </div>
                     }.into_any()
