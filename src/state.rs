@@ -232,8 +232,8 @@ pub enum ChromaColormap {
 impl ChromaColormap {
     pub fn label(self) -> &'static str {
         match self {
-            Self::Warm => "Warm",
             Self::PitchClass => "Pitch Class",
+            Self::Warm => "Warm",
             Self::Solid => "Solid",
             Self::Octave => "Octave",
             Self::Flow => "Flow",
@@ -241,8 +241,8 @@ impl ChromaColormap {
     }
 
     pub const ALL: &'static [ChromaColormap] = &[
-        Self::Warm,
         Self::PitchClass,
+        Self::Warm,
         Self::Solid,
         Self::Octave,
         Self::Flow,
@@ -291,6 +291,8 @@ pub struct AppState {
     pub mouse_in_label_area: RwSignal<bool>,
     pub label_hover_opacity: RwSignal<f64>,
     pub follow_cursor: RwSignal<bool>,
+    pub follow_suspended: RwSignal<bool>,
+    pub follow_visible_since: RwSignal<Option<f64>>,
     pub pre_play_scroll: RwSignal<f64>,
     // Filter EQ (driven by bandpass_mode effect)
     pub filter_enabled: RwSignal<bool>,
@@ -481,6 +483,8 @@ impl AppState {
             mouse_in_label_area: RwSignal::new(false),
             label_hover_opacity: RwSignal::new(0.0),
             follow_cursor: RwSignal::new(true),
+            follow_suspended: RwSignal::new(false),
+            follow_visible_since: RwSignal::new(None),
             pre_play_scroll: RwSignal::new(0.0),
             filter_enabled: RwSignal::new(false),
             filter_band_mode: RwSignal::new(3),
@@ -580,6 +584,15 @@ impl AppState {
     pub fn show_error_toast(&self, msg: impl Into<String>) {
         self.status_level.set(StatusLevel::Error);
         self.status_message.set(Some(msg.into()));
+    }
+
+    /// Temporarily suspend follow-cursor so the user can scroll freely.
+    /// Re-engagement happens automatically once the playhead is visible for 500ms.
+    pub fn suspend_follow(&self) {
+        if self.follow_cursor.get_untracked() && self.is_playing.get_untracked() {
+            self.follow_suspended.set(true);
+            self.follow_visible_since.set(None);
+        }
     }
 
     pub fn compute_auto_gain(&self) -> f64 {

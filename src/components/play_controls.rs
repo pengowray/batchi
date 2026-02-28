@@ -118,6 +118,7 @@ pub fn PlayControls() -> impl IntoView {
                                         let canvas_w = 800.0_f64;
                                         let visible_time = (canvas_w / zoom) * time_res;
                                         let new_scroll = (t - visible_time * 0.1).max(0.0);
+                                        state2.suspend_follow();
                                         state2.scroll_offset.set(new_scroll);
                                         state2.show_bookmark_popup.set(false);
                                     }

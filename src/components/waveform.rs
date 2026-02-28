@@ -189,13 +189,21 @@ pub fn Waveform() -> impl IntoView {
         }
     });
 
-    // Auto-scroll to follow playhead during playback
+    // Auto-scroll to follow playhead during playback (with suspension support)
     Effect::new(move || {
         let playhead = state.playhead_time.get();
         let is_playing = state.is_playing.get();
         let follow = state.follow_cursor.get();
+        let suspended = state.follow_suspended.get();
 
-        if !is_playing || !follow { return; }
+        if !follow { return; }
+        if !is_playing {
+            if suspended {
+                state.follow_suspended.set(false);
+                state.follow_visible_since.set(None);
+            }
+            return;
+        }
 
         let Some(canvas_el) = canvas_ref.get() else { return };
         let canvas: &HtmlCanvasElement = canvas_el.as_ref();
@@ -214,8 +222,25 @@ pub fn Waveform() -> impl IntoView {
         let visible_time = (display_w / zoom) * time_res;
         let playhead_rel = playhead - scroll;
 
+        if suspended {
+            let playhead_visible = playhead_rel >= 0.0 && playhead_rel <= visible_time;
+            if playhead_visible {
+                let now = js_sys::Date::now();
+                match state.follow_visible_since.get_untracked() {
+                    None => { state.follow_visible_since.set(Some(now)); }
+                    Some(since) if now - since >= 500.0 => {
+                        state.follow_suspended.set(false);
+                        state.follow_visible_since.set(None);
+                    }
+                    _ => {}
+                }
+            } else {
+                state.follow_visible_since.set(None);
+            }
+            return;
+        }
+
         if playhead_rel > visible_time * 0.8 || playhead_rel < 0.0 {
-            // Clamp so the viewport doesn't extend past the file end
             let max_scroll = (duration - visible_time).max(0.0);
             state.scroll_offset.set((playhead - visible_time * 0.2).max(0.0).min(max_scroll));
         }
@@ -242,6 +267,7 @@ pub fn Waveform() -> impl IntoView {
                     f64::MAX
                 }
             };
+            state.suspend_follow();
             state.scroll_offset.update(|s| {
                 *s = (*s + delta).clamp(0.0, max_scroll);
             });
@@ -276,6 +302,7 @@ pub fn Waveform() -> impl IntoView {
         let duration = file.as_ref().map(|f| f.audio.duration_secs).unwrap_or(f64::MAX);
         let max_scroll = (duration - visible_time).max(0.0);
         let dt = -(dx / cw) * visible_time;
+        state.suspend_follow();
         state.scroll_offset.set((start_scroll + dt).clamp(0.0, max_scroll));
     };
 
@@ -323,6 +350,7 @@ pub fn Waveform() -> impl IntoView {
         let duration = file.as_ref().map(|f| f.audio.duration_secs).unwrap_or(f64::MAX);
         let max_scroll = (duration - visible_time).max(0.0);
         let dt = -(dx / cw) * visible_time;
+        state.suspend_follow();
         state.scroll_offset.set((start_scroll + dt).clamp(0.0, max_scroll));
     };
 

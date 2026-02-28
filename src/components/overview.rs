@@ -34,6 +34,7 @@ fn nav_back(state: &AppState) {
     state.nav_index.set(new_idx);
     let hist = state.nav_history.get_untracked();
     if let Some(entry) = hist.get(new_idx) {
+        state.suspend_follow();
         state.scroll_offset.set(entry.scroll_offset);
         state.zoom_level.set(entry.zoom_level);
     }
@@ -46,6 +47,7 @@ fn nav_forward(state: &AppState) {
     let new_idx = idx + 1;
     state.nav_index.set(new_idx);
     if let Some(entry) = hist.get(new_idx) {
+        state.suspend_follow();
         state.scroll_offset.set(entry.scroll_offset);
         state.zoom_level.set(entry.zoom_level);
     }
@@ -439,6 +441,7 @@ pub fn OverviewPanel() -> impl IntoView {
         if let Some(t) = x_to_time(canvas_x, cw) {
             push_nav(&state);
             let centered = (t - half_visible_time()).max(0.0);
+            state.suspend_follow();
             state.scroll_offset.set(centered);
         }
         drag_active.set(true);
@@ -467,6 +470,7 @@ pub fn OverviewPanel() -> impl IntoView {
         };
         let max_scroll = (total_duration - visible_time).max(0.0);
         let new_scroll = (drag_start_scroll.get_untracked() + dt).clamp(0.0, max_scroll);
+        state.suspend_follow();
         state.scroll_offset.set(new_scroll);
     };
 
@@ -488,6 +492,7 @@ pub fn OverviewPanel() -> impl IntoView {
         if let Some(t) = x_to_time(canvas_x, cw) {
             push_nav(&state);
             let centered = (t - half_visible_time()).max(0.0);
+            state.suspend_follow();
             state.scroll_offset.set(centered);
         }
         drag_active.set(true);
@@ -520,6 +525,7 @@ pub fn OverviewPanel() -> impl IntoView {
         };
         let max_scroll = (total_duration - visible_time).max(0.0);
         let new_scroll = (drag_start_scroll.get_untracked() + dt).clamp(0.0, max_scroll);
+        state.suspend_follow();
         state.scroll_offset.set(new_scroll);
     };
 
@@ -541,6 +547,7 @@ pub fn OverviewPanel() -> impl IntoView {
             }).unwrap_or(0.0)
         };
         let max_scroll = (total_duration - visible_time).max(0.0);
+        state.suspend_follow();
         state.scroll_offset.update(|s| *s = (*s + delta).clamp(0.0, max_scroll));
     };
 

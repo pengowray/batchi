@@ -21,7 +21,12 @@ pub(super) fn ConfigPanel() -> impl IntoView {
     let on_follow_cursor = move |ev: web_sys::Event| {
         let target = ev.target().unwrap();
         let input: web_sys::HtmlInputElement = target.unchecked_into();
-        state.follow_cursor.set(input.checked());
+        let checked = input.checked();
+        state.follow_cursor.set(checked);
+        if checked {
+            state.follow_suspended.set(false);
+            state.follow_visible_since.set(None);
+        }
     };
 
     let on_always_show_view_range = move |ev: web_sys::Event| {
