@@ -240,6 +240,7 @@ pub fn Spectrogram() -> impl IntoView {
         let axis_drag_current = state.axis_drag_current_freq.get();
         let notch_bands = state.notch_bands.get();
         let notch_enabled = state.notch_enabled.get();
+        let notch_hovering = state.notch_hovering_band.get();
         let _pre = pre_rendered.track();
         let _coh = coherence_frames.track();
 
@@ -514,6 +515,7 @@ pub fn Spectrogram() -> impl IntoView {
                     min_freq, max_freq,
                     display_h as f64, display_w as f64,
                     &notch_bands, notch_enabled,
+                    notch_hovering,
                 );
             }
 

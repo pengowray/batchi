@@ -1535,8 +1535,9 @@ pub fn draw_notch_bands(
     canvas_width: f64,
     bands: &[crate::dsp::notch::NoiseBand],
     notch_enabled: bool,
+    hovered_index: Option<usize>,
 ) {
-    for band in bands {
+    for (band_idx, band) in bands.iter().enumerate() {
         let center = band.center_hz;
         let half_bw = band.bandwidth_hz / 2.0;
         let freq_lo = center - half_bw;
@@ -1552,10 +1553,14 @@ pub fn draw_notch_bands(
         let y_center = freq_to_y(center, min_freq, max_freq, canvas_height);
         let band_h = (y_bot - y_top).max(1.0);
 
-        let (fill, line, label_color) = if notch_enabled && band.enabled {
-            ("rgba(255, 40, 40, 0.12)", "rgba(255, 60, 60, 0.6)", "rgba(255, 100, 100, 0.8)")
+        let is_hovered = hovered_index == Some(band_idx);
+
+        let (fill, line, label_color, line_width) = if is_hovered {
+            ("rgba(255, 220, 40, 0.25)", "rgba(255, 220, 40, 0.9)", "rgba(255, 240, 100, 1.0)", 2.0)
+        } else if notch_enabled && band.enabled {
+            ("rgba(255, 40, 40, 0.12)", "rgba(255, 60, 60, 0.6)", "rgba(255, 100, 100, 0.8)", 1.0)
         } else {
-            ("rgba(128, 128, 128, 0.08)", "rgba(128, 128, 128, 0.3)", "rgba(160, 160, 160, 0.5)")
+            ("rgba(128, 128, 128, 0.08)", "rgba(128, 128, 128, 0.3)", "rgba(160, 160, 160, 0.5)", 1.0)
         };
 
         // Band fill
@@ -1564,7 +1569,7 @@ pub fn draw_notch_bands(
 
         // Center line
         ctx.set_stroke_style_str(line);
-        ctx.set_line_width(1.0);
+        ctx.set_line_width(line_width);
         ctx.begin_path();
         ctx.move_to(0.0, y_center);
         ctx.line_to(canvas_width, y_center);
@@ -1572,7 +1577,7 @@ pub fn draw_notch_bands(
 
         // Frequency label
         ctx.set_fill_style_str(label_color);
-        ctx.set_font("10px sans-serif");
+        ctx.set_font(if is_hovered { "bold 11px sans-serif" } else { "10px sans-serif" });
         ctx.set_text_baseline("bottom");
         let label = if center >= 1000.0 {
             format!("{:.1}k", center / 1000.0)

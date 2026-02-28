@@ -14,10 +14,108 @@ async fn yield_to_browser() {
     let _ = wasm_bindgen_futures::JsFuture::from(promise).await;
 }
 
+/// Apply a deserialized NoiseProfile to app state (shared by import and preset load).
+fn apply_noise_profile(state: AppState, profile: NoiseProfile) {
+    let files = state.files.get_untracked();
+    let idx = state.current_file_index.get_untracked();
+    let nyquist = idx
+        .and_then(|i| files.get(i))
+        .map(|f| f.audio.sample_rate as f64 / 2.0)
+        .unwrap_or(f64::MAX);
+
+    let mut bands = profile.bands;
+    for band in bands.iter_mut() {
+        if band.center_hz >= nyquist {
+            band.enabled = false;
+        }
+    }
+
+    let count = bands.len();
+    let has_floor = profile.noise_floor.is_some();
+    state.notch_bands.set(bands);
+    state.notch_profile_name.set(profile.name);
+    if count > 0 {
+        state.notch_enabled.set(true);
+    }
+
+    if let Some(floor) = profile.noise_floor {
+        state.noise_reduce_floor.set(Some(floor));
+        state.noise_reduce_enabled.set(true);
+    }
+
+    let msg = match (count > 0, has_floor) {
+        (true, true) => format!("Loaded {} band{} + noise floor", count, if count == 1 { "" } else { "s" }),
+        (true, false) => format!("Loaded {} band{}", count, if count == 1 { "" } else { "s" }),
+        (false, true) => "Loaded noise floor".to_string(),
+        (false, false) => "Profile was empty".to_string(),
+    };
+    state.show_info_toast(msg);
+}
+
+/// Build a NoiseProfile from current state. Returns None if nothing to save.
+fn build_current_profile(state: AppState) -> Option<(NoiseProfile, String)> {
+    let bands = state.notch_bands.get_untracked();
+    let noise_floor = state.noise_reduce_floor.get_untracked();
+    if bands.is_empty() && noise_floor.is_none() {
+        return None;
+    }
+
+    let files = state.files.get_untracked();
+    let idx = state.current_file_index.get_untracked();
+    let sample_rate = idx
+        .and_then(|i| files.get(i))
+        .map(|f| f.audio.sample_rate)
+        .unwrap_or(0);
+
+    let name = state.notch_profile_name.get_untracked();
+    let profile_name = if name.is_empty() {
+        // Derive default name from current filename
+        idx.and_then(|i| files.get(i))
+            .map(|f| {
+                let base = f.name.rsplit('/').next().unwrap_or(&f.name);
+                let base = base.rsplit('\\').next().unwrap_or(base);
+                base.rsplit_once('.').map(|(n, _)| n).unwrap_or(base).to_string()
+            })
+            .unwrap_or_else(|| "Noise Profile".to_string())
+    } else {
+        name
+    };
+
+    let created = js_sys::Date::new_0()
+        .to_iso_string()
+        .as_string()
+        .unwrap_or_default();
+
+    let profile = NoiseProfile {
+        name: profile_name.clone(),
+        bands,
+        source_sample_rate: sample_rate,
+        created,
+        noise_floor,
+    };
+
+    Some((profile, profile_name))
+}
+
 #[component]
 pub(crate) fn NotchPanel() -> impl IntoView {
     let state = expect_context::<AppState>();
     let sensitivity = RwSignal::new(6.0f64); // prominence threshold
+    let saved_presets: RwSignal<Vec<String>> = RwSignal::new(Vec::new());
+
+    // Load saved presets list on Tauri
+    if state.is_tauri {
+        spawn_local(async move {
+            let args = js_sys::Object::new();
+            if let Ok(result) = crate::tauri_bridge::tauri_invoke("list_noise_presets", &args.into()).await {
+                let arr = js_sys::Array::from(&result);
+                let list: Vec<String> = (0..arr.length())
+                    .filter_map(|i| arr.get(i).as_string())
+                    .collect();
+                saved_presets.set(list);
+            }
+        });
+    }
 
     // Detect noise bands
     let on_detect = move |_: web_sys::MouseEvent| {
@@ -91,34 +189,9 @@ pub(crate) fn NotchPanel() -> impl IntoView {
 
     // Export profile
     let on_export = move |_: web_sys::MouseEvent| {
-        let bands = state.notch_bands.get_untracked();
-        let noise_floor = state.noise_reduce_floor.get_untracked();
-        if bands.is_empty() && noise_floor.is_none() {
+        let Some((profile, profile_name)) = build_current_profile(state) else {
             state.show_error_toast("Nothing to export");
             return;
-        }
-
-        let files = state.files.get_untracked();
-        let idx = state.current_file_index.get_untracked();
-        let sample_rate = idx
-            .and_then(|i| files.get(i))
-            .map(|f| f.audio.sample_rate)
-            .unwrap_or(0);
-
-        let name = state.notch_profile_name.get_untracked();
-        let profile_name = if name.is_empty() { "Noise Profile".to_string() } else { name };
-
-        let created = js_sys::Date::new_0()
-            .to_iso_string()
-            .as_string()
-            .unwrap_or_default();
-
-        let profile = NoiseProfile {
-            name: profile_name.clone(),
-            bands,
-            source_sample_rate: sample_rate,
-            created,
-            noise_floor,
         };
 
         let Ok(json) = serde_json::to_string_pretty(&profile) else {
@@ -168,44 +241,7 @@ pub(crate) fn NotchPanel() -> impl IntoView {
                 let result = reader_clone.result().unwrap();
                 let text = result.as_string().unwrap_or_default();
                 match serde_json::from_str::<NoiseProfile>(&text) {
-                    Ok(profile) => {
-                        // Check for bands above Nyquist and disable them
-                        let files = state.files.get_untracked();
-                        let idx = state.current_file_index.get_untracked();
-                        let nyquist = idx
-                            .and_then(|i| files.get(i))
-                            .map(|f| f.audio.sample_rate as f64 / 2.0)
-                            .unwrap_or(f64::MAX);
-
-                        let mut bands = profile.bands;
-                        for band in bands.iter_mut() {
-                            if band.center_hz >= nyquist {
-                                band.enabled = false;
-                            }
-                        }
-
-                        let count = bands.len();
-                        let has_floor = profile.noise_floor.is_some();
-                        state.notch_bands.set(bands);
-                        state.notch_profile_name.set(profile.name);
-                        if count > 0 {
-                            state.notch_enabled.set(true);
-                        }
-
-                        // Restore spectral subtraction noise floor if present
-                        if let Some(floor) = profile.noise_floor {
-                            state.noise_reduce_floor.set(Some(floor));
-                            state.noise_reduce_enabled.set(true);
-                        }
-
-                        let msg = match (count > 0, has_floor) {
-                            (true, true) => format!("Imported {} band{} + noise floor", count, if count == 1 { "" } else { "s" }),
-                            (true, false) => format!("Imported {} band{}", count, if count == 1 { "" } else { "s" }),
-                            (false, true) => "Imported noise floor".to_string(),
-                            (false, false) => "Profile was empty".to_string(),
-                        };
-                        state.show_info_toast(msg);
-                    }
+                    Ok(profile) => apply_noise_profile(state, profile),
                     Err(e) => {
                         state.show_error_toast(format!("Invalid profile: {e}"));
                     }
@@ -273,9 +309,84 @@ pub(crate) fn NotchPanel() -> impl IntoView {
         state.notch_profile_name.set(target.value());
     };
 
+    // Save preset (Tauri only)
+    let on_save_preset = move |_: web_sys::MouseEvent| {
+        let Some((profile, profile_name)) = build_current_profile(state) else {
+            state.show_error_toast("Nothing to save");
+            return;
+        };
+
+        let Ok(json) = serde_json::to_string_pretty(&profile) else {
+            state.show_error_toast("Failed to serialize profile");
+            return;
+        };
+
+        spawn_local(async move {
+            let args = js_sys::Object::new();
+            let _ = js_sys::Reflect::set(&args, &JsValue::from_str("name"), &JsValue::from_str(&profile_name));
+            let _ = js_sys::Reflect::set(&args, &JsValue::from_str("json"), &JsValue::from_str(&json));
+            match crate::tauri_bridge::tauri_invoke("save_noise_preset", &args.into()).await {
+                Ok(_) => {
+                    state.show_info_toast(format!("Saved preset: {}", profile_name));
+                    // Refresh list
+                    let args2 = js_sys::Object::new();
+                    if let Ok(result) = crate::tauri_bridge::tauri_invoke("list_noise_presets", &args2.into()).await {
+                        let arr = js_sys::Array::from(&result);
+                        let list: Vec<String> = (0..arr.length())
+                            .filter_map(|i| arr.get(i).as_string())
+                            .collect();
+                        saved_presets.set(list);
+                    }
+                }
+                Err(e) => state.show_error_toast(format!("Save failed: {e}")),
+            }
+        });
+    };
+
+    // Load preset (Tauri only)
+    let load_preset = move |filename: String| {
+        spawn_local(async move {
+            let args = js_sys::Object::new();
+            let _ = js_sys::Reflect::set(&args, &JsValue::from_str("name"), &JsValue::from_str(&filename));
+            match crate::tauri_bridge::tauri_invoke("load_noise_preset", &args.into()).await {
+                Ok(result) => {
+                    let text = result.as_string().unwrap_or_default();
+                    match serde_json::from_str::<NoiseProfile>(&text) {
+                        Ok(profile) => apply_noise_profile(state, profile),
+                        Err(e) => state.show_error_toast(format!("Invalid preset: {e}")),
+                    }
+                }
+                Err(e) => state.show_error_toast(format!("Load failed: {e}")),
+            }
+        });
+    };
+
+    // Delete preset (Tauri only)
+    let delete_preset = move |filename: String| {
+        spawn_local(async move {
+            let args = js_sys::Object::new();
+            let _ = js_sys::Reflect::set(&args, &JsValue::from_str("name"), &JsValue::from_str(&filename));
+            match crate::tauri_bridge::tauri_invoke("delete_noise_preset", &args.into()).await {
+                Ok(_) => {
+                    state.show_info_toast("Preset deleted");
+                    // Refresh list
+                    let args2 = js_sys::Object::new();
+                    if let Ok(result) = crate::tauri_bridge::tauri_invoke("list_noise_presets", &args2.into()).await {
+                        let arr = js_sys::Array::from(&result);
+                        let list: Vec<String> = (0..arr.length())
+                            .filter_map(|i| arr.get(i).as_string())
+                            .collect();
+                        saved_presets.set(list);
+                    }
+                }
+                Err(e) => state.show_error_toast(format!("Delete failed: {e}")),
+            }
+        });
+    };
+
     view! {
         <div class="sidebar-panel notch-panel">
-            // Master toggle
+            // === Notch Filter ===
             <div class="setting-group">
                 <div class="setting-row">
                     <label class="setting-label" style="flex: 1; cursor: pointer;">
@@ -352,7 +463,11 @@ pub(crate) fn NotchPanel() -> impl IntoView {
                             let enabled = band.enabled;
                             let bandwidth = band.bandwidth_hz;
                             view! {
-                                <div class="notch-band-row" style="display: flex; align-items: center; gap: 4px; padding: 2px 0; font-size: 11px;">
+                                <div class="notch-band-row"
+                                    style="display: flex; align-items: center; gap: 4px; padding: 2px 0; font-size: 11px;"
+                                    on:mouseenter=move |_| state.notch_hovering_band.set(Some(i))
+                                    on:mouseleave=move |_| state.notch_hovering_band.set(None)
+                                >
                                     <input
                                         type="checkbox"
                                         checked=enabled
@@ -421,39 +536,7 @@ pub(crate) fn NotchPanel() -> impl IntoView {
                 }}
             </div>
 
-            // Profile management
-            <div class="setting-group">
-                <div class="setting-group-title">"Profile"</div>
-                <div class="setting-row">
-                    <input
-                        type="text"
-                        class="setting-input"
-                        style="flex: 1; font-size: 11px; padding: 2px 4px; background: var(--bg-secondary, #333); color: inherit; border: 1px solid #555; border-radius: 3px;"
-                        placeholder="Profile name"
-                        prop:value=move || state.notch_profile_name.get()
-                        on:input=on_name_change
-                    />
-                </div>
-                <div class="setting-row" style="gap: 4px;">
-                    <button
-                        class="sidebar-btn"
-                        style="flex: 1;"
-                        on:click=on_export
-                        disabled=move || state.notch_bands.get().is_empty() && state.noise_reduce_floor.get().is_none()
-                    >
-                        "Export"
-                    </button>
-                    <button
-                        class="sidebar-btn"
-                        style="flex: 1;"
-                        on:click=on_import
-                    >
-                        "Import"
-                    </button>
-                </div>
-            </div>
-
-            // Spectral subtraction noise reduction
+            // === Noise Reduction (spectral subtraction) ===
             <div class="setting-group">
                 <div class="setting-row">
                     <label class="setting-label" style="flex: 1; cursor: pointer;">
@@ -522,6 +605,100 @@ pub(crate) fn NotchPanel() -> impl IntoView {
                             </div>
                         }.into_any()
                     }
+                }}
+            </div>
+
+            // === Profile management ===
+            <div class="setting-group">
+                <div class="setting-group-title">"Profile"</div>
+                <div class="setting-row">
+                    <input
+                        type="text"
+                        class="setting-input"
+                        style="flex: 1; font-size: 11px; padding: 2px 4px; background: var(--bg-secondary, #333); color: inherit; border: 1px solid #555; border-radius: 3px;"
+                        placeholder="Profile name"
+                        prop:value=move || state.notch_profile_name.get()
+                        on:input=on_name_change
+                    />
+                </div>
+                <div class="setting-row" style="gap: 4px;">
+                    <button
+                        class="sidebar-btn"
+                        style="flex: 1;"
+                        on:click=on_export
+                        disabled=move || state.notch_bands.get().is_empty() && state.noise_reduce_floor.get().is_none()
+                    >
+                        "Export"
+                    </button>
+                    <button
+                        class="sidebar-btn"
+                        style="flex: 1;"
+                        on:click=on_import
+                    >
+                        "Import"
+                    </button>
+                </div>
+
+                // Tauri-only: Save Preset + preset list
+                {if state.is_tauri {
+                    Some(view! {
+                        <div class="setting-row" style="gap: 4px; margin-top: 4px;">
+                            <button
+                                class="sidebar-btn"
+                                style="flex: 1;"
+                                on:click=on_save_preset
+                                disabled=move || state.notch_bands.get().is_empty() && state.noise_reduce_floor.get().is_none()
+                            >
+                                "Save Preset"
+                            </button>
+                        </div>
+                        {move || {
+                            let presets = saved_presets.get();
+                            if presets.is_empty() {
+                                view! { <span></span> }.into_any()
+                            } else {
+                                let items: Vec<_> = presets.iter().map(|p| {
+                                    let filename_load = p.clone();
+                                    let filename_del = p.clone();
+                                    let display = p.trim_end_matches(".json").replace('_', " ");
+                                    let display_title = display.clone();
+                                    view! {
+                                        <div style="display: flex; align-items: center; gap: 4px; padding: 1px 0; font-size: 11px;">
+                                            <button
+                                                class="sidebar-btn"
+                                                style="flex: 1; font-size: 10px; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"
+                                                on:click=move |_: web_sys::MouseEvent| {
+                                                    let f = filename_load.clone();
+                                                    load_preset(f);
+                                                }
+                                                title=format!("Load {}", display_title)
+                                            >
+                                                {display}
+                                            </button>
+                                            <button
+                                                style="background: none; border: none; color: inherit; opacity: 0.4; cursor: pointer; padding: 0 2px; font-size: 12px;"
+                                                on:click=move |_: web_sys::MouseEvent| {
+                                                    let f = filename_del.clone();
+                                                    delete_preset(f);
+                                                }
+                                                title="Delete preset"
+                                            >
+                                                {"\u{00D7}"}
+                                            </button>
+                                        </div>
+                                    }
+                                }).collect();
+                                view! {
+                                    <div class="setting-group-title" style="margin-top: 4px;">"Saved Presets"</div>
+                                    <div style="max-height: 150px; overflow-y: auto;">
+                                        {items}
+                                    </div>
+                                }.into_any()
+                            }
+                        }}
+                    })
+                } else {
+                    None
                 }}
             </div>
         </div>

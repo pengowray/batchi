@@ -338,6 +338,7 @@ pub struct AppState {
     pub notch_bands: RwSignal<Vec<crate::dsp::notch::NoiseBand>>,
     pub notch_detecting: RwSignal<bool>,
     pub notch_profile_name: RwSignal<String>,
+    pub notch_hovering_band: RwSignal<Option<usize>>,
 
     // Spectral subtraction noise reduction
     pub noise_reduce_enabled: RwSignal<bool>,
@@ -474,6 +475,7 @@ impl AppState {
             notch_bands: RwSignal::new(Vec::new()),
             notch_detecting: RwSignal::new(false),
             notch_profile_name: RwSignal::new(String::new()),
+            notch_hovering_band: RwSignal::new(None),
 
             noise_reduce_enabled: RwSignal::new(false),
             noise_reduce_strength: RwSignal::new(1.0),
