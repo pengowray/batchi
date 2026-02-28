@@ -70,6 +70,8 @@ pub fn Waveform() -> impl IntoView {
         let idx = state.current_file_index.get();
         let mode = state.playback_mode.get();
         let hfr = state.hfr_enabled.get();
+        let is_playing = state.is_playing.get();
+        let canvas_tool = state.canvas_tool.get();
         let auto_gain = state.auto_gain.get();
         let gain_db = if auto_gain {
             state.compute_auto_gain()
@@ -160,6 +162,25 @@ pub fn Waveform() -> impl IntoView {
                     sel_time,
                     gain_db,
                 );
+            }
+
+            // Draw "play here" marker when not playing
+            if !is_playing && canvas_tool == CanvasTool::Hand {
+                let visible_time = (display_w as f64 / zoom) * file.spectrogram.time_resolution;
+                let here_x = display_w as f64 * 0.10;
+                let here_time = scroll + visible_time * 0.10;
+                state.play_from_here_time.set(here_time);
+                ctx.set_stroke_style_str("rgba(100, 160, 255, 0.35)");
+                ctx.set_line_width(1.5);
+                let _ = ctx.set_line_dash(&js_sys::Array::of2(
+                    &wasm_bindgen::JsValue::from_f64(4.0),
+                    &wasm_bindgen::JsValue::from_f64(3.0),
+                ));
+                ctx.begin_path();
+                ctx.move_to(here_x, 0.0);
+                ctx.line_to(here_x, display_h as f64);
+                ctx.stroke();
+                let _ = ctx.set_line_dash(&js_sys::Array::new());
             }
 
         } else {

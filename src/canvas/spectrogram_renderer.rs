@@ -1125,14 +1125,16 @@ pub fn blit_chromagram_tiles_viewport(
                 let tile_w = tile.rendered.width as usize;
                 let row = pixel_idx / tile_w;
 
+                let scale = crate::dsp::chromagram::CHROMA_RENDER_SCALE;
+                let logical_row = row / scale;
                 let [r, g, b] = match &mode {
                     ChromaMode::Single(cm) => cm.apply(class_byte, note_byte),
                     ChromaMode::PerPitchClass(cms) => {
-                        let pc = 11usize.saturating_sub(row / 10).min(11);
+                        let pc = 11usize.saturating_sub(logical_row / 10).min(11);
                         cms[pc].apply(class_byte, note_byte)
                     }
                     ChromaMode::PerOctave(cms) => {
-                        let oct = 9usize.saturating_sub(row % 10).min(9);
+                        let oct = 9usize.saturating_sub(logical_row % 10).min(9);
                         cms[oct].apply(class_byte, note_byte)
                     }
                     ChromaMode::FlowInline => {
@@ -1168,7 +1170,7 @@ pub fn blit_chromagram_tiles_viewport(
             let dst_w = (dst_x_end_raw.ceil() - dst_x).max(1.0);
 
             // Enable smoothing for upscaling (chromagram has few rows)
-            ctx.set_image_smoothing_enabled(false);
+            ctx.set_image_smoothing_enabled(true);
             let _ = ctx.draw_image_with_html_canvas_element_and_sw_and_sh_and_dx_and_dy_and_dw_and_dh(
                 &tmp,
                 tile_src_x, 0.0, tile_src_w, th,

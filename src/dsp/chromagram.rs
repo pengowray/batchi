@@ -54,9 +54,16 @@ pub fn stft_to_chromagram(
     ChromagramColumn { pitch_classes, octave_detail }
 }
 
-/// The total number of rows in a chromagram display.
+/// The total number of logical rows in a chromagram display.
 /// Each pitch class gets `NUM_OCTAVES` sub-rows.
 pub const CHROMA_ROWS: usize = NUM_PITCH_CLASSES * NUM_OCTAVES;
+
+/// Vertical render scale: each logical row is rendered as this many pixel rows
+/// for smoother upscaling.
+pub const CHROMA_RENDER_SCALE: usize = 3;
+
+/// Actual pixel height of chromagram tiles.
+pub const CHROMA_PIXEL_HEIGHT: usize = CHROMA_ROWS * CHROMA_RENDER_SCALE;
 
 /// Compute the global chromagram max (max_class, max_note) across a slice of
 /// STFT columns.  Used to normalise all tiles to the same scale — analogous to
@@ -85,7 +92,7 @@ pub fn compute_chroma_max(
 ///
 /// Returns greyscale RGBA pixels where:
 /// - Width = number of columns
-/// - Height = `CHROMA_ROWS` (12 pitch classes × 10 octaves = 120 rows)
+/// - Height = `CHROMA_PIXEL_HEIGHT` (CHROMA_ROWS × CHROMA_RENDER_SCALE)
 /// - Row 0 = B9 (top), last row = C0 (bottom)
 ///
 /// Each pixel encodes two values packed into the RGB channels:
@@ -109,7 +116,7 @@ pub fn pre_render_chromagram_columns(
     }
 
     let width = stft_columns.len();
-    let height = CHROMA_ROWS;
+    let height = CHROMA_PIXEL_HEIGHT;
     let mut pixels = vec![0u8; width * height * 4];
 
     // Compute all chromagram columns
@@ -144,12 +151,14 @@ pub fn pre_render_chromagram_columns(
                 // Row layout: pitch class 0 (C) at bottom, B at top
                 // Within each pitch class: octave 0 at bottom, highest at top
                 let row_from_bottom = pc * NUM_OCTAVES + oct;
-                let y = height - 1 - row_from_bottom;
-                let pixel_idx = (y * width + col_idx) * 4;
-                pixels[pixel_idx] = class_byte;       // R = pitch class intensity
-                pixels[pixel_idx + 1] = note_byte;    // G = note intensity
-                pixels[pixel_idx + 2] = flow_byte;    // B = energy flow
-                pixels[pixel_idx + 3] = 255;
+                for s in 0..CHROMA_RENDER_SCALE {
+                    let y = height - 1 - (row_from_bottom * CHROMA_RENDER_SCALE + s);
+                    let pixel_idx = (y * width + col_idx) * 4;
+                    pixels[pixel_idx] = class_byte;       // R = pitch class intensity
+                    pixels[pixel_idx + 1] = note_byte;    // G = note intensity
+                    pixels[pixel_idx + 2] = flow_byte;    // B = energy flow
+                    pixels[pixel_idx + 3] = 255;
+                }
             }
         }
     }
