@@ -546,7 +546,7 @@ impl AppState {
             cursor_time: RwSignal::new(None),
             settings_page_open: RwSignal::new(false),
             colormap_preference: RwSignal::new(ColormapPreference::Viridis),
-            chroma_colormap: RwSignal::new(ChromaColormap::Warm),
+            chroma_colormap: RwSignal::new(ChromaColormap::PitchClass),
             hfr_colormap_preference: RwSignal::new(ColormapPreference::Inferno),
             always_show_view_range: RwSignal::new(false),
 
