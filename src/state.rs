@@ -143,6 +143,7 @@ pub enum MainView {
     ZcChart,
     Flow,
     Chromagram,
+    PhaseCoherence,
 }
 
 impl MainView {
@@ -153,6 +154,7 @@ impl MainView {
             Self::ZcChart => "ZC Chart",
             Self::Flow => "Flow",
             Self::Chromagram => "Chromagram",
+            Self::PhaseCoherence => "Phase Coherence",
         }
     }
 
@@ -163,6 +165,7 @@ impl MainView {
             Self::ZcChart => "ZC",
             Self::Flow => "Flow",
             Self::Chromagram => "Chroma",
+            Self::PhaseCoherence => "Phase",
         }
     }
 
@@ -172,6 +175,7 @@ impl MainView {
         Self::ZcChart,
         Self::Flow,
         Self::Chromagram,
+        Self::PhaseCoherence,
     ];
 }
 

@@ -1,12 +1,11 @@
 use leptos::prelude::*;
-use wasm_bindgen::{Clamped, JsCast};
+use wasm_bindgen::JsCast;
 use wasm_bindgen::closure::Closure;
 use std::cell::Cell;
 use std::rc::Rc;
-use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement, ImageData, MouseEvent};
+use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement, MouseEvent};
 use crate::canvas::spectrogram_renderer::{self, Colormap, ColormapMode, FreqMarkerState, FreqShiftMode, FlowAlgo, PreRendered};
-use crate::dsp::harmonics;
-use crate::state::{AppState, CanvasTool, ColormapPreference, SpectrogramHandle, PlaybackMode, Selection, RightSidebarTab, SpectrogramDisplay};
+use crate::state::{AppState, CanvasTool, ColormapPreference, MainView, SpectrogramHandle, PlaybackMode, Selection, SpectrogramDisplay};
 
 const LABEL_AREA_WIDTH: f64 = 60.0;
 
@@ -87,9 +86,6 @@ pub fn Spectrogram() -> impl IntoView {
     let pre_rendered: RwSignal<Option<PreRendered>> = RwSignal::new(None);
     let _flow_cache_removed = (); // flow tiles are now in tile_cache::MV_CACHE
 
-    // Phase coherence heatmap data — computed only when Harmonics tab is active.
-    let coherence_frames: RwSignal<Option<Vec<Vec<f32>>>> = RwSignal::new(None);
-
     // Drag state for selection (time, freq)
     let drag_start = RwSignal::new((0.0f64, 0.0f64));
     // Hand-tool drag state: (initial_client_x, initial_scroll_offset)
@@ -161,19 +157,11 @@ pub fn Spectrogram() -> impl IntoView {
         crate::canvas::tile_cache::clear_flow_cache();
     });
 
-    // Effect 2b: compute phase coherence frames when the Harmonics tab becomes active or the file changes.
-    // Only reads files/idx when the tab is Harmonics, so it doesn't run for every file change otherwise.
+    // Effect 2b: clear coherence tile cache when file changes
     Effect::new(move || {
-        let tab = state.right_sidebar_tab.get();
-        if tab != RightSidebarTab::Harmonics {
-            return;
-        }
-        let files = state.files.get();
-        let idx = state.current_file_index.get();
-        let frames = idx.and_then(|i| files.get(i).cloned()).map(|file| {
-            harmonics::compute_coherence_frames(&file.audio, &file.spectrogram)
-        });
-        coherence_frames.set(frames);
+        let _files = state.files.get();
+        let _idx = state.current_file_index.get();
+        crate::canvas::tile_cache::clear_coherence_cache();
     });
 
     // Effect 3: redraw when pre-rendered data, scroll, zoom, selection, playhead, overlays, hover, or new tile change
@@ -199,7 +187,6 @@ pub fn Spectrogram() -> impl IntoView {
         let label_opacity = state.label_hover_opacity.get();
         let filter_hovering = state.filter_hovering_band.get();
         let filter_enabled = state.filter_enabled.get();
-        let sidebar_tab = state.right_sidebar_tab.get();
         let spec_hover = state.spec_hover_handle.get();
         let spec_drag = state.spec_drag_handle.get();
         let ff_lo = state.ff_freq_lo.get();
@@ -215,8 +202,8 @@ pub fn Spectrogram() -> impl IntoView {
         let notch_bands = state.notch_bands.get();
         let notch_enabled = state.notch_enabled.get();
         let notch_hovering = state.notch_hovering_band.get();
+        let main_view = state.main_view.get();
         let _pre = pre_rendered.track();
-        let _coh = coherence_frames.track();
 
         let Some(canvas_el) = canvas_ref.get() else { return };
         let canvas: &HtmlCanvasElement = canvas_el.as_ref();
@@ -257,69 +244,6 @@ pub fn Spectrogram() -> impl IntoView {
         let freq_crop_lo = min_freq / file_max_freq;
         let freq_crop_hi = max_freq / file_max_freq;
 
-        if sidebar_tab == RightSidebarTab::Harmonics {
-            // --- Phase coherence heatmap mode ---
-            coherence_frames.with_untracked(|cf| {
-                match cf {
-                    Some(frames) if !frames.is_empty() => {
-                        draw_coherence_heatmap(
-                            &ctx,
-                            frames,
-                            display_w,
-                            display_h,
-                            scroll_col,
-                            zoom,
-                            freq_crop_lo,
-                            freq_crop_hi,
-                        );
-                    }
-                    _ => {
-                        // Coherence not yet computed — show dim background
-                        ctx.set_fill_style_str("#0a0a0a");
-                        ctx.fill_rect(0.0, 0.0, display_w as f64, display_h as f64);
-                        ctx.set_fill_style_str("#444");
-                        ctx.set_font("13px sans-serif");
-                        let _ = ctx.fill_text(
-                            "Computing phase coherence…",
-                            display_w as f64 / 2.0 - 100.0,
-                            display_h as f64 / 2.0,
-                        );
-                    }
-                }
-            });
-
-            // Always draw freq markers and playhead on top of the heatmap.
-            let (adl, adh) = match (axis_drag_start, axis_drag_current) {
-                (Some(a), Some(b)) => (Some(a.min(b)), Some(a.max(b))),
-                _ => (None, None),
-            };
-            let ff_drag_active = matches!(spec_drag, Some(SpectrogramHandle::FfUpper) | Some(SpectrogramHandle::FfLower) | Some(SpectrogramHandle::FfMiddle));
-            let marker_state = FreqMarkerState {
-                mouse_freq,
-                mouse_in_label_area: mouse_freq.is_some() && mouse_cx < LABEL_AREA_WIDTH,
-                label_hover_opacity: label_opacity,
-                has_selection: selection.is_some() || (dragging && axis_drag_start.is_none()),
-                file_max_freq,
-                axis_drag_lo: adl,
-                axis_drag_hi: adh,
-                ff_drag_active,
-                ff_lo,
-                ff_hi,
-                ff_handles_active: spec_hover.is_some() || spec_drag.is_some(),
-            };
-            spectrogram_renderer::draw_freq_markers(
-                &ctx,
-                min_freq,
-                max_freq,
-                display_h as f64,
-                display_w as f64,
-                FreqShiftMode::None,
-                &marker_state,
-                het_cutoff,
-            );
-            return;
-        }
-
         // --- Normal spectrogram mode ---
 
         // Build colormap
@@ -358,8 +282,34 @@ pub fn Spectrogram() -> impl IntoView {
         let duration = file.map(|f| f.audio.duration_secs).unwrap_or(0.0);
 
         // Step 1: Render base spectrogram.
-        // Priority: flow tiles | normal tiles > pre_rendered > preview > black
-        let base_drawn = if flow_on && total_cols > 0 {
+        // Priority: coherence tiles | flow tiles | normal tiles > pre_rendered > preview > black
+        let base_drawn = if main_view == MainView::PhaseCoherence && total_cols > 0 {
+            // Phase coherence mode: use coherence tile cache (pre-colored RGBA)
+            let drawn = spectrogram_renderer::blit_coherence_tiles_viewport(
+                &ctx, canvas, file_idx_val, total_cols,
+                scroll_col, zoom, freq_crop_lo, freq_crop_hi,
+            );
+
+            // Schedule missing coherence tiles
+            {
+                use crate::canvas::tile_cache::{self, TILE_COLS};
+
+                let visible_cols_f = display_w as f64 / zoom;
+                let src_start = scroll_col.max(0.0);
+                let src_end = (src_start + visible_cols_f).min(total_cols as f64);
+                let first_tile = (src_start / TILE_COLS as f64).floor() as usize;
+                let last_tile = ((src_end - 1.0).max(0.0) / TILE_COLS as f64).floor() as usize;
+                let n_tiles = (total_cols + TILE_COLS - 1) / TILE_COLS;
+
+                for t in first_tile..=last_tile.min(n_tiles.saturating_sub(1)) {
+                    if tile_cache::get_coherence_tile(file_idx_val, t).is_none() {
+                        tile_cache::schedule_coherence_tile(state.clone(), file_idx_val, t);
+                    }
+                }
+            }
+
+            drawn
+        } else if flow_on && total_cols > 0 {
             // Flow mode: use flow tile cache (pre-colored RGBA)
             let drawn = spectrogram_renderer::blit_flow_tiles_viewport(
                 &ctx, canvas, file_idx_val, total_cols,
@@ -1313,99 +1263,3 @@ pub fn Spectrogram() -> impl IntoView {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Phase coherence heatmap rendering helpers
-// ---------------------------------------------------------------------------
-
-/// Render a phase coherence heatmap onto the canvas.
-/// `frames[t][k]` = coherence at frame-transition t, frequency bin k, in [0,1].
-/// The viewport mapping mirrors blit_viewport: scroll_col + x/zoom gives the source frame.
-fn draw_coherence_heatmap(
-    ctx: &CanvasRenderingContext2d,
-    frames: &[Vec<f32>],
-    display_w: u32,
-    display_h: u32,
-    scroll_col: f64,
-    zoom: f64,
-    freq_crop_lo: f64,
-    freq_crop_hi: f64,
-) {
-    let w = display_w as usize;
-    let h = display_h as usize;
-    let n_frames = frames.len();
-    let n_bins = frames.first().map(|f| f.len()).unwrap_or(0);
-
-    if n_frames == 0 || n_bins == 0 || w == 0 || h == 0 {
-        ctx.set_fill_style_str("#0a0a0a");
-        ctx.fill_rect(0.0, 0.0, display_w as f64, display_h as f64);
-        return;
-    }
-
-    // Initialise all pixels to opaque black; columns past the end of the file stay black.
-    let mut pixels = vec![0u8; w * h * 4];
-    for i in 0..w * h {
-        pixels[i * 4 + 3] = 255;
-    }
-
-    for px_x in 0..w {
-        // Map pixel column → source frame index.
-        let frame_f = scroll_col + px_x as f64 / zoom;
-        // Past the end of the recording → leave as black.
-        if frame_f >= n_frames as f64 {
-            continue;
-        }
-        let frame_i = frame_f as usize;
-        let frame_row = &frames[frame_i];
-
-        for px_y in 0..h {
-            // Map pixel row → frequency bin.
-            // Row 0 (top) = max displayed freq, row h (bottom) = min displayed freq.
-            let frac = freq_crop_lo + (freq_crop_hi - freq_crop_lo) * (1.0 - px_y as f64 / h as f64);
-            let bin_f = (n_bins as f64 * frac).min((n_bins - 1) as f64);
-            let bin_i = (bin_f as usize).min(n_bins - 1);
-
-            let coherence = frame_row[bin_i];
-            let [r, g, b] = coherence_to_rgb(coherence);
-            let idx = (px_y * w + px_x) * 4;
-            pixels[idx] = r;
-            pixels[idx + 1] = g;
-            pixels[idx + 2] = b;
-            // alpha already 255
-        }
-    }
-
-    let clamped = Clamped(pixels.as_slice());
-    if let Ok(img) = ImageData::new_with_u8_clamped_array_and_sh(clamped, display_w, display_h) {
-        let _ = ctx.put_image_data(&img, 0.0, 0.0);
-    }
-}
-
-/// Map a coherence value [0,1] to an RGB colour.
-/// Sequential blue scale: black → navy → steel blue → pale blue-white.
-/// 0.00 → #000000 (black)
-/// 0.40 → #0d3a6e (dark navy)
-/// 0.70 → #2d7fc0 (steel blue)
-/// 1.00 → #c8e8ff (pale ice blue)
-fn coherence_to_rgb(c: f32) -> [u8; 3] {
-    const STOPS: [(u8, u8, u8); 4] = [
-        (0x00, 0x00, 0x00), // 0.00 — black
-        (0x0d, 0x3a, 0x6e), // 0.40 — dark navy
-        (0x2d, 0x7f, 0xc0), // 0.70 — steel blue
-        (0xc8, 0xe8, 0xff), // 1.00 — pale ice blue
-    ];
-    let c = c.clamp(0.0, 1.0);
-    let scaled = c * (STOPS.len() - 1) as f32;
-    let lo = (scaled as usize).min(STOPS.len() - 2);
-    let t = scaled - lo as f32;
-    let (r0, g0, b0) = STOPS[lo];
-    let (r1, g1, b1) = STOPS[lo + 1];
-    [
-        lerp_u8(r0, r1, t),
-        lerp_u8(g0, g1, t),
-        lerp_u8(b0, b1, t),
-    ]
-}
-
-fn lerp_u8(a: u8, b: u8, t: f32) -> u8 {
-    (a as f32 + (b as f32 - a as f32) * t).round() as u8
-}

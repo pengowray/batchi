@@ -208,3 +208,70 @@ pub fn build_chromagram_octave_colormaps() -> [Colormap2D; 10] {
         Colormap2D { lut }
     })
 }
+
+/// Build a phase coherence 2D colormap.
+///
+/// - Primary axis (0–255): pixel intensity (magnitude greyscale).
+/// - Secondary axis (0–255): signed phase deviation direction — 128 = coherent
+///   (no deviation), 0 = max backward deviation (blue), 255 = max forward
+///   deviation (red).
+///
+/// Quiet pixels stay black. Coherent pixels (secondary ~128) are bright
+/// blue-white. Deviating pixels shift toward red (forward) or blue (backward).
+pub fn build_phase_coherence_colormap() -> Colormap2D {
+    let mut lut = vec![[0u8; 3]; 256 * 256];
+
+    for sec in 0..256u16 {
+        // Map secondary byte to signed deviation in [-1, 1]
+        let dev = (sec as f32 - 128.0) / 128.0;
+        let abs_dev = dev.abs();
+
+        for pri in 0..256u16 {
+            let intensity = pri as f32 / 255.0;
+
+            // Gate: very quiet pixels stay black
+            if intensity < 0.015 {
+                continue; // [0,0,0] already
+            }
+
+            // Gamma-adjusted brightness
+            let bright = intensity.powf(0.75);
+
+            // Coherent (abs_dev near 0): bright blue-white (matching existing scheme)
+            // Deviating: shift toward red (positive) or deep blue (negative)
+            let coherent_mix = (1.0 - abs_dev * 2.0).max(0.0); // 1 at center, 0 at |dev|>=0.5
+
+            // Coherent color: pale blue-white (#c8e8ff at full brightness)
+            let coh_r = 0.78;
+            let coh_g = 0.91;
+            let coh_b = 1.0;
+
+            let (r, g, b) = if coherent_mix > 0.0 && abs_dev < 0.3 {
+                // Mostly coherent: blue-white
+                (bright * coh_r, bright * coh_g, bright * coh_b)
+            } else if dev > 0.0 {
+                // Forward deviation → red
+                let strength = ((abs_dev - 0.1) / 0.9).clamp(0.0, 1.0);
+                let r = bright * (coh_r + strength * (1.0 - coh_r));
+                let g = bright * coh_g * (1.0 - strength * 0.7);
+                let b = bright * coh_b * (1.0 - strength * 0.85);
+                (r, g, b)
+            } else {
+                // Backward deviation → blue
+                let strength = ((abs_dev - 0.1) / 0.9).clamp(0.0, 1.0);
+                let r = bright * coh_r * (1.0 - strength * 0.85);
+                let g = bright * coh_g * (1.0 - strength * 0.5);
+                let b = bright * (coh_b + strength * 0.0); // already 1.0
+                (r, g, b)
+            };
+
+            lut[sec as usize * 256 + pri as usize] = [
+                (r * 255.0).clamp(0.0, 255.0) as u8,
+                (g * 255.0).clamp(0.0, 255.0) as u8,
+                (b * 255.0).clamp(0.0, 255.0) as u8,
+            ];
+        }
+    }
+
+    Colormap2D { lut }
+}

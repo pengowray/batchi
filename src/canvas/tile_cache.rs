@@ -122,6 +122,11 @@ thread_local! {
     /// Computed once per file so all chroma tiles use the same brightness scale.
     static CHROMA_GLOBAL_MAX: RefCell<HashMap<usize, (f32, f32)>> =
         RefCell::new(HashMap::new());
+
+    /// Separate cache for phase coherence tiles (pre-colored RGBA with 2D colormap applied).
+    static COHERENCE_CACHE: RefCell<TileCache> = RefCell::new(TileCache::new());
+    static COHERENCE_IN_FLIGHT: RefCell<std::collections::HashSet<(usize, usize)>> =
+        RefCell::new(std::collections::HashSet::new());
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -775,6 +780,121 @@ pub fn schedule_chroma_tile(
 
         CHROMA_CACHE.with(|c| c.borrow_mut().insert(file_idx, tile_idx, rendered));
         CHROMA_IN_FLIGHT.with(|s| s.borrow_mut().remove(&key));
+        state.tile_ready_signal.update(|n| *n = n.wrapping_add(1));
+    });
+}
+
+// ── Phase coherence tile cache ────────────────────────────────────────────────
+
+pub fn get_coherence_tile(file_idx: usize, tile_idx: usize) -> Option<()> {
+    COHERENCE_CACHE.with(|c| c.borrow().get(file_idx, tile_idx).map(|_| ()))
+}
+
+pub fn borrow_coherence_tile<R>(file_idx: usize, tile_idx: usize, f: impl FnOnce(&Tile) -> R) -> Option<R> {
+    COHERENCE_CACHE.with(|c| {
+        let mut cache = c.borrow_mut();
+        let key = (file_idx, tile_idx);
+        if cache.tiles.contains_key(&key) {
+            cache.touch(key);
+            drop(cache);
+            COHERENCE_CACHE.with(|c| {
+                c.borrow().tiles.get(&key).map(|t| f(t))
+            })
+        } else {
+            None
+        }
+    })
+}
+
+pub fn clear_coherence_cache() {
+    COHERENCE_CACHE.with(|c| {
+        let mut cache = c.borrow_mut();
+        cache.tiles.clear();
+        cache.lru.clear();
+        cache.total_bytes = 0;
+    });
+    COHERENCE_IN_FLIGHT.with(|s| s.borrow_mut().clear());
+}
+
+pub fn schedule_coherence_tile(
+    state: AppState,
+    file_idx: usize,
+    tile_idx: usize,
+) {
+    use crate::canvas::spectral_store;
+    use crate::dsp::harmonics;
+
+    let key = (file_idx, tile_idx);
+    if COHERENCE_CACHE.with(|c| c.borrow().tiles.contains_key(&key)) { return; }
+    if COHERENCE_IN_FLIGHT.with(|s| s.borrow().contains(&key)) { return; }
+    COHERENCE_IN_FLIGHT.with(|s| s.borrow_mut().insert(key));
+
+    spawn_local(async move {
+        yield_to_browser().await;
+
+        let is_current = state.current_file_index.get_untracked() == Some(file_idx);
+        if !is_current {
+            for _ in 0..3 { yield_to_browser().await; }
+        }
+
+        let still_loaded = state.files.with_untracked(|files| file_idx < files.len());
+        if !still_loaded {
+            COHERENCE_IN_FLIGHT.with(|s| s.borrow_mut().remove(&key));
+            return;
+        }
+
+        // Get audio samples slice + FFT params
+        let tile_data = state.files.with_untracked(|files| {
+            let file = files.get(file_idx)?;
+            let sr = file.audio.sample_rate;
+            let freq_res = file.spectrogram.freq_resolution;
+            let time_res = file.spectrogram.time_resolution;
+            let fft_size = (sr as f64 / freq_res).round() as usize;
+            let hop_size = (time_res * sr as f64).round() as usize;
+
+            let col_start = tile_idx * TILE_COLS;
+            let sample_start = col_start * hop_size;
+            // Need TILE_COLS + 1 frames: sample range = sample_start .. sample_start + (TILE_COLS+1)*hop_size + fft_size - hop_size
+            let sample_end = (sample_start + (TILE_COLS + 1) * hop_size + fft_size).min(file.audio.samples.len());
+            if sample_start >= file.audio.samples.len() || sample_start >= sample_end {
+                return None;
+            }
+
+            let samples = file.audio.samples[sample_start..sample_end].to_vec();
+
+            // Global max magnitude for normalisation
+            let store_max = spectral_store::get_max_magnitude(file_idx);
+            let max_mag = if store_max > 0.0 {
+                store_max
+            } else {
+                // Fall back to in-memory spectrogram max
+                file.spectrogram.columns.iter()
+                    .flat_map(|c| c.magnitudes.iter())
+                    .copied()
+                    .fold(0.0f32, f32::max)
+                    .max(1e-10)
+            };
+
+            Some((samples, fft_size, hop_size, max_mag))
+        });
+
+        let Some((samples, fft_size, hop_size, max_mag)) = tile_data else {
+            COHERENCE_IN_FLIGHT.with(|s| s.borrow_mut().remove(&key));
+            return;
+        };
+
+        yield_to_browser().await;
+
+        let rendered = harmonics::compute_tile_phase_data(
+            &samples,
+            TILE_COLS,
+            fft_size,
+            hop_size,
+            max_mag,
+        );
+
+        COHERENCE_CACHE.with(|c| c.borrow_mut().insert(file_idx, tile_idx, rendered));
+        COHERENCE_IN_FLIGHT.with(|s| s.borrow_mut().remove(&key));
         state.tile_ready_signal.update(|n| *n = n.wrapping_add(1));
     });
 }

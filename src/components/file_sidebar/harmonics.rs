@@ -95,24 +95,6 @@ pub(crate) fn HarmonicsPanel() -> impl IntoView {
                             // --- Phase Coherence ---
                             <div class="setting-group">
                                 <div class="setting-group-title">"Phase Coherence"</div>
-                                <div style="padding:2px 12px 6px;font-size:10px;color:#666;line-height:1.5">
-                                    "Each FFT frame's phase is compared to the previous one. Natural harmonics have a \
-                                    stable, predictable phase relationship between frames. Heavy DSP \
-                                    randomises this, leaving a fingerprint of drifting phase."
-                                </div>
-                                // Heatmap colour scale legend
-                                <div style="padding:0 12px 2px">
-                                    <div style="background:linear-gradient(to right,#000000,#0d3a6e,#2d7fc0,#c8e8ff);\
-                                        height:7px;border-radius:2px"/>
-                                    <div style="display:flex;justify-content:space-between;\
-                                        font-size:9px;color:#555;margin-top:2px">
-                                        <span>"Low (processed)"</span>
-                                        <span>"High (natural)"</span>
-                                    </div>
-                                </div>
-                                <div style="padding:2px 12px 4px;font-size:10px;color:#555">
-                                    "The spectrogram above uses this scale. \u{2192} bright = phase-locked; dark = drifting."
-                                </div>
                                 <div class="analysis-stats">
                                     <div class="analysis-stat"
                                         title="Mean phase coherence across all frequency bins above the noise floor. \

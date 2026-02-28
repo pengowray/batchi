@@ -1029,6 +1029,101 @@ pub fn blit_flow_tiles_viewport(
     any_drawn || preview.is_some()
 }
 
+/// Blit phase coherence tiles from the coherence tile cache.
+///
+/// Coherence tiles store already-colored RGBA pixels (2D colormap pre-applied),
+/// so no colormap step is needed during blit. Structurally identical to flow tiles.
+pub fn blit_coherence_tiles_viewport(
+    ctx: &CanvasRenderingContext2d,
+    canvas: &HtmlCanvasElement,
+    file_idx: usize,
+    total_cols: usize,
+    scroll_col: f64,
+    zoom: f64,
+    freq_crop_lo: f64,
+    freq_crop_hi: f64,
+) -> bool {
+    let cw = canvas.width() as f64;
+    let ch = canvas.height() as f64;
+
+    // Dark background for areas without tiles
+    ctx.set_fill_style_str("#000");
+    ctx.fill_rect(0.0, 0.0, cw, ch);
+
+    if total_cols == 0 || zoom <= 0.0 {
+        return false;
+    }
+
+    let visible_cols = cw / zoom;
+    let src_start = scroll_col.max(0.0).min((total_cols as f64 - 1.0).max(0.0));
+    let src_end = (src_start + visible_cols).min(total_cols as f64);
+
+    let first_tile = (src_start / TILE_COLS as f64).floor() as usize;
+    let last_tile = ((src_end - 1.0).max(0.0) / TILE_COLS as f64).floor() as usize;
+    let n_tiles = (total_cols + TILE_COLS - 1) / TILE_COLS;
+
+    let fc_lo = freq_crop_lo.max(0.0);
+    let fc_hi = freq_crop_hi.max(0.01);
+
+    let mut any_drawn = false;
+
+    for tile_idx in first_tile..=last_tile.min(n_tiles.saturating_sub(1)) {
+        let tile_col_start = tile_idx * TILE_COLS;
+
+        let drawn = tile_cache::borrow_coherence_tile(file_idx, tile_idx, |tile| {
+            let tw = tile.rendered.width as f64;
+            let th = tile.rendered.height as f64;
+            if tw == 0.0 || th == 0.0 { return; }
+
+            // Coherence tiles are already colored — use pixels directly
+            let clamped = Clamped(&tile.rendered.pixels[..]);
+            let Ok(img) = ImageData::new_with_u8_clamped_array_and_sh(
+                clamped, tile.rendered.width, tile.rendered.height,
+            ) else { return };
+
+            let Some((tmp, tmp_ctx)) = get_tmp_canvas(tile.rendered.width, tile.rendered.height) else { return };
+            if tmp.width() != tile.rendered.width || tmp.height() != tile.rendered.height {
+                tmp.set_width(tile.rendered.width);
+                tmp.set_height(tile.rendered.height);
+            }
+            let _ = tmp_ctx.put_image_data(&img, 0.0, 0.0);
+
+            let tile_src_x = (src_start - tile_col_start as f64).max(0.0);
+            let tile_src_end = (src_end - tile_col_start as f64).min(tw);
+            let tile_src_w = (tile_src_end - tile_src_x).max(0.0);
+            if tile_src_w <= 0.0 { return; }
+
+            let (src_y, src_h, dst_y, dst_h) = if fc_hi <= 1.0 {
+                let sy = th * (1.0 - fc_hi);
+                let sh = th * (fc_hi - fc_lo).max(0.001);
+                (sy, sh, 0.0, ch)
+            } else {
+                let fc_range = (fc_hi - fc_lo).max(0.001);
+                let data_frac = (1.0 - fc_lo) / fc_range;
+                let sh = th * (1.0 - fc_lo);
+                (0.0, sh, ch * (1.0 - data_frac), ch * data_frac)
+            };
+
+            let dst_x_raw = ((tile_col_start as f64 + tile_src_x) - src_start) * zoom;
+            let dst_x_end_raw = ((tile_col_start as f64 + tile_src_x + tile_src_w) - src_start) * zoom;
+            let dst_x = dst_x_raw.floor();
+            let dst_w = (dst_x_end_raw.ceil() - dst_x).max(1.0);
+
+            let _ = ctx.draw_image_with_html_canvas_element_and_sw_and_sh_and_dx_and_dy_and_dw_and_dh(
+                &tmp,
+                tile_src_x, src_y, tile_src_w, src_h,
+                dst_x, dst_y, dst_w, dst_h,
+            );
+        });
+
+        if drawn.is_some() {
+            any_drawn = true;
+        }
+    }
+
+    any_drawn
+}
+
 /// Compute RGB for a chromagram flow pixel.
 /// class_byte (R), note_byte (G), flow_byte (B: 128=neutral, 0=decrease, 255=increase).
 fn chromagram_flow_pixel(class_byte: u8, note_byte: u8, flow_byte: u8) -> [u8; 3] {

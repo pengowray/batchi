@@ -251,7 +251,7 @@ fn MainArea() -> impl IntoView {
                         <div class="main-view">
                             // Show the selected main view
                             {move || match state.main_view.get() {
-                                MainView::Spectrogram | MainView::Flow => view! { <Spectrogram /> }.into_any(),
+                                MainView::Spectrogram | MainView::Flow | MainView::PhaseCoherence => view! { <Spectrogram /> }.into_any(),
                                 MainView::Waveform => view! {
                                     <div class="main-waveform-full">
                                         <Waveform />

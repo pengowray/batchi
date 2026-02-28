@@ -564,3 +564,112 @@ fn mean_f32(v: &[f32]) -> f32 {
         v.iter().sum::<f32>() / v.len() as f32
     }
 }
+
+// ---------------------------------------------------------------------------
+// Tile-based phase coherence rendering
+// ---------------------------------------------------------------------------
+
+/// Compute phase coherence tile data for a range of audio samples.
+///
+/// Returns a `PreRendered` with pre-colored RGBA pixels using a 2D colormap:
+/// - Primary axis: magnitude intensity (greyscale)
+/// - Secondary axis: signed phase deviation direction
+///
+/// `samples`: raw audio covering at least `(col_count + 1) * hop_size + fft_size` samples.
+/// `col_count`: number of output columns (typically 256 / TILE_COLS).
+/// `fft_size`, `hop_size`: STFT parameters matching the main spectrogram.
+/// `max_mag`: global max magnitude for intensity normalisation.
+pub fn compute_tile_phase_data(
+    samples: &[f32],
+    col_count: usize,
+    fft_size: usize,
+    hop_size: usize,
+    max_mag: f32,
+) -> crate::canvas::spectrogram_renderer::PreRendered {
+    use crate::canvas::colors::magnitude_to_greyscale;
+    use crate::canvas::colormap_2d::build_phase_coherence_colormap;
+
+    let colormap = build_phase_coherence_colormap();
+
+    // Compute complex STFT frames. We need col_count + 1 frames to produce
+    // col_count phase-deviation columns (deviation between consecutive frames).
+    let n_frames_needed = col_count + 1;
+    let fft = HARM_FFT_PLANNER.with(|p| p.borrow_mut().plan_fft_forward(fft_size));
+    let window = hann_window(fft_size);
+    let n_bins = fft_size / 2 + 1;
+
+    let mut frames: Vec<Vec<Complex32>> = Vec::with_capacity(n_frames_needed);
+    let mut input = fft.make_input_vec();
+    let mut spectrum = fft.make_output_vec();
+
+    for f_idx in 0..n_frames_needed {
+        let pos = f_idx * hop_size;
+        if pos + fft_size > samples.len() {
+            break;
+        }
+        for (inp, (&s, &w)) in input
+            .iter_mut()
+            .zip(samples[pos..pos + fft_size].iter().zip(window.iter()))
+        {
+            *inp = s * w;
+        }
+        fft.process(&mut input, &mut spectrum).expect("FFT failed");
+        frames.push(spectrum.to_vec());
+    }
+
+    let actual_cols = if frames.len() >= 2 { frames.len() - 1 } else { 0 };
+    let width = actual_cols.max(1) as u32;
+    let height = n_bins as u32;
+    let mut pixels = vec![0u8; (width as usize) * (height as usize) * 4];
+
+    // Set all alpha to 255
+    for i in 0..(width as usize * height as usize) {
+        pixels[i * 4 + 3] = 255;
+    }
+
+    for col in 0..actual_cols {
+        let frame_prev = &frames[col];
+        let frame_curr = &frames[col + 1];
+
+        for k in 0..n_bins {
+            let mag = frame_curr[k].norm();
+            let mag_prev = frame_prev[k].norm();
+
+            // Gate: skip very quiet bins — phase is undefined there
+            let (intensity_byte, deviation_byte) = if mag < 1e-8 || mag_prev < 1e-8 {
+                (0u8, 128u8) // black, neutral
+            } else {
+                let grey = magnitude_to_greyscale(mag, max_mag);
+
+                // Expected phase advance at bin k per hop
+                let expected = 2.0 * PI * k as f32 * hop_size as f32 / fft_size as f32;
+                // Actual phase advance: arg(X[t+1] · conj(X[t]))
+                let cross = frame_curr[k] * frame_prev[k].conj();
+                let actual = cross.arg();
+                let deviation = wrap_to_pi(actual - expected);
+
+                // Map signed deviation [-PI, PI] to byte [0, 255] where 128 = neutral
+                let dev_byte = ((deviation / PI) * 128.0 + 128.0).clamp(0.0, 255.0) as u8;
+
+                (grey, dev_byte)
+            };
+
+            // Apply 2D colormap
+            let [r, g, b] = colormap.apply(intensity_byte, deviation_byte);
+
+            // Write pixel: row 0 = highest frequency (bin n_bins-1)
+            let row = n_bins - 1 - k;
+            let idx = (row * width as usize + col) * 4;
+            pixels[idx] = r;
+            pixels[idx + 1] = g;
+            pixels[idx + 2] = b;
+            // alpha already 255
+        }
+    }
+
+    crate::canvas::spectrogram_renderer::PreRendered {
+        width,
+        height,
+        pixels,
+    }
+}
