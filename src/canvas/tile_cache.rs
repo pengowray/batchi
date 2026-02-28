@@ -117,6 +117,11 @@ thread_local! {
     static CHROMA_CACHE: RefCell<TileCache> = RefCell::new(TileCache::new());
     static CHROMA_IN_FLIGHT: RefCell<std::collections::HashSet<(usize, usize)>> =
         RefCell::new(std::collections::HashSet::new());
+
+    /// Cached per-file global chromagram normalisation maxima (max_class, max_note).
+    /// Computed once per file so all chroma tiles use the same brightness scale.
+    static CHROMA_GLOBAL_MAX: RefCell<HashMap<usize, (f32, f32)>> =
+        RefCell::new(HashMap::new());
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -676,6 +681,7 @@ pub fn clear_chroma_cache() {
         cache.total_bytes = 0;
     });
     CHROMA_IN_FLIGHT.with(|s| s.borrow_mut().clear());
+    CHROMA_GLOBAL_MAX.with(|m| m.borrow_mut().clear());
 }
 
 /// Schedule a chromagram tile for background generation.
@@ -713,9 +719,32 @@ pub fn schedule_chroma_tile(
             files.get(file_idx).map(|f| f.spectrogram.freq_resolution)
         }).unwrap_or(1.0);
 
+        // Compute/retrieve global chroma max for consistent normalisation across tiles.
+        // Try cached value first, then compute from spectral store or in-memory columns.
+        let global_max = CHROMA_GLOBAL_MAX.with(|m| m.borrow().get(&file_idx).copied());
+        let (max_class, max_note) = if let Some(gm) = global_max {
+            gm
+        } else {
+            // Try spectral store (iterates by reference, no cloning)
+            let from_store = spectral_store::compute_chroma_global_max(file_idx, freq_res);
+            let gm = from_store.unwrap_or_else(|| {
+                // Fall back to in-memory columns
+                state.files.with_untracked(|files| {
+                    files.get(file_idx)
+                        .filter(|f| !f.spectrogram.columns.is_empty())
+                        .map(|f| chromagram::compute_chroma_max(&f.spectrogram.columns, freq_res))
+                        .unwrap_or((0.0, 0.0))
+                })
+            });
+            if gm.0 > 0.0 {
+                CHROMA_GLOBAL_MAX.with(|m| m.borrow_mut().insert(file_idx, gm));
+            }
+            gm
+        };
+
         // Try spectral store first
         let result = spectral_store::with_columns(file_idx, col_start, col_start + TILE_COLS, |cols, _max_mag| {
-            chromagram::pre_render_chromagram_columns(cols, freq_res)
+            chromagram::pre_render_chromagram_columns(cols, freq_res, max_class, max_note)
         });
 
         let rendered = if let Some(r) = result {
@@ -730,6 +759,8 @@ pub fn schedule_chroma_tile(
                     Some(chromagram::pre_render_chromagram_columns(
                         &f.spectrogram.columns[col_start..end],
                         freq_res,
+                        max_class,
+                        max_note,
                     ))
                 })
             });

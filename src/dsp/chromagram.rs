@@ -58,7 +58,30 @@ pub fn stft_to_chromagram(
 /// Each pitch class gets `NUM_OCTAVES` sub-rows.
 pub const CHROMA_ROWS: usize = NUM_PITCH_CLASSES * NUM_OCTAVES;
 
+/// Compute the global chromagram max (max_class, max_note) across a slice of
+/// STFT columns.  Used to normalise all tiles to the same scale — analogous to
+/// `global_max_magnitude` for the main spectrogram.
+pub fn compute_chroma_max(
+    stft_columns: &[crate::types::SpectrogramColumn],
+    freq_resolution: f64,
+) -> (f32, f32) {
+    let mut max_class = 0.0f32;
+    let mut max_note = 0.0f32;
+    for col in stft_columns {
+        let ch = stft_to_chromagram(&col.magnitudes, freq_resolution);
+        for &v in &ch.pitch_classes { max_class = max_class.max(v); }
+        for octaves in &ch.octave_detail {
+            for &v in octaves { max_note = max_note.max(v); }
+        }
+    }
+    (max_class, max_note)
+}
+
 /// Pre-render a set of STFT columns as a chromagram tile.
+///
+/// `max_class` / `max_note` are the **global** normalisation maxima (from
+/// `compute_chroma_max` over the entire file).  All tiles use the same values
+/// so brightness is consistent across the full chromagram.
 ///
 /// Returns greyscale RGBA pixels where:
 /// - Width = number of columns
@@ -76,6 +99,8 @@ pub const CHROMA_ROWS: usize = NUM_PITCH_CLASSES * NUM_OCTAVES;
 pub fn pre_render_chromagram_columns(
     stft_columns: &[crate::types::SpectrogramColumn],
     freq_resolution: f64,
+    max_class: f32,
+    max_note: f32,
 ) -> crate::canvas::spectrogram_renderer::PreRendered {
     use crate::canvas::spectrogram_renderer::PreRendered;
 
@@ -87,26 +112,16 @@ pub fn pre_render_chromagram_columns(
     let height = CHROMA_ROWS;
     let mut pixels = vec![0u8; width * height * 4];
 
-    // First pass: compute all chromagram columns and find max values for normalization
+    // Compute all chromagram columns
     let chromas: Vec<ChromagramColumn> = stft_columns.iter()
         .map(|col| stft_to_chromagram(&col.magnitudes, freq_resolution))
         .collect();
-
-    // Find global max for normalization
-    let max_class = chromas.iter()
-        .flat_map(|c| c.pitch_classes.iter())
-        .copied()
-        .fold(0.0f32, f32::max);
-    let max_note = chromas.iter()
-        .flat_map(|c| c.octave_detail.iter().flat_map(|o| o.iter()))
-        .copied()
-        .fold(0.0f32, f32::max);
 
     if max_class <= 0.0 || max_note <= 0.0 {
         return PreRendered { width: width as u32, height: height as u32, pixels };
     }
 
-    // Second pass: render pixels with flow data in B channel
+    // Render pixels with flow data in B channel
     for (col_idx, chroma) in chromas.iter().enumerate() {
         for pc in 0..NUM_PITCH_CLASSES {
             let class_norm = (chroma.pitch_classes[pc] / max_class).sqrt().min(1.0);
