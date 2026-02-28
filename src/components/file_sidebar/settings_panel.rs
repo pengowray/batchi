@@ -1,6 +1,6 @@
 use leptos::prelude::*;
 use wasm_bindgen::JsCast;
-use crate::state::{AppState, MainView, SpectrogramDisplay};
+use crate::state::{AppState, ChromaColormap, MainView, SpectrogramDisplay};
 use crate::dsp::zero_crossing::zero_crossing_frequency;
 
 #[component]
@@ -11,9 +11,9 @@ pub(crate) fn SpectrogramSettingsPanel() -> impl IntoView {
         let target = ev.target().unwrap();
         let select: web_sys::HtmlSelectElement = target.unchecked_into();
         let mode = match select.value().as_str() {
-            "centroid" => SpectrogramDisplay::MovementCentroid,
-            "gradient" => SpectrogramDisplay::MovementGradient,
-            _ => SpectrogramDisplay::MovementFlow,
+            "centroid" => SpectrogramDisplay::FlowCentroid,
+            "gradient" => SpectrogramDisplay::FlowGradient,
+            _ => SpectrogramDisplay::FlowOptical,
         };
         state.spectrogram_display.set(mode);
     };
@@ -22,15 +22,15 @@ pub(crate) fn SpectrogramSettingsPanel() -> impl IntoView {
         let target = ev.target().unwrap();
         let input: web_sys::HtmlInputElement = target.unchecked_into();
         if let Ok(val) = input.value().parse::<f32>() {
-            state.mv_intensity_gate.set(val / 100.0);
+            state.flow_intensity_gate.set(val / 100.0);
         }
     };
 
-    let on_movement_gate_change = move |ev: web_sys::Event| {
+    let on_flow_gate_change = move |ev: web_sys::Event| {
         let target = ev.target().unwrap();
         let input: web_sys::HtmlInputElement = target.unchecked_into();
         if let Ok(val) = input.value().parse::<f32>() {
-            state.mv_movement_gate.set(val / 100.0);
+            state.flow_gate.set(val / 100.0);
         }
     };
 
@@ -38,7 +38,7 @@ pub(crate) fn SpectrogramSettingsPanel() -> impl IntoView {
         let target = ev.target().unwrap();
         let input: web_sys::HtmlInputElement = target.unchecked_into();
         if let Ok(val) = input.value().parse::<f32>() {
-            state.mv_opacity.set(val / 100.0);
+            state.flow_opacity.set(val / 100.0);
         }
     };
 
@@ -78,24 +78,24 @@ pub(crate) fn SpectrogramSettingsPanel() -> impl IntoView {
                 </div>
             </div>
 
-            // Movement settings (shown when Movement view is active)
+            // Flow settings (shown when Flow view is active)
             {move || {
-                if state.main_view.get() == MainView::Movement {
+                if state.main_view.get() == MainView::Flow {
                     view! {
                         <div class="setting-group">
-                            <div class="setting-group-title">"Movement"</div>
+                            <div class="setting-group-title">"Flow"</div>
                             <div class="setting-row">
                                 <span class="setting-label">"Algorithm"</span>
                                 <select
                                     class="setting-select"
                                     on:change=on_display_change
                                     prop:value=move || match state.spectrogram_display.get() {
-                                        SpectrogramDisplay::MovementCentroid => "centroid",
-                                        SpectrogramDisplay::MovementGradient => "gradient",
-                                        SpectrogramDisplay::MovementFlow => "flow",
+                                        SpectrogramDisplay::FlowCentroid => "centroid",
+                                        SpectrogramDisplay::FlowGradient => "gradient",
+                                        SpectrogramDisplay::FlowOptical => "flow",
                                     }
                                 >
-                                    <option value="flow">"Flow"</option>
+                                    <option value="flow">"Optical"</option>
                                     <option value="centroid">"Centroid"</option>
                                     <option value="gradient">"Gradient"</option>
                                 </select>
@@ -109,14 +109,14 @@ pub(crate) fn SpectrogramSettingsPanel() -> impl IntoView {
                                         min="0"
                                         max="100"
                                         step="1"
-                                        prop:value=move || (state.mv_intensity_gate.get() * 100.0).round().to_string()
+                                        prop:value=move || (state.flow_intensity_gate.get() * 100.0).round().to_string()
                                         on:input=on_intensity_gate_change
                                     />
-                                    <span class="setting-value">{move || format!("{}%", (state.mv_intensity_gate.get() * 100.0).round() as u32)}</span>
+                                    <span class="setting-value">{move || format!("{}%", (state.flow_intensity_gate.get() * 100.0).round() as u32)}</span>
                                 </div>
                             </div>
                             <div class="setting-row">
-                                <span class="setting-label">"Movement gate"</span>
+                                <span class="setting-label">"Flow gate"</span>
                                 <div class="setting-slider-row">
                                     <input
                                         type="range"
@@ -124,10 +124,10 @@ pub(crate) fn SpectrogramSettingsPanel() -> impl IntoView {
                                         min="0"
                                         max="100"
                                         step="1"
-                                        prop:value=move || (state.mv_movement_gate.get() * 100.0).round().to_string()
-                                        on:input=on_movement_gate_change
+                                        prop:value=move || (state.flow_gate.get() * 100.0).round().to_string()
+                                        on:input=on_flow_gate_change
                                     />
-                                    <span class="setting-value">{move || format!("{}%", (state.mv_movement_gate.get() * 100.0).round() as u32)}</span>
+                                    <span class="setting-value">{move || format!("{}%", (state.flow_gate.get() * 100.0).round() as u32)}</span>
                                 </div>
                             </div>
                             <div class="setting-row">
@@ -139,11 +139,52 @@ pub(crate) fn SpectrogramSettingsPanel() -> impl IntoView {
                                         min="0"
                                         max="100"
                                         step="1"
-                                        prop:value=move || (state.mv_opacity.get() * 100.0).to_string()
+                                        prop:value=move || (state.flow_opacity.get() * 100.0).to_string()
                                         on:input=on_opacity_change
                                     />
-                                    <span class="setting-value">{move || format!("{}%", (state.mv_opacity.get() * 100.0) as u32)}</span>
+                                    <span class="setting-value">{move || format!("{}%", (state.flow_opacity.get() * 100.0) as u32)}</span>
                                 </div>
+                            </div>
+                        </div>
+                    }.into_any()
+                } else {
+                    view! { <span></span> }.into_any()
+                }
+            }}
+
+            // Chromagram settings (shown when Chromagram view is active)
+            {move || {
+                if state.main_view.get() == MainView::Chromagram {
+                    view! {
+                        <div class="setting-group">
+                            <div class="setting-group-title">"Chromagram"</div>
+                            <div class="setting-row">
+                                <span class="setting-label">"Colormap"</span>
+                                <select
+                                    class="setting-select"
+                                    on:change=move |ev: web_sys::Event| {
+                                        let target = ev.target().unwrap();
+                                        let select: web_sys::HtmlSelectElement = target.unchecked_into();
+                                        let mode = match select.value().as_str() {
+                                            "pitch_class" => ChromaColormap::PitchClass,
+                                            "octave" => ChromaColormap::Octave,
+                                            "flow" => ChromaColormap::Flow,
+                                            _ => ChromaColormap::Warm,
+                                        };
+                                        state.chroma_colormap.set(mode);
+                                    }
+                                    prop:value=move || match state.chroma_colormap.get() {
+                                        ChromaColormap::Warm => "warm",
+                                        ChromaColormap::PitchClass => "pitch_class",
+                                        ChromaColormap::Octave => "octave",
+                                        ChromaColormap::Flow => "flow",
+                                    }
+                                >
+                                    <option value="warm">"Warm"</option>
+                                    <option value="pitch_class">"Pitch Class"</option>
+                                    <option value="octave">"Octave"</option>
+                                    <option value="flow">"Flow"</option>
+                                </select>
                             </div>
                         </div>
                     }.into_any()

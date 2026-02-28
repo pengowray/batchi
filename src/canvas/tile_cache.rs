@@ -11,7 +11,7 @@ use std::collections::HashMap;
 use leptos::prelude::*;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
-use crate::canvas::spectrogram_renderer::{self, PreRendered, MovementAlgo};
+use crate::canvas::spectrogram_renderer::{self, PreRendered, FlowAlgo};
 use crate::state::{AppState, LoadedFile};
 
 /// Number of spectrogram columns per tile.
@@ -108,9 +108,9 @@ thread_local! {
     static LOD0_IN_FLIGHT: RefCell<std::collections::HashSet<(usize, usize)>> =
         RefCell::new(std::collections::HashSet::new());
 
-    /// Separate cache for movement-mode tiles (pre-colored RGBA with 2D colormap applied).
-    static MV_CACHE: RefCell<TileCache> = RefCell::new(TileCache::new());
-    static MV_IN_FLIGHT: RefCell<std::collections::HashSet<(usize, usize)>> =
+    /// Separate cache for flow-mode tiles (pre-colored RGBA with 2D colormap applied).
+    static FLOW_CACHE: RefCell<TileCache> = RefCell::new(TileCache::new());
+    static FLOW_IN_FLIGHT: RefCell<std::collections::HashSet<(usize, usize)>> =
         RefCell::new(std::collections::HashSet::new());
 
     /// Separate cache for chromagram tiles.
@@ -513,20 +513,20 @@ pub fn tiles_ready(file_idx: usize, n_tiles: usize) -> usize {
     })
 }
 
-// ── Movement tile cache ──────────────────────────────────────────────────────
+// ── Flow tile cache ──────────────────────────────────────────────────────────
 
-pub fn get_mv_tile(file_idx: usize, tile_idx: usize) -> Option<()> {
-    MV_CACHE.with(|c| c.borrow().get(file_idx, tile_idx).map(|_| ()))
+pub fn get_flow_tile(file_idx: usize, tile_idx: usize) -> Option<()> {
+    FLOW_CACHE.with(|c| c.borrow().get(file_idx, tile_idx).map(|_| ()))
 }
 
-pub fn borrow_mv_tile<R>(file_idx: usize, tile_idx: usize, f: impl FnOnce(&Tile) -> R) -> Option<R> {
-    MV_CACHE.with(|c| {
+pub fn borrow_flow_tile<R>(file_idx: usize, tile_idx: usize, f: impl FnOnce(&Tile) -> R) -> Option<R> {
+    FLOW_CACHE.with(|c| {
         let mut cache = c.borrow_mut();
         let key = (file_idx, tile_idx);
         if cache.tiles.contains_key(&key) {
             cache.touch(key);
             drop(cache);
-            MV_CACHE.with(|c| {
+            FLOW_CACHE.with(|c| {
                 c.borrow().tiles.get(&key).map(|t| f(t))
             })
         } else {
@@ -535,42 +535,42 @@ pub fn borrow_mv_tile<R>(file_idx: usize, tile_idx: usize, f: impl FnOnce(&Tile)
     })
 }
 
-/// Clear all movement tiles (called when algorithm or settings change).
-pub fn clear_mv_cache() {
-    MV_CACHE.with(|c| {
+/// Clear all flow tiles (called when algorithm or settings change).
+pub fn clear_flow_cache() {
+    FLOW_CACHE.with(|c| {
         let mut cache = c.borrow_mut();
         cache.tiles.clear();
         cache.lru.clear();
         cache.total_bytes = 0;
     });
-    MV_IN_FLIGHT.with(|s| s.borrow_mut().clear());
+    FLOW_IN_FLIGHT.with(|s| s.borrow_mut().clear());
 }
 
-/// Clear movement tiles for a specific file.
-pub fn clear_mv_file(file_idx: usize) {
-    MV_CACHE.with(|c| c.borrow_mut().clear_for_file(file_idx));
-    MV_IN_FLIGHT.with(|s| s.borrow_mut().retain(|k| k.0 != file_idx));
+/// Clear flow tiles for a specific file.
+pub fn clear_flow_file(file_idx: usize) {
+    FLOW_CACHE.with(|c| c.borrow_mut().clear_for_file(file_idx));
+    FLOW_IN_FLIGHT.with(|s| s.borrow_mut().retain(|k| k.0 != file_idx));
 }
 
-/// Schedule a movement tile for background generation.
+/// Schedule a flow tile for background generation.
 ///
 /// Reads STFT columns from the spectral store (or from `file.spectrogram.columns`),
 /// fetches the last column of the previous tile for boundary shift computation,
 /// computes per-pixel shifts, and applies the 2D colormap.
 ///
 /// The resulting tile stores pre-colored RGBA — no colormap step during blit.
-pub fn schedule_movement_tile(
+pub fn schedule_flow_tile(
     state: AppState,
     file_idx: usize,
     tile_idx: usize,
-    algo: MovementAlgo,
+    algo: FlowAlgo,
 ) {
     use crate::canvas::spectral_store;
 
     let key = (file_idx, tile_idx);
-    if MV_CACHE.with(|c| c.borrow().tiles.contains_key(&key)) { return; }
-    if MV_IN_FLIGHT.with(|s| s.borrow().contains(&key)) { return; }
-    MV_IN_FLIGHT.with(|s| s.borrow_mut().insert(key));
+    if FLOW_CACHE.with(|c| c.borrow().tiles.contains_key(&key)) { return; }
+    if FLOW_IN_FLIGHT.with(|s| s.borrow().contains(&key)) { return; }
+    FLOW_IN_FLIGHT.with(|s| s.borrow_mut().insert(key));
 
     spawn_local(async move {
         yield_to_browser().await;
@@ -582,14 +582,14 @@ pub fn schedule_movement_tile(
 
         let still_loaded = state.files.with_untracked(|files| file_idx < files.len());
         if !still_loaded {
-            MV_IN_FLIGHT.with(|s| s.borrow_mut().remove(&key));
+            FLOW_IN_FLIGHT.with(|s| s.borrow_mut().remove(&key));
             return;
         }
 
-        // Read movement settings
-        let ig = state.mv_intensity_gate.get_untracked();
-        let mg = state.mv_movement_gate.get_untracked();
-        let op = state.mv_opacity.get_untracked();
+        // Read flow settings
+        let ig = state.flow_intensity_gate.get_untracked();
+        let mg = state.flow_gate.get_untracked();
+        let op = state.flow_opacity.get_untracked();
 
         let col_start = tile_idx * TILE_COLS;
 
@@ -605,7 +605,7 @@ pub fn schedule_movement_tile(
             } else {
                 None
             };
-            spectrogram_renderer::pre_render_movement_columns(
+            spectrogram_renderer::pre_render_flow_columns(
                 cols, prev_col.as_deref(), max_mag, algo, ig, mg, op,
             )
         });
@@ -626,7 +626,7 @@ pub fn schedule_movement_tile(
                     } else {
                         None
                     };
-                    Some(spectrogram_renderer::pre_render_movement_columns(
+                    Some(spectrogram_renderer::pre_render_flow_columns(
                         cols, prev_col, max_mag, algo, ig, mg, op,
                     ))
                 })
@@ -634,14 +634,14 @@ pub fn schedule_movement_tile(
             match fallback {
                 Some(r) => r,
                 None => {
-                    MV_IN_FLIGHT.with(|s| s.borrow_mut().remove(&key));
+                    FLOW_IN_FLIGHT.with(|s| s.borrow_mut().remove(&key));
                     return;
                 }
             }
         };
 
-        MV_CACHE.with(|c| c.borrow_mut().insert(file_idx, tile_idx, rendered));
-        MV_IN_FLIGHT.with(|s| s.borrow_mut().remove(&key));
+        FLOW_CACHE.with(|c| c.borrow_mut().insert(file_idx, tile_idx, rendered));
+        FLOW_IN_FLIGHT.with(|s| s.borrow_mut().remove(&key));
         state.tile_ready_signal.update(|n| *n = n.wrapping_add(1));
     });
 }

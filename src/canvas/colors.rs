@@ -45,9 +45,9 @@ fn smoothstep(x: f32, edge0: f32, edge1: f32) -> f32 {
 ///
 /// Two smooth gates control when color appears:
 /// - `intensity_gate` (0.0–1.0): how bright must a pixel be to show color
-/// - `movement_gate` (0.0–1.0): how large must the shift be to show color
+/// - `flow_gate` (0.0–1.0): how large must the shift be to show color
 /// - `opacity` (0.0–1.0): overall color strength multiplier
-pub fn movement_rgb(grey: u8, shift: f32, intensity_gate: f32, movement_gate: f32, opacity: f32) -> [u8; 3] {
+pub fn flow_rgb(grey: u8, shift: f32, intensity_gate: f32, flow_gate: f32, opacity: f32) -> [u8; 3] {
     let g_norm = grey as f32 / 255.0;
 
     // Smooth intensity gate: ramp from gate*0.6 to gate*1.4
@@ -55,13 +55,13 @@ pub fn movement_rgb(grey: u8, shift: f32, intensity_gate: f32, movement_gate: f3
     let ig_hi = (intensity_gate * 1.4).min(1.0);
     let intensity_factor = smoothstep(g_norm, ig_lo, ig_hi);
 
-    // Smooth movement gate: ramp based on |shift|
+    // Smooth flow gate: ramp based on |shift|
     let abs_shift = shift.abs();
-    let mg_lo = movement_gate * 0.3;
-    let mg_hi = (movement_gate * 2.0).max(0.05);
-    let movement_factor = smoothstep(abs_shift, mg_lo, mg_hi);
+    let mg_lo = flow_gate * 0.3;
+    let mg_hi = (flow_gate * 2.0).max(0.05);
+    let flow_factor = smoothstep(abs_shift, mg_lo, mg_hi);
 
-    let effective = intensity_factor * movement_factor * opacity;
+    let effective = intensity_factor * flow_factor * opacity;
     if effective < 0.001 {
         return [grey, grey, grey];
     }

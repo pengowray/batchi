@@ -33,10 +33,10 @@ pub enum PlaybackMode {
 
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
 pub enum SpectrogramDisplay {
-    MovementCentroid,
-    MovementGradient,
+    FlowCentroid,
+    FlowGradient,
     #[default]
-    MovementFlow,
+    FlowOptical,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
@@ -141,7 +141,7 @@ pub enum MainView {
     Spectrogram,
     Waveform,
     ZcChart,
-    Movement,
+    Flow,
     Chromagram,
 }
 
@@ -151,7 +151,7 @@ impl MainView {
             Self::Spectrogram => "Spectrogram",
             Self::Waveform => "Waveform",
             Self::ZcChart => "ZC Chart",
-            Self::Movement => "Movement",
+            Self::Flow => "Flow",
             Self::Chromagram => "Chromagram",
         }
     }
@@ -161,7 +161,7 @@ impl MainView {
             Self::Spectrogram => "Spec",
             Self::Waveform => "Wave",
             Self::ZcChart => "ZC",
-            Self::Movement => "Mvmt",
+            Self::Flow => "Flow",
             Self::Chromagram => "Chroma",
         }
     }
@@ -170,7 +170,7 @@ impl MainView {
         Self::Spectrogram,
         Self::Waveform,
         Self::ZcChart,
-        Self::Movement,
+        Self::Flow,
         Self::Chromagram,
     ];
 }
@@ -220,6 +220,33 @@ pub enum ColormapPreference {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
+pub enum ChromaColormap {
+    #[default]
+    Warm,
+    PitchClass,
+    Octave,
+    Flow,
+}
+
+impl ChromaColormap {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Warm => "Warm",
+            Self::PitchClass => "Pitch Class",
+            Self::Octave => "Octave",
+            Self::Flow => "Flow",
+        }
+    }
+
+    pub const ALL: &'static [ChromaColormap] = &[
+        Self::Warm,
+        Self::PitchClass,
+        Self::Octave,
+        Self::Flow,
+    ];
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Default)]
 pub enum StatusLevel {
     #[default]
     Error,
@@ -246,14 +273,14 @@ pub struct AppState {
     pub het_interacting: RwSignal<bool>,
     pub is_dragging: RwSignal<bool>,
     pub spectrogram_display: RwSignal<SpectrogramDisplay>,
-    pub mv_enabled: RwSignal<bool>,
+    pub flow_enabled: RwSignal<bool>,
     pub right_sidebar_tab: RwSignal<RightSidebarTab>,
     pub right_sidebar_collapsed: RwSignal<bool>,
     pub right_sidebar_width: RwSignal<f64>,
     pub right_sidebar_dropdown_open: RwSignal<bool>,
-    pub mv_intensity_gate: RwSignal<f32>,
-    pub mv_movement_gate: RwSignal<f32>,
-    pub mv_opacity: RwSignal<f32>,
+    pub flow_intensity_gate: RwSignal<f32>,
+    pub flow_gate: RwSignal<f32>,
+    pub flow_opacity: RwSignal<f32>,
     pub min_display_freq: RwSignal<Option<f64>>,
     pub max_display_freq: RwSignal<Option<f64>>,
     pub mouse_freq: RwSignal<Option<f64>>,
@@ -368,8 +395,10 @@ pub struct AppState {
     // Left sidebar settings page
     pub settings_page_open: RwSignal<bool>,
 
-    // User colormap preference (when not overridden by HFR/movement)
+    // User colormap preference (when not overridden by HFR/flow)
     pub colormap_preference: RwSignal<ColormapPreference>,
+    // Chromagram colormap mode
+    pub chroma_colormap: RwSignal<ChromaColormap>,
     // Colormap preference used when HFR mode is active
     pub hfr_colormap_preference: RwSignal<ColormapPreference>,
     // When false, the Range button is hidden at full range
@@ -433,15 +462,15 @@ impl AppState {
             zc_factor: RwSignal::new(8.0),
             het_interacting: RwSignal::new(false),
             is_dragging: RwSignal::new(false),
-            spectrogram_display: RwSignal::new(SpectrogramDisplay::MovementFlow),
-            mv_enabled: RwSignal::new(false),
+            spectrogram_display: RwSignal::new(SpectrogramDisplay::FlowOptical),
+            flow_enabled: RwSignal::new(false),
             right_sidebar_tab: RwSignal::new(RightSidebarTab::Metadata),
             right_sidebar_collapsed: RwSignal::new(true),
             right_sidebar_width: RwSignal::new(220.0),
             right_sidebar_dropdown_open: RwSignal::new(false),
-            mv_intensity_gate: RwSignal::new(0.5),
-            mv_movement_gate: RwSignal::new(0.75),
-            mv_opacity: RwSignal::new(0.75),
+            flow_intensity_gate: RwSignal::new(0.5),
+            flow_gate: RwSignal::new(0.75),
+            flow_opacity: RwSignal::new(0.75),
             min_display_freq: RwSignal::new(None),
             max_display_freq: RwSignal::new(None),
             mouse_freq: RwSignal::new(None),
@@ -510,6 +539,7 @@ impl AppState {
             cursor_time: RwSignal::new(None),
             settings_page_open: RwSignal::new(false),
             colormap_preference: RwSignal::new(ColormapPreference::Viridis),
+            chroma_colormap: RwSignal::new(ChromaColormap::Warm),
             hfr_colormap_preference: RwSignal::new(ColormapPreference::Inferno),
             always_show_view_range: RwSignal::new(false),
 

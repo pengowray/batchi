@@ -104,10 +104,10 @@ pub fn App() -> impl IntoView {
         });
     }
 
-    // Sync mv_enabled with main_view (Movement view → enabled, anything else → disabled)
+    // Sync flow_enabled with main_view (Flow view → enabled, anything else → disabled)
     Effect::new(move |_| {
-        let is_movement = state.main_view.get() == MainView::Movement;
-        state.mv_enabled.set(is_movement);
+        let is_flow = state.main_view.get() == MainView::Flow;
+        state.flow_enabled.set(is_flow);
     });
 
     // Global keyboard shortcut: Space = play/stop
@@ -251,7 +251,7 @@ fn MainArea() -> impl IntoView {
                         <div class="main-view">
                             // Show the selected main view
                             {move || match state.main_view.get() {
-                                MainView::Spectrogram | MainView::Movement => view! { <Spectrogram /> }.into_any(),
+                                MainView::Spectrogram | MainView::Flow => view! { <Spectrogram /> }.into_any(),
                                 MainView::Waveform => view! {
                                     <div class="main-waveform-full">
                                         <Waveform />
@@ -395,23 +395,23 @@ fn MainViewButton() -> impl IntoView {
                                     </button>
                                 }
                             }).collect_view()}
-                            // Movement algorithm options (when Movement is active)
-                            {(current == MainView::Movement).then(|| {
+                            // Flow algorithm options (when Flow is active)
+                            {(current == MainView::Flow).then(|| {
                                 let display = state.spectrogram_display.get();
                                 view! {
                                     <hr />
                                     <div class="layer-panel-title">"Algorithm"</div>
                                     <button
-                                        class=layer_opt_class(display == SpectrogramDisplay::MovementFlow)
-                                        on:click=move |_| state.spectrogram_display.set(SpectrogramDisplay::MovementFlow)
+                                        class=layer_opt_class(display == SpectrogramDisplay::FlowOptical)
+                                        on:click=move |_| state.spectrogram_display.set(SpectrogramDisplay::FlowOptical)
                                     >"Flow"</button>
                                     <button
-                                        class=layer_opt_class(display == SpectrogramDisplay::MovementCentroid)
-                                        on:click=move |_| state.spectrogram_display.set(SpectrogramDisplay::MovementCentroid)
+                                        class=layer_opt_class(display == SpectrogramDisplay::FlowCentroid)
+                                        on:click=move |_| state.spectrogram_display.set(SpectrogramDisplay::FlowCentroid)
                                     >"Centroid"</button>
                                     <button
-                                        class=layer_opt_class(display == SpectrogramDisplay::MovementGradient)
-                                        on:click=move |_| state.spectrogram_display.set(SpectrogramDisplay::MovementGradient)
+                                        class=layer_opt_class(display == SpectrogramDisplay::FlowGradient)
+                                        on:click=move |_| state.spectrogram_display.set(SpectrogramDisplay::FlowGradient)
                                     >"Gradient"</button>
                                 }
                             })}

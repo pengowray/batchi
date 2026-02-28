@@ -68,7 +68,7 @@ pub const CHROMA_ROWS: usize = NUM_PITCH_CLASSES * NUM_OCTAVES;
 /// Each pixel encodes two values packed into the RGB channels:
 /// - R channel: overall pitch class intensity (0–255)
 /// - G channel: specific note (octave) intensity (0–255)
-/// - B channel: 0 (unused, reserved for future 2D colormap)
+/// - B channel: energy flow (128 = neutral, 0 = max decrease, 255 = max increase)
 /// - A channel: 255
 ///
 /// The 2D colormap is applied during blit (not baked in), so the chromagram
@@ -106,7 +106,7 @@ pub fn pre_render_chromagram_columns(
         return PreRendered { width: width as u32, height: height as u32, pixels };
     }
 
-    // Second pass: render pixels
+    // Second pass: render pixels with flow data in B channel
     for (col_idx, chroma) in chromas.iter().enumerate() {
         for pc in 0..NUM_PITCH_CLASSES {
             let class_norm = (chroma.pitch_classes[pc] / max_class).sqrt().min(1.0);
@@ -116,14 +116,24 @@ pub fn pre_render_chromagram_columns(
                 let note_norm = (chroma.octave_detail[pc][oct] / max_note).sqrt().min(1.0);
                 let note_byte = (note_norm * 255.0) as u8;
 
+                // B channel: energy flow between consecutive columns
+                let flow_byte = if col_idx == 0 {
+                    128u8 // neutral for first column
+                } else {
+                    let curr = chroma.octave_detail[pc][oct];
+                    let prev = chromas[col_idx - 1].octave_detail[pc][oct];
+                    let delta = (curr - prev) / max_note;
+                    ((delta * 128.0) + 128.0).clamp(0.0, 255.0) as u8
+                };
+
                 // Row layout: pitch class 0 (C) at bottom, B at top
                 // Within each pitch class: octave 0 at bottom, highest at top
                 let row_from_bottom = pc * NUM_OCTAVES + oct;
                 let y = height - 1 - row_from_bottom;
                 let pixel_idx = (y * width + col_idx) * 4;
-                pixels[pixel_idx] = class_byte;     // R = pitch class intensity
-                pixels[pixel_idx + 1] = note_byte;  // G = note intensity
-                pixels[pixel_idx + 2] = 0;           // B = reserved
+                pixels[pixel_idx] = class_byte;       // R = pitch class intensity
+                pixels[pixel_idx + 1] = note_byte;    // G = note intensity
+                pixels[pixel_idx + 2] = flow_byte;    // B = energy flow
                 pixels[pixel_idx + 3] = 255;
             }
         }

@@ -1,5 +1,5 @@
 use crate::canvas::colors::{
-    freq_marker_color, freq_marker_label, magnitude_to_greyscale, movement_rgb,
+    freq_marker_color, freq_marker_label, magnitude_to_greyscale, flow_rgb,
     greyscale_to_viridis, greyscale_to_inferno,
     greyscale_to_magma, greyscale_to_plasma, greyscale_to_cividis, greyscale_to_turbo,
 };
@@ -92,9 +92,9 @@ pub fn global_max_magnitude(data: &SpectrogramData) -> f32 {
     data.columns.iter().flat_map(|c| c.magnitudes.iter()).copied().fold(0.0f32, f32::max)
 }
 
-/// Algorithm selector for movement detection.
+/// Algorithm selector for flow detection.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub enum MovementAlgo {
+pub enum FlowAlgo {
     Centroid,
     Gradient,
     Flow,
@@ -102,8 +102,8 @@ pub enum MovementAlgo {
 
 /// Cached intermediate data: greyscale intensities + shift values per pixel.
 /// The expensive shift computation only needs to run when file or algorithm changes.
-/// Color mapping (gates, opacity) can then be applied cheaply via `composite_movement`.
-pub struct MovementData {
+/// Color mapping (gates, opacity) can then be applied cheaply via `composite_flow`.
+pub struct FlowData {
     pub width: u32,
     pub height: u32,
     /// Greyscale intensity per pixel (row-major, flipped: row 0 = highest freq).
@@ -112,11 +112,11 @@ pub struct MovementData {
     pub shifts: Vec<f32>,
 }
 
-/// Compute movement data (expensive): greyscale + shift values for every pixel.
+/// Compute flow data (expensive): greyscale + shift values for every pixel.
 /// Only needs to re-run when the file or algorithm changes.
-pub fn compute_movement_data(data: &SpectrogramData, algo: MovementAlgo) -> MovementData {
+pub fn compute_flow_data(data: &SpectrogramData, algo: FlowAlgo) -> FlowData {
     if data.columns.is_empty() {
-        return MovementData {
+        return FlowData {
             width: 0,
             height: 0,
             greys: Vec::new(),
@@ -151,9 +151,9 @@ pub fn compute_movement_data(data: &SpectrogramData, algo: MovementAlgo) -> Move
             let shift = match prev {
                 None => 0.0,
                 Some(prev_mags) => match algo {
-                    MovementAlgo::Centroid => compute_centroid_shift(prev_mags, &col.magnitudes, bin_idx, h),
-                    MovementAlgo::Gradient => compute_gradient_shift(prev_mags, &col.magnitudes, bin_idx, h),
-                    MovementAlgo::Flow => compute_flow_shift(prev_mags, &col.magnitudes, bin_idx, h),
+                    FlowAlgo::Centroid => compute_centroid_shift(prev_mags, &col.magnitudes, bin_idx, h),
+                    FlowAlgo::Gradient => compute_gradient_shift(prev_mags, &col.magnitudes, bin_idx, h),
+                    FlowAlgo::Flow => compute_flow_shift(prev_mags, &col.magnitudes, bin_idx, h),
                 },
             };
 
@@ -164,22 +164,22 @@ pub fn compute_movement_data(data: &SpectrogramData, algo: MovementAlgo) -> Move
         }
     }
 
-    MovementData { width, height, greys, shifts }
+    FlowData { width, height, greys, shifts }
 }
 
-/// Composite movement data into RGBA pixels (cheap).
-/// Re-runs when intensity_gate, movement_gate, or opacity changes.
-pub fn composite_movement(
-    md: &MovementData,
+/// Composite flow data into RGBA pixels (cheap).
+/// Re-runs when intensity_gate, flow_gate, or opacity changes.
+pub fn composite_flow(
+    md: &FlowData,
     intensity_gate: f32,
-    movement_gate: f32,
+    flow_gate: f32,
     opacity: f32,
 ) -> PreRendered {
     let total = (md.width as usize) * (md.height as usize);
     let mut pixels = vec![0u8; total * 4];
 
     for i in 0..total {
-        let [r, g, b] = movement_rgb(md.greys[i], md.shifts[i], intensity_gate, movement_gate, opacity);
+        let [r, g, b] = flow_rgb(md.greys[i], md.shifts[i], intensity_gate, flow_gate, opacity);
         let pi = i * 4;
         pixels[pi] = r;
         pixels[pi + 1] = g;
@@ -302,28 +302,28 @@ fn compute_flow_shift(prev: &[f32], curr: &[f32], bin: usize, h: usize) -> f32 {
     best_d as f32 / max_disp as f32
 }
 
-/// Pre-render a tile of columns with movement shift detection and 2D colormap applied.
+/// Pre-render a tile of columns with flow shift detection and 2D colormap applied.
 ///
 /// `prev_column_mags`: magnitudes of the last column from the previous tile,
 /// needed for shift computation at the boundary. `None` for the first tile.
 ///
 /// Returns a `PreRendered` with already-colored RGBA pixels (no separate colormap step).
-pub fn pre_render_movement_columns(
+pub fn pre_render_flow_columns(
     columns: &[crate::types::SpectrogramColumn],
     prev_column_mags: Option<&[f32]>,
     max_mag: f32,
-    algo: MovementAlgo,
+    algo: FlowAlgo,
     intensity_gate: f32,
-    movement_gate: f32,
+    flow_gate: f32,
     opacity: f32,
 ) -> PreRendered {
-    use crate::canvas::colormap_2d::build_movement_colormap;
+    use crate::canvas::colormap_2d::build_flow_colormap;
 
     if columns.is_empty() || max_mag <= 0.0 {
         return PreRendered { width: 0, height: 0, pixels: Vec::new() };
     }
 
-    let colormap = build_movement_colormap(intensity_gate, movement_gate, opacity);
+    let colormap = build_flow_colormap(intensity_gate, flow_gate, opacity);
 
     let width = columns.len() as u32;
     let height = columns[0].magnitudes.len() as u32;
@@ -343,9 +343,9 @@ pub fn pre_render_movement_columns(
             let shift = match prev_mags {
                 None => 0.0,
                 Some(prev) => match algo {
-                    MovementAlgo::Centroid => compute_centroid_shift(prev, &col.magnitudes, bin_idx, h),
-                    MovementAlgo::Gradient => compute_gradient_shift(prev, &col.magnitudes, bin_idx, h),
-                    MovementAlgo::Flow => compute_flow_shift(prev, &col.magnitudes, bin_idx, h),
+                    FlowAlgo::Centroid => compute_centroid_shift(prev, &col.magnitudes, bin_idx, h),
+                    FlowAlgo::Gradient => compute_gradient_shift(prev, &col.magnitudes, bin_idx, h),
+                    FlowAlgo::Flow => compute_flow_shift(prev, &col.magnitudes, bin_idx, h),
                 },
             };
 
@@ -921,11 +921,11 @@ pub fn blit_tiles_viewport(
     any_drawn || preview.is_some()
 }
 
-/// Blit movement tiles from the movement tile cache (MV_CACHE).
+/// Blit flow tiles from the flow tile cache (MV_CACHE).
 ///
-/// Movement tiles store already-colored RGBA pixels (2D colormap pre-applied),
+/// Flow tiles store already-colored RGBA pixels (2D colormap pre-applied),
 /// so no colormap step is needed during blit.
-pub fn blit_movement_tiles_viewport(
+pub fn blit_flow_tiles_viewport(
     ctx: &CanvasRenderingContext2d,
     canvas: &HtmlCanvasElement,
     file_idx: usize,
@@ -942,7 +942,7 @@ pub fn blit_movement_tiles_viewport(
     let cw = canvas.width() as f64;
     let ch = canvas.height() as f64;
 
-    // Draw a dark background (no colormap-aware preview for movement mode)
+    // Draw a dark background (no colormap-aware preview for flow mode)
     if let Some(pv) = preview {
         // Draw preview in greyscale as a faint backdrop
         blit_preview_as_background(
@@ -975,12 +975,12 @@ pub fn blit_movement_tiles_viewport(
     for tile_idx in first_tile..=last_tile.min(n_tiles.saturating_sub(1)) {
         let tile_col_start = tile_idx * TILE_COLS;
 
-        let drawn = tile_cache::borrow_mv_tile(file_idx, tile_idx, |tile| {
+        let drawn = tile_cache::borrow_flow_tile(file_idx, tile_idx, |tile| {
             let tw = tile.rendered.width as f64;
             let th = tile.rendered.height as f64;
             if tw == 0.0 || th == 0.0 { return; }
 
-            // Movement tiles are already colored — use pixels directly (no colormap)
+            // Flow tiles are already colored — use pixels directly (no colormap)
             let clamped = Clamped(&tile.rendered.pixels[..]);
             let Ok(img) = ImageData::new_with_u8_clamped_array_and_sh(
                 clamped, tile.rendered.width, tile.rendered.height,
@@ -1029,6 +1029,30 @@ pub fn blit_movement_tiles_viewport(
     any_drawn || preview.is_some()
 }
 
+/// Compute RGB for a chromagram flow pixel.
+/// class_byte (R), note_byte (G), flow_byte (B: 128=neutral, 0=decrease, 255=increase).
+fn chromagram_flow_pixel(class_byte: u8, note_byte: u8, flow_byte: u8) -> [u8; 3] {
+    use crate::canvas::colormap_2d::hsl_to_rgb;
+
+    let class = class_byte as f32 / 255.0;
+    let note = note_byte as f32 / 255.0;
+    let brightness = class * 0.4 + note * 0.6;
+    let shift = (flow_byte as f32 - 128.0) / 128.0; // -1.0 to 1.0
+
+    // Base hue = 60 (warm yellow)
+    // Increase (shift > 0) pushes toward 120 (green)
+    // Decrease (shift < 0) pushes toward 300 (purple/magenta)
+    let hue = if shift >= 0.0 {
+        60.0 + shift * 60.0 // 60..120
+    } else {
+        60.0 + shift * 120.0 // wraps: 60 - 120 = -60 -> 300
+    };
+    let hue = ((hue % 360.0) + 360.0) % 360.0;
+    let saturation = shift.abs() * 0.8;
+
+    hsl_to_rgb(hue, saturation, brightness * 0.5)
+}
+
 /// Blit chromagram tiles from the chromagram tile cache.
 ///
 /// Chromagram tiles store packed (class_intensity, note_intensity) in R/G channels.
@@ -1040,8 +1064,27 @@ pub fn blit_chromagram_tiles_viewport(
     total_cols: usize,
     scroll_col: f64,
     zoom: f64,
+    chroma_colormap: crate::state::ChromaColormap,
 ) -> bool {
-    use crate::canvas::colormap_2d::build_chromagram_colormap;
+    use crate::state::ChromaColormap;
+    use crate::canvas::colormap_2d::{
+        build_chromagram_colormap, build_chromagram_pitch_class_colormaps,
+        build_chromagram_octave_colormaps, Colormap2D,
+    };
+
+    enum ChromaMode {
+        Single(Colormap2D),
+        PerPitchClass([Colormap2D; 12]),
+        PerOctave([Colormap2D; 10]),
+        FlowInline,
+    }
+
+    let mode = match chroma_colormap {
+        ChromaColormap::Warm => ChromaMode::Single(build_chromagram_colormap()),
+        ChromaColormap::PitchClass => ChromaMode::PerPitchClass(build_chromagram_pitch_class_colormaps()),
+        ChromaColormap::Octave => ChromaMode::PerOctave(build_chromagram_octave_colormaps()),
+        ChromaColormap::Flow => ChromaMode::FlowInline,
+    };
 
     let cw = canvas.width() as f64;
     let ch = canvas.height() as f64;
@@ -1052,8 +1095,6 @@ pub fn blit_chromagram_tiles_viewport(
     if total_cols == 0 || zoom <= 0.0 {
         return false;
     }
-
-    let colormap = build_chromagram_colormap();
 
     let visible_cols = cw / zoom;
     let src_start = scroll_col.max(0.0).min((total_cols as f64 - 1.0).max(0.0));
@@ -1073,12 +1114,30 @@ pub fn blit_chromagram_tiles_viewport(
             let th = tile.rendered.height as f64;
             if tw == 0.0 || th == 0.0 { return; }
 
-            // Apply 2D chromagram colormap: R=class intensity, G=note intensity
+            // Apply 2D chromagram colormap: R=class intensity, G=note intensity, B=flow
             let mut pixels = tile.rendered.pixels.clone();
             for i in (0..pixels.len()).step_by(4) {
-                let class_byte = pixels[i];     // R
-                let note_byte = pixels[i + 1];  // G
-                let [r, g, b] = colormap.apply(class_byte, note_byte);
+                let class_byte = pixels[i];
+                let note_byte = pixels[i + 1];
+                let flow_byte = pixels[i + 2];
+                let pixel_idx = i / 4;
+                let tile_w = tile.rendered.width as usize;
+                let row = pixel_idx / tile_w;
+
+                let [r, g, b] = match &mode {
+                    ChromaMode::Single(cm) => cm.apply(class_byte, note_byte),
+                    ChromaMode::PerPitchClass(cms) => {
+                        let pc = 11usize.saturating_sub(row / 10).min(11);
+                        cms[pc].apply(class_byte, note_byte)
+                    }
+                    ChromaMode::PerOctave(cms) => {
+                        let oct = 9usize.saturating_sub(row % 10).min(9);
+                        cms[oct].apply(class_byte, note_byte)
+                    }
+                    ChromaMode::FlowInline => {
+                        chromagram_flow_pixel(class_byte, note_byte, flow_byte)
+                    }
+                };
                 pixels[i] = r;
                 pixels[i + 1] = g;
                 pixels[i + 2] = b;

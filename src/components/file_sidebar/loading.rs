@@ -249,7 +249,7 @@ pub(crate) async fn load_named_bytes(name: String, bytes: &[u8], xc_metadata: Op
         });
     } else {
         // Small file: drain store and assemble full SpectrogramData.
-        // Movement mode and harmonics analysis need full column data.
+        // Flow mode and harmonics analysis need full column data.
         let final_columns = spectral_store::drain_columns(file_index)
             .unwrap_or_default();
 

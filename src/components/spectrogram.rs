@@ -4,7 +4,7 @@ use wasm_bindgen::closure::Closure;
 use std::cell::Cell;
 use std::rc::Rc;
 use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement, ImageData, MouseEvent};
-use crate::canvas::spectrogram_renderer::{self, Colormap, ColormapMode, FreqMarkerState, FreqShiftMode, MovementAlgo, PreRendered};
+use crate::canvas::spectrogram_renderer::{self, Colormap, ColormapMode, FreqMarkerState, FreqShiftMode, FlowAlgo, PreRendered};
 use crate::dsp::harmonics;
 use crate::state::{AppState, CanvasTool, ColormapPreference, SpectrogramHandle, PlaybackMode, Selection, RightSidebarTab, SpectrogramDisplay};
 
@@ -85,7 +85,7 @@ pub fn Spectrogram() -> impl IntoView {
     let canvas_ref = NodeRef::<leptos::html::Canvas>::new();
 
     let pre_rendered: RwSignal<Option<PreRendered>> = RwSignal::new(None);
-    let _movement_cache_removed = (); // movement tiles are now in tile_cache::MV_CACHE
+    let _flow_cache_removed = (); // flow tiles are now in tile_cache::MV_CACHE
 
     // Phase coherence heatmap data — computed only when Harmonics tab is active.
     let coherence_frames: RwSignal<Option<Vec<Vec<f32>>>> = RwSignal::new(None);
@@ -131,15 +131,15 @@ pub fn Spectrogram() -> impl IntoView {
         cb.forget();
     });
 
-    // Effect 1: pre-render small files (when columns are in memory and not in movement mode)
+    // Effect 1: pre-render small files (when columns are in memory and not in flow mode)
     Effect::new(move || {
         let files = state.files.get();
         let idx = state.current_file_index.get();
-        let enabled = state.mv_enabled.get();
+        let enabled = state.flow_enabled.get();
         if let Some(i) = idx {
             if let Some(file) = files.get(i) {
                 if file.spectrogram.columns.is_empty() || enabled {
-                    // Tile-based rendering (normal or movement) — no monolithic pre-render
+                    // Tile-based rendering (normal or flow) — no monolithic pre-render
                     pre_rendered.set(None);
                 } else {
                     pre_rendered.set(Some(spectrogram_renderer::pre_render(&file.spectrogram)));
@@ -150,15 +150,15 @@ pub fn Spectrogram() -> impl IntoView {
         }
     });
 
-    // Effect 2: clear movement tile cache when algorithm or settings change
+    // Effect 2: clear flow tile cache when algorithm or settings change
     Effect::new(move || {
         let _display = state.spectrogram_display.get();
-        let _ig = state.mv_intensity_gate.get();
-        let _mg = state.mv_movement_gate.get();
-        let _op = state.mv_opacity.get();
-        let _enabled = state.mv_enabled.get();
-        // Clear movement tiles so they recompute with new settings
-        crate::canvas::tile_cache::clear_mv_cache();
+        let _ig = state.flow_intensity_gate.get();
+        let _mg = state.flow_gate.get();
+        let _op = state.flow_opacity.get();
+        let _enabled = state.flow_enabled.get();
+        // Clear flow tiles so they recompute with new settings
+        crate::canvas::tile_cache::clear_flow_cache();
     });
 
     // Effect 2b: compute phase coherence frames when the Harmonics tab becomes active or the file changes.
@@ -207,7 +207,7 @@ pub fn Spectrogram() -> impl IntoView {
         let het_freq_auto = state.het_freq_auto.get();
         let het_cutoff_auto = state.het_cutoff_auto.get();
         let hfr_enabled = state.hfr_enabled.get();
-        let mv_on = state.mv_enabled.get_untracked();
+        let flow_on = state.flow_enabled.get_untracked();
         let colormap_pref = state.colormap_preference.get();
         let hfr_colormap_pref = state.hfr_colormap_preference.get();
         let axis_drag_start = state.axis_drag_start_freq.get();
@@ -334,7 +334,7 @@ pub fn Spectrogram() -> impl IntoView {
                 ColormapPreference::Greyscale => Colormap::Greyscale,
             }
         };
-        let colormap = if mv_on {
+        let colormap = if flow_on {
             ColormapMode::Uniform(Colormap::Greyscale)
         } else if hfr_enabled && ff_hi > ff_lo {
             ColormapMode::HfrFocus {
@@ -358,17 +358,17 @@ pub fn Spectrogram() -> impl IntoView {
         let duration = file.map(|f| f.audio.duration_secs).unwrap_or(0.0);
 
         // Step 1: Render base spectrogram.
-        // Priority: movement tiles | normal tiles > pre_rendered > preview > black
-        let base_drawn = if mv_on && total_cols > 0 {
-            // Movement mode: use movement tile cache (pre-colored RGBA)
-            let drawn = spectrogram_renderer::blit_movement_tiles_viewport(
+        // Priority: flow tiles | normal tiles > pre_rendered > preview > black
+        let base_drawn = if flow_on && total_cols > 0 {
+            // Flow mode: use flow tile cache (pre-colored RGBA)
+            let drawn = spectrogram_renderer::blit_flow_tiles_viewport(
                 &ctx, canvas, file_idx_val, total_cols,
                 scroll_col, zoom, freq_crop_lo, freq_crop_hi,
                 file.and_then(|f| f.preview.as_ref()),
                 scroll, visible_time, duration,
             );
 
-            // Schedule missing movement tiles
+            // Schedule missing flow tiles
             {
                 use crate::canvas::tile_cache::{self, TILE_COLS};
 
@@ -381,20 +381,20 @@ pub fn Spectrogram() -> impl IntoView {
 
                 let display = state.spectrogram_display.get_untracked();
                 let algo = match display {
-                    SpectrogramDisplay::MovementCentroid => MovementAlgo::Centroid,
-                    SpectrogramDisplay::MovementGradient => MovementAlgo::Gradient,
-                    SpectrogramDisplay::MovementFlow => MovementAlgo::Flow,
+                    SpectrogramDisplay::FlowCentroid => FlowAlgo::Centroid,
+                    SpectrogramDisplay::FlowGradient => FlowAlgo::Gradient,
+                    SpectrogramDisplay::FlowOptical => FlowAlgo::Flow,
                 };
 
                 for t in first_tile..=last_tile.min(n_tiles.saturating_sub(1)) {
-                    if tile_cache::get_mv_tile(file_idx_val, t).is_none() {
-                        tile_cache::schedule_movement_tile(state.clone(), file_idx_val, t, algo);
+                    if tile_cache::get_flow_tile(file_idx_val, t).is_none() {
+                        tile_cache::schedule_flow_tile(state.clone(), file_idx_val, t, algo);
                     }
                 }
             }
 
             drawn
-        } else if !mv_on && total_cols > 0 {
+        } else if !flow_on && total_cols > 0 {
             // Normal tile-based rendering
             let drawn = spectrogram_renderer::blit_tiles_viewport(
                 &ctx, canvas, file_idx_val, total_cols,
