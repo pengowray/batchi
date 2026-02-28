@@ -3,7 +3,7 @@ members = [".", "src-tauri", "xc-lib", "xc-cli"]
 
 [package]
 name = "batmonic"
-version = "0.2.21"
+version = "0.2.22"
 edition = "2021"
 
 [lib]
@@ -20,6 +20,7 @@ web-sys = { version = "0.3", features = [
     "AudioBuffer",
     "AudioBufferSourceNode",
     "GainNode",
+    "AudioParam",
     "AudioDestinationNode",
     "AudioNode",
     "BaseAudioContext",
