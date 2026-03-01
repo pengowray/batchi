@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
+    <title>batmonic</title>
+    <link rel="stylesheet" href="/batmonic/style-8d4da6b042ac4653.css" integrity="sha384-Is3Feq7Cx6igmW5VbWnHda+Zu0Lr2o9ToECRTIFJmpcKkGibPiSHBCP10oTK0SZu"/>
+<link rel="modulepreload" href="/batmonic/batmonic-af7c48d3be5863b.js" crossorigin="anonymous" integrity="sha384-IieW84X6HDLXKwKooZt0tg4RaeJuGiEnrEciiDxyBPHiJ9BXOhPCcuAtyzdzYvlV"><link rel="preload" href="/batmonic/batmonic-af7c48d3be5863b_bg.wasm" crossorigin="anonymous" integrity="sha384-Z1cVGr5pcdHLuiboj0irCyhXYts43ryfbFTfsIEPXW5HNU309L2bnE8EmUsJlX9F" as="fetch" type="application/wasm"></head>
+<body>
+<script type="module">
+import init, * as bindings from '/batmonic/batmonic-af7c48d3be5863b.js';
+const wasm = await init({ module_or_path: '/batmonic/batmonic-af7c48d3be5863b_bg.wasm' });
+
+
+window.wasmBindings = bindings;
+
+
+dispatchEvent(new CustomEvent("TrunkApplicationStarted", {detail: {wasm}}));
+
+</script></body>
+</html>
