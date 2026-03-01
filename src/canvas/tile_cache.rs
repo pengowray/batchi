@@ -325,6 +325,7 @@ pub fn render_live_tile_sync(file_idx: usize, tile_idx: usize, col_start: usize,
                 height,
                 pixels: Vec::new(),
                 db_data: full_db,
+                flow_shifts: Vec::new(),
             }
         } else {
             // RGBA tile (legacy path)
@@ -344,6 +345,7 @@ pub fn render_live_tile_sync(file_idx: usize, tile_idx: usize, col_start: usize,
                 height,
                 pixels: full_pixels,
                 db_data: Vec::new(),
+                flow_shifts: Vec::new(),
             }
         }
     });
@@ -671,11 +673,6 @@ pub fn schedule_flow_tile(
             return;
         }
 
-        // Read flow settings
-        let ig = state.flow_intensity_gate.get_untracked();
-        let mg = state.flow_gate.get_untracked();
-        let op = state.flow_opacity.get_untracked();
-
         let col_start = tile_idx * TILE_COLS;
 
         // Try to get columns from the spectral store first, fall back to in-memory columns
@@ -691,7 +688,7 @@ pub fn schedule_flow_tile(
                 None
             };
             spectrogram_renderer::pre_render_flow_columns(
-                cols, prev_col.as_deref(), max_mag, algo, ig, mg, op,
+                cols, prev_col.as_deref(), max_mag, algo,
             )
         });
 
@@ -712,7 +709,7 @@ pub fn schedule_flow_tile(
                         None
                     };
                     Some(spectrogram_renderer::pre_render_flow_columns(
-                        cols, prev_col, max_mag, algo, ig, mg, op,
+                        cols, prev_col, max_mag, algo,
                     ))
                 })
             });

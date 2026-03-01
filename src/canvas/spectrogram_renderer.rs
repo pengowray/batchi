@@ -14,17 +14,21 @@ use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement, ImageData};
 ///
 /// Normal spectrogram tiles store `db_data` (f32 dB values per pixel) so that
 /// gain, contrast, and dynamic range can be adjusted at render time without
-/// regenerating tiles.  Flow, coherence, and chromagram tiles store pre-colored
-/// `pixels` (RGBA u8) because their color encoding is coupled to the data.
+/// regenerating tiles.  Flow tiles store `db_data` + `flow_shifts` for deferred
+/// compositing.  Coherence and chromagram tiles store pre-colored `pixels`
+/// (RGBA u8) because their color encoding is coupled to the data.
 pub struct PreRendered {
     pub width: u32,
     pub height: u32,
-    /// RGBA pixel data (4 bytes/pixel).  Used by flow, coherence, chromagram
-    /// tiles and legacy non-tiled rendering.  Empty for normal dB tiles.
+    /// RGBA pixel data (4 bytes/pixel).  Used by coherence, chromagram
+    /// tiles and legacy non-tiled rendering.  Empty for dB tiles.
     pub pixels: Vec<u8>,
     /// dB values per pixel (one f32 per pixel, row-major, row 0 = highest freq).
-    /// Used by normal spectrogram tiles.  Empty for pre-colored tiles.
+    /// Used by normal spectrogram tiles and flow tiles.  Empty for pre-colored tiles.
     pub db_data: Vec<f32>,
+    /// Per-pixel frequency shift values (same layout as db_data).
+    /// Non-empty only for flow tiles.  Used with `db_data` for deferred flow compositing.
+    pub flow_shifts: Vec<f32>,
 }
 
 /// Display settings for converting dB tile data to pixels at render time.
@@ -49,7 +53,9 @@ impl Default for SpectDisplaySettings {
 impl PreRendered {
     /// Total memory footprint in bytes (for LRU cache accounting).
     pub fn byte_len(&self) -> usize {
-        self.pixels.len() + self.db_data.len() * std::mem::size_of::<f32>()
+        self.pixels.len()
+            + self.db_data.len() * std::mem::size_of::<f32>()
+            + self.flow_shifts.len() * std::mem::size_of::<f32>()
     }
 }
 
@@ -63,6 +69,7 @@ pub fn pre_render(data: &SpectrogramData) -> PreRendered {
             height: 0,
             pixels: Vec::new(),
             db_data: Vec::new(),
+            flow_shifts: Vec::new(),
         };
     }
 
@@ -97,6 +104,7 @@ pub fn pre_render(data: &SpectrogramData) -> PreRendered {
         height,
         pixels,
         db_data: Vec::new(),
+        flow_shifts: Vec::new(),
     }
 }
 
@@ -110,7 +118,7 @@ pub fn pre_render_columns(
     max_mag: f32,
 ) -> PreRendered {
     if columns.is_empty() || max_mag <= 0.0 {
-        return PreRendered { width: 0, height: 0, pixels: Vec::new(), db_data: Vec::new() };
+        return PreRendered { width: 0, height: 0, pixels: Vec::new(), db_data: Vec::new(), flow_shifts: Vec::new() };
     }
     let width = columns.len() as u32;
     let height = columns[0].magnitudes.len() as u32;
@@ -123,7 +131,7 @@ pub fn pre_render_columns(
             db_data[idx] = db;
         }
     }
-    PreRendered { width, height, pixels: Vec::new(), db_data }
+    PreRendered { width, height, pixels: Vec::new(), db_data, flow_shifts: Vec::new() }
 }
 
 /// Compute the global max magnitude across a full spectrogram (for tile normalisation).
@@ -231,6 +239,7 @@ pub fn composite_flow(
         height: md.height,
         pixels,
         db_data: Vec::new(),
+        flow_shifts: Vec::new(),
     }
 }
 
@@ -342,33 +351,29 @@ fn compute_flow_shift(prev: &[f32], curr: &[f32], bin: usize, h: usize) -> f32 {
     best_d as f32 / max_disp as f32
 }
 
-/// Pre-render a tile of columns with flow shift detection and 2D colormap applied.
+/// Pre-render a tile of flow columns: stores dB values + shift values for deferred compositing.
 ///
 /// `prev_column_mags`: magnitudes of the last column from the previous tile,
 /// needed for shift computation at the boundary. `None` for the first tile.
 ///
-/// Returns a `PreRendered` with already-colored RGBA pixels (no separate colormap step).
+/// Returns a `PreRendered` with `db_data` + `flow_shifts` populated (no RGBA pixels).
+/// Color compositing is deferred to blit time so gate/opacity changes are instant.
 pub fn pre_render_flow_columns(
     columns: &[crate::types::SpectrogramColumn],
     prev_column_mags: Option<&[f32]>,
     max_mag: f32,
     algo: FlowAlgo,
-    intensity_gate: f32,
-    flow_gate: f32,
-    opacity: f32,
 ) -> PreRendered {
-    use crate::canvas::colormap_2d::build_flow_colormap;
-
     if columns.is_empty() || max_mag <= 0.0 {
-        return PreRendered { width: 0, height: 0, pixels: Vec::new(), db_data: Vec::new() };
+        return PreRendered { width: 0, height: 0, pixels: Vec::new(), db_data: Vec::new(), flow_shifts: Vec::new() };
     }
-
-    let colormap = build_flow_colormap(intensity_gate, flow_gate, opacity);
 
     let width = columns.len() as u32;
     let height = columns[0].magnitudes.len() as u32;
     let h = height as usize;
-    let mut pixels = vec![0u8; (width * height * 4) as usize];
+    let total = (width * height) as usize;
+    let mut db_data = vec![f32::NEG_INFINITY; total];
+    let mut shifts = vec![0.0f32; total];
 
     for (col_idx, col) in columns.iter().enumerate() {
         let prev_mags = if col_idx > 0 {
@@ -378,7 +383,7 @@ pub fn pre_render_flow_columns(
         };
 
         for (bin_idx, &mag) in col.magnitudes.iter().enumerate() {
-            let grey = magnitude_to_greyscale(mag, max_mag);
+            let db = magnitude_to_db(mag, max_mag);
 
             let shift = match prev_mags {
                 None => 0.0,
@@ -389,20 +394,14 @@ pub fn pre_render_flow_columns(
                 },
             };
 
-            // Map shift from [-1, 1] to [0, 255] for colormap secondary axis
-            let shift_byte = ((shift * 128.0 + 128.0).clamp(0.0, 255.0)) as u8;
-            let [r, g, b] = colormap.apply(grey, shift_byte);
-
             let y = height as usize - 1 - bin_idx;
-            let pixel_idx = (y * width as usize + col_idx) * 4;
-            pixels[pixel_idx] = r;
-            pixels[pixel_idx + 1] = g;
-            pixels[pixel_idx + 2] = b;
-            pixels[pixel_idx + 3] = 255;
+            let idx = y * width as usize + col_idx;
+            db_data[idx] = db;
+            shifts[idx] = shift;
         }
     }
 
-    PreRendered { width, height, pixels, db_data: Vec::new() }
+    PreRendered { width, height, pixels: Vec::new(), db_data, flow_shifts: shifts }
 }
 
 /// Convert a frequency to a canvas Y coordinate.
@@ -1034,6 +1033,40 @@ pub fn blit_tiles_viewport(
 ///
 /// Flow tiles store already-colored RGBA pixels (2D colormap pre-applied),
 /// so no colormap step is needed during blit.
+/// Convert flow tile dB+shift data to RGBA pixels at render time.
+///
+/// For each pixel: convert dB to greyscale using display settings, then apply
+/// `flow_rgb()` with current gate/opacity to produce the final color.
+fn db_flow_tile_to_rgba(
+    db_data: &[f32],
+    flow_shifts: &[f32],
+    _width: u32,
+    _height: u32,
+    settings: &SpectDisplaySettings,
+    intensity_gate: f32,
+    flow_gate: f32,
+    opacity: f32,
+) -> Vec<u8> {
+    let total = db_data.len();
+    let mut rgba = vec![0u8; total * 4];
+
+    for i in 0..total {
+        let grey = db_to_greyscale(
+            db_data[i], settings.floor_db, settings.range_db,
+            settings.gamma, settings.gain_db,
+        );
+        let shift = if i < flow_shifts.len() { flow_shifts[i] } else { 0.0 };
+        let [r, g, b] = flow_rgb(grey, shift, intensity_gate, flow_gate, opacity);
+        let pi = i * 4;
+        rgba[pi] = r;
+        rgba[pi + 1] = g;
+        rgba[pi + 2] = b;
+        rgba[pi + 3] = 255;
+    }
+
+    rgba
+}
+
 pub fn blit_flow_tiles_viewport(
     ctx: &CanvasRenderingContext2d,
     canvas: &HtmlCanvasElement,
@@ -1043,6 +1076,10 @@ pub fn blit_flow_tiles_viewport(
     zoom: f64,
     freq_crop_lo: f64,
     freq_crop_hi: f64,
+    display_settings: &SpectDisplaySettings,
+    intensity_gate: f32,
+    flow_gate: f32,
+    opacity: f32,
     preview: Option<&PreviewImage>,
     scroll_offset: f64,
     visible_time: f64,
@@ -1089,8 +1126,19 @@ pub fn blit_flow_tiles_viewport(
             let th = tile.rendered.height as f64;
             if tw == 0.0 || th == 0.0 { return; }
 
-            // Flow tiles are already colored — use pixels directly (no colormap)
-            let clamped = Clamped(&tile.rendered.pixels[..]);
+            // Composite dB+shift to RGBA at render time
+            let rgba = if !tile.rendered.db_data.is_empty() {
+                db_flow_tile_to_rgba(
+                    &tile.rendered.db_data, &tile.rendered.flow_shifts,
+                    tile.rendered.width, tile.rendered.height,
+                    display_settings, intensity_gate, flow_gate, opacity,
+                )
+            } else {
+                // Fallback for legacy pre-colored tiles
+                tile.rendered.pixels.clone()
+            };
+
+            let clamped = Clamped(&rgba[..]);
             let Ok(img) = ImageData::new_with_u8_clamped_array_and_sh(
                 clamped, tile.rendered.width, tile.rendered.height,
             ) else { return };

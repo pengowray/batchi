@@ -112,7 +112,7 @@ pub fn pre_render_chromagram_columns(
     use crate::canvas::spectrogram_renderer::PreRendered;
 
     if stft_columns.is_empty() {
-        return PreRendered { width: 0, height: 0, pixels: Vec::new(), db_data: Vec::new() };
+        return PreRendered { width: 0, height: 0, pixels: Vec::new(), db_data: Vec::new(), flow_shifts: Vec::new() };
     }
 
     let width = stft_columns.len();
@@ -125,7 +125,7 @@ pub fn pre_render_chromagram_columns(
         .collect();
 
     if max_class <= 0.0 || max_note <= 0.0 {
-        return PreRendered { width: width as u32, height: height as u32, pixels, db_data: Vec::new() };
+        return PreRendered { width: width as u32, height: height as u32, pixels, db_data: Vec::new(), flow_shifts: Vec::new() };
     }
 
     // Render pixels with flow data in B channel
@@ -163,5 +163,5 @@ pub fn pre_render_chromagram_columns(
         }
     }
 
-    PreRendered { width: width as u32, height: height as u32, pixels, db_data: Vec::new() }
+    PreRendered { width: width as u32, height: height as u32, pixels, db_data: Vec::new(), flow_shifts: Vec::new() }
 }

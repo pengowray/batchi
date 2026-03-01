@@ -7,78 +7,84 @@ use crate::dsp::zero_crossing::zero_crossing_frequency;
 pub(crate) fn SpectrogramSettingsPanel() -> impl IntoView {
     let state = expect_context::<AppState>();
 
-    let on_display_change = move |ev: web_sys::Event| {
-        let target = ev.target().unwrap();
-        let select: web_sys::HtmlSelectElement = target.unchecked_into();
-        let mode = match select.value().as_str() {
-            "centroid" => SpectrogramDisplay::FlowCentroid,
-            "gradient" => SpectrogramDisplay::FlowGradient,
-            _ => SpectrogramDisplay::FlowOptical,
-        };
-        state.spectrogram_display.set(mode);
-    };
-
-    let on_intensity_gate_change = move |ev: web_sys::Event| {
-        let target = ev.target().unwrap();
-        let input: web_sys::HtmlInputElement = target.unchecked_into();
-        if let Ok(val) = input.value().parse::<f32>() {
-            state.flow_intensity_gate.set(val / 100.0);
-        }
-    };
-
-    let on_flow_gate_change = move |ev: web_sys::Event| {
-        let target = ev.target().unwrap();
-        let input: web_sys::HtmlInputElement = target.unchecked_into();
-        if let Ok(val) = input.value().parse::<f32>() {
-            state.flow_gate.set(val / 100.0);
-        }
-    };
-
-    let on_opacity_change = move |ev: web_sys::Event| {
-        let target = ev.target().unwrap();
-        let input: web_sys::HtmlInputElement = target.unchecked_into();
-        if let Ok(val) = input.value().parse::<f32>() {
-            state.flow_opacity.set(val / 100.0);
-        }
-    };
-
-    let on_max_freq_change = move |ev: web_sys::Event| {
-        let target = ev.target().unwrap();
-        let select: web_sys::HtmlSelectElement = target.unchecked_into();
-        let freq = match select.value().as_str() {
-            "auto" => None,
-            v => v.parse::<f64>().ok().map(|khz| khz * 1000.0),
-        };
-        state.max_display_freq.set(freq);
-        state.min_display_freq.set(None); // reset to 0 Hz on manual override
-    };
-
     view! {
         <div class="sidebar-panel">
-            // Max display frequency section (first)
+            // Gain/Range/Contrast — always shown (applies to all tile modes)
             <div class="setting-group">
-                <div class="setting-group-title">"Display"</div>
+                <div class="setting-group-title">"Intensity"</div>
                 <div class="setting-row">
-                    <span class="setting-label">"Max freq"</span>
-                    <select
-                        class="setting-select"
-                        on:change=on_max_freq_change
-                        prop:value=move || match state.max_display_freq.get() {
-                            None => "auto".to_string(),
-                            Some(hz) => format!("{}", (hz / 1000.0) as u32),
+                    <span class="setting-label">{move || format!("Gain: {:+.0} dB", state.spect_gain_db.get())}</span>
+                    <input
+                        type="range"
+                        class="setting-range"
+                        min="-40"
+                        max="40"
+                        step="1"
+                        prop:value=move || state.spect_gain_db.get().to_string()
+                        on:input=move |ev: web_sys::Event| {
+                            let target = ev.target().unwrap();
+                            let input: web_sys::HtmlInputElement = target.unchecked_into();
+                            if let Ok(v) = input.value().parse::<f32>() {
+                                state.spect_gain_db.set(v);
+                            }
                         }
-                    >
-                        <option value="auto">"Auto"</option>
-                        <option value="50">"50 kHz"</option>
-                        <option value="100">"100 kHz"</option>
-                        <option value="150">"150 kHz"</option>
-                        <option value="200">"200 kHz"</option>
-                        <option value="250">"250 kHz"</option>
-                    </select>
+                    />
+                </div>
+                <div class="setting-row">
+                    <span class="setting-label">{move || format!("Range: {:.0} dB", state.spect_range_db.get())}</span>
+                    <input
+                        type="range"
+                        class="setting-range"
+                        min="20"
+                        max="120"
+                        step="5"
+                        prop:value=move || state.spect_range_db.get().to_string()
+                        on:input=move |ev: web_sys::Event| {
+                            let target = ev.target().unwrap();
+                            let input: web_sys::HtmlInputElement = target.unchecked_into();
+                            if let Ok(v) = input.value().parse::<f32>() {
+                                state.spect_range_db.set(v);
+                                state.spect_floor_db.set(-v);
+                            }
+                        }
+                    />
+                </div>
+                <div class="setting-row">
+                    <span class="setting-label">{move || {
+                        let g = state.spect_gamma.get();
+                        if g == 1.0 { "Contrast: linear".to_string() }
+                        else { format!("Contrast: {:.2}", g) }
+                    }}</span>
+                    <input
+                        type="range"
+                        class="setting-range"
+                        min="0.2"
+                        max="3.0"
+                        step="0.05"
+                        prop:value=move || state.spect_gamma.get().to_string()
+                        on:input=move |ev: web_sys::Event| {
+                            let target = ev.target().unwrap();
+                            let input: web_sys::HtmlInputElement = target.unchecked_into();
+                            if let Ok(v) = input.value().parse::<f32>() {
+                                state.spect_gamma.set(v);
+                            }
+                        }
+                    />
+                </div>
+                <div class="setting-row">
+                    <button
+                        class="setting-button"
+                        on:click=move |_| {
+                            state.spect_gain_db.set(0.0);
+                            state.spect_floor_db.set(-80.0);
+                            state.spect_range_db.set(80.0);
+                            state.spect_gamma.set(1.0);
+                        }
+                    >"Reset"</button>
                 </div>
             </div>
 
-            // Flow settings (shown when Flow view is active)
+            // Flow-specific settings (shown only when Flow view is active)
             {move || {
                 if state.main_view.get() == MainView::Flow {
                     view! {
@@ -88,7 +94,16 @@ pub(crate) fn SpectrogramSettingsPanel() -> impl IntoView {
                                 <span class="setting-label">"Algorithm"</span>
                                 <select
                                     class="setting-select"
-                                    on:change=on_display_change
+                                    on:change=move |ev: web_sys::Event| {
+                                        let target = ev.target().unwrap();
+                                        let select: web_sys::HtmlSelectElement = target.unchecked_into();
+                                        let mode = match select.value().as_str() {
+                                            "centroid" => SpectrogramDisplay::FlowCentroid,
+                                            "gradient" => SpectrogramDisplay::FlowGradient,
+                                            _ => SpectrogramDisplay::FlowOptical,
+                                        };
+                                        state.spectrogram_display.set(mode);
+                                    }
                                     prop:value=move || match state.spectrogram_display.get() {
                                         SpectrogramDisplay::FlowCentroid => "centroid",
                                         SpectrogramDisplay::FlowGradient => "gradient",
@@ -110,7 +125,13 @@ pub(crate) fn SpectrogramSettingsPanel() -> impl IntoView {
                                         max="100"
                                         step="1"
                                         prop:value=move || (state.flow_intensity_gate.get() * 100.0).round().to_string()
-                                        on:input=on_intensity_gate_change
+                                        on:input=move |ev: web_sys::Event| {
+                                            let target = ev.target().unwrap();
+                                            let input: web_sys::HtmlInputElement = target.unchecked_into();
+                                            if let Ok(val) = input.value().parse::<f32>() {
+                                                state.flow_intensity_gate.set(val / 100.0);
+                                            }
+                                        }
                                     />
                                     <span class="setting-value">{move || format!("{}%", (state.flow_intensity_gate.get() * 100.0).round() as u32)}</span>
                                 </div>
@@ -125,7 +146,13 @@ pub(crate) fn SpectrogramSettingsPanel() -> impl IntoView {
                                         max="100"
                                         step="1"
                                         prop:value=move || (state.flow_gate.get() * 100.0).round().to_string()
-                                        on:input=on_flow_gate_change
+                                        on:input=move |ev: web_sys::Event| {
+                                            let target = ev.target().unwrap();
+                                            let input: web_sys::HtmlInputElement = target.unchecked_into();
+                                            if let Ok(val) = input.value().parse::<f32>() {
+                                                state.flow_gate.set(val / 100.0);
+                                            }
+                                        }
                                     />
                                     <span class="setting-value">{move || format!("{}%", (state.flow_gate.get() * 100.0).round() as u32)}</span>
                                 </div>
@@ -140,7 +167,13 @@ pub(crate) fn SpectrogramSettingsPanel() -> impl IntoView {
                                         max="100"
                                         step="1"
                                         prop:value=move || (state.flow_opacity.get() * 100.0).to_string()
-                                        on:input=on_opacity_change
+                                        on:input=move |ev: web_sys::Event| {
+                                            let target = ev.target().unwrap();
+                                            let input: web_sys::HtmlInputElement = target.unchecked_into();
+                                            if let Ok(val) = input.value().parse::<f32>() {
+                                                state.flow_opacity.set(val / 100.0);
+                                            }
+                                        }
                                     />
                                     <span class="setting-value">{move || format!("{}%", (state.flow_opacity.get() * 100.0) as u32)}</span>
                                 </div>

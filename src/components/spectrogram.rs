@@ -147,14 +147,12 @@ pub fn Spectrogram() -> impl IntoView {
         }
     });
 
-    // Effect 2: clear flow tile cache when algorithm or settings change
+    // Effect 2: clear flow tile cache when algorithm or enabled state changes
+    // Gate/opacity/gain are now applied at render time (not baked into tiles)
     Effect::new(move || {
         let _display = state.spectrogram_display.get();
-        let _ig = state.flow_intensity_gate.get();
-        let _mg = state.flow_gate.get();
-        let _op = state.flow_opacity.get();
         let _enabled = state.flow_enabled.get();
-        // Clear flow tiles so they recompute with new settings
+        // Clear flow tiles so they recompute with new algorithm
         crate::canvas::tile_cache::clear_flow_cache();
     });
 
@@ -196,6 +194,9 @@ pub fn Spectrogram() -> impl IntoView {
         let het_cutoff_auto = state.het_cutoff_auto.get();
         let hfr_enabled = state.hfr_enabled.get();
         let flow_on = state.flow_enabled.get_untracked();
+        let _flow_ig = state.flow_intensity_gate.get(); // trigger redraw on flow setting change
+        let _flow_mg = state.flow_gate.get();
+        let _flow_op = state.flow_opacity.get();
         let colormap_pref = state.colormap_preference.get();
         let hfr_colormap_pref = state.hfr_colormap_preference.get();
         let axis_drag_start = state.axis_drag_start_freq.get();
@@ -323,10 +324,14 @@ pub fn Spectrogram() -> impl IntoView {
 
             drawn
         } else if flow_on && total_cols > 0 {
-            // Flow mode: use flow tile cache (pre-colored RGBA)
+            // Flow mode: composite dB+shift tiles at render time
+            let ig = state.flow_intensity_gate.get_untracked();
+            let mg = state.flow_gate.get_untracked();
+            let op = state.flow_opacity.get_untracked();
             let drawn = spectrogram_renderer::blit_flow_tiles_viewport(
                 &ctx, canvas, file_idx_val, total_cols,
                 scroll_col, zoom, freq_crop_lo, freq_crop_hi,
+                &display_settings, ig, mg, op,
                 file.and_then(|f| f.preview.as_ref()),
                 scroll, visible_time, duration,
             );

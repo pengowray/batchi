@@ -234,79 +234,32 @@ pub(super) fn ConfigPanel() -> impl IntoView {
                         on:change=on_always_show_view_range
                     />
                 </div>
-            </div>
-
-            <div class="setting-group">
-                <div class="setting-group-title">"Spectrogram Display"</div>
                 <div class="setting-row">
-                    <span class="setting-label">{move || format!("Gain: {:+.0} dB", state.spect_gain_db.get())}</span>
-                    <input
-                        type="range"
-                        class="setting-range"
-                        min="-40"
-                        max="40"
-                        step="1"
-                        prop:value=move || state.spect_gain_db.get().to_string()
-                        on:input=move |ev: web_sys::Event| {
+                    <span class="setting-label">"Max freq"</span>
+                    <select
+                        class="setting-select"
+                        on:change=move |ev: web_sys::Event| {
                             let target = ev.target().unwrap();
-                            let input: web_sys::HtmlInputElement = target.unchecked_into();
-                            if let Ok(v) = input.value().parse::<f32>() {
-                                state.spect_gain_db.set(v);
-                            }
+                            let select: web_sys::HtmlSelectElement = target.unchecked_into();
+                            let freq = match select.value().as_str() {
+                                "auto" => None,
+                                v => v.parse::<f64>().ok().map(|khz| khz * 1000.0),
+                            };
+                            state.max_display_freq.set(freq);
+                            state.min_display_freq.set(None);
                         }
-                    />
-                </div>
-                <div class="setting-row">
-                    <span class="setting-label">{move || format!("Range: {:.0} dB", state.spect_range_db.get())}</span>
-                    <input
-                        type="range"
-                        class="setting-range"
-                        min="20"
-                        max="120"
-                        step="5"
-                        prop:value=move || state.spect_range_db.get().to_string()
-                        on:input=move |ev: web_sys::Event| {
-                            let target = ev.target().unwrap();
-                            let input: web_sys::HtmlInputElement = target.unchecked_into();
-                            if let Ok(v) = input.value().parse::<f32>() {
-                                state.spect_range_db.set(v);
-                                state.spect_floor_db.set(-v);
-                            }
+                        prop:value=move || match state.max_display_freq.get() {
+                            None => "auto".to_string(),
+                            Some(hz) => format!("{}", (hz / 1000.0) as u32),
                         }
-                    />
-                </div>
-                <div class="setting-row">
-                    <span class="setting-label">{move || {
-                        let g = state.spect_gamma.get();
-                        if g == 1.0 { "Contrast: linear".to_string() }
-                        else { format!("Contrast: {:.2}", g) }
-                    }}</span>
-                    <input
-                        type="range"
-                        class="setting-range"
-                        min="0.2"
-                        max="3.0"
-                        step="0.05"
-                        prop:value=move || state.spect_gamma.get().to_string()
-                        on:input=move |ev: web_sys::Event| {
-                            let target = ev.target().unwrap();
-                            let input: web_sys::HtmlInputElement = target.unchecked_into();
-                            if let Ok(v) = input.value().parse::<f32>() {
-                                state.spect_gamma.set(v);
-                            }
-                        }
-                    />
-                </div>
-                <div class="setting-row">
-                    <button
-                        class="setting-button"
-                        on:click=move |_| {
-                            state.spect_gain_db.set(0.0);
-                            state.spect_floor_db.set(-80.0);
-                            state.spect_range_db.set(80.0);
-                            state.spect_gamma.set(1.0);
-                        }
-                    >"Reset Display"</button>
+                    >
+                        <option value="auto">"Auto"</option>
+                        <option value="50">"50 kHz"</option>
+                        <option value="100">"100 kHz"</option>
+                        <option value="150">"150 kHz"</option>
+                        <option value="200">"200 kHz"</option>
+                        <option value="250">"250 kHz"</option>
+                    </select>
                 </div>
             </div>
         </div>
