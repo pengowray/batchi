@@ -376,6 +376,7 @@ pub struct AppState {
     pub mic_sample_rate: RwSignal<u32>,
     pub mic_samples_recorded: RwSignal<usize>,
     pub mic_bits_per_sample: RwSignal<u16>,
+    pub mic_max_sample_rate: RwSignal<u32>, // 0 = auto (device default)
 
     // Transient status message (e.g. permission errors)
     pub status_message: RwSignal<Option<String>>,
@@ -538,6 +539,7 @@ impl AppState {
             mic_sample_rate: RwSignal::new(0),
             mic_samples_recorded: RwSignal::new(0),
             mic_bits_per_sample: RwSignal::new(16),
+            mic_max_sample_rate: RwSignal::new(0),
             status_message: RwSignal::new(None),
             status_level: RwSignal::new(StatusLevel::Error),
             is_mobile: RwSignal::new(detect_mobile()),

@@ -292,7 +292,17 @@ async fn ensure_mic_open_tauri(state: &AppState) -> bool {
         return true;
     }
 
-    let result = match tauri_invoke_no_args("mic_open").await {
+    let max_sr = state.mic_max_sample_rate.get_untracked();
+    let args = js_sys::Object::new();
+    if max_sr > 0 {
+        js_sys::Reflect::set(
+            &args,
+            &JsValue::from_str("maxSampleRate"),
+            &JsValue::from_f64(max_sr as f64),
+        )
+        .ok();
+    }
+    let result = match tauri_invoke("mic_open", &args.into()).await {
         Ok(v) => v,
         Err(e) => {
             log::warn!("Native mic failed ({}), falling back to Web Audio", e);

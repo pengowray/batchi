@@ -49,8 +49,35 @@ pub(super) fn ConfigPanel() -> impl IntoView {
         state.tile_ready_signal.update(|n| *n = n.wrapping_add(1));
     };
 
+    let on_max_sr_change = move |ev: web_sys::Event| {
+        let target = ev.target().unwrap();
+        let select: web_sys::HtmlSelectElement = target.unchecked_into();
+        let val: u32 = select.value().parse().unwrap_or(0);
+        state.mic_max_sample_rate.set(val);
+    };
+
     view! {
         <div class="sidebar-panel">
+            <div class="setting-group">
+                <div class="setting-group-title">"Recording"</div>
+                <div class="setting-row">
+                    <span class="setting-label">"Max sample rate"</span>
+                    <select
+                        class="setting-select"
+                        on:change=on_max_sr_change
+                    >
+                        <option value="0" selected=move || state.mic_max_sample_rate.get() == 0>"Auto"</option>
+                        <option value="44100" selected=move || state.mic_max_sample_rate.get() == 44100>"44.1 kHz"</option>
+                        <option value="48000" selected=move || state.mic_max_sample_rate.get() == 48000>"48 kHz"</option>
+                        <option value="96000" selected=move || state.mic_max_sample_rate.get() == 96000>"96 kHz"</option>
+                        <option value="192000" selected=move || state.mic_max_sample_rate.get() == 192000>"192 kHz"</option>
+                        <option value="256000" selected=move || state.mic_max_sample_rate.get() == 256000>"256 kHz"</option>
+                        <option value="384000" selected=move || state.mic_max_sample_rate.get() == 384000>"384 kHz"</option>
+                        <option value="500000" selected=move || state.mic_max_sample_rate.get() == 500000>"500 kHz"</option>
+                    </select>
+                </div>
+            </div>
+
             <div class="setting-group">
                 <div class="setting-group-title">"Playback"</div>
                 <div class="setting-row">

@@ -5,7 +5,7 @@ mod xc;
 
 use audio_decode::{AudioFileInfo, FullDecodeResult};
 use native_playback::{NativePlayParams, PlaybackState, PlaybackStatus};
-use recording::{MicInfo, MicState, MicStatus, RecordingResult};
+use recording::{DeviceInfo, MicInfo, MicState, MicStatus, RecordingResult};
 use std::sync::atomic::Ordering;
 use std::sync::Mutex;
 use tauri::Manager;
@@ -31,7 +31,11 @@ fn save_recording(
 }
 
 #[tauri::command]
-fn mic_open(app: tauri::AppHandle, state: tauri::State<MicMutex>) -> Result<MicInfo, String> {
+fn mic_open(
+    app: tauri::AppHandle,
+    state: tauri::State<MicMutex>,
+    max_sample_rate: Option<u32>,
+) -> Result<MicInfo, String> {
     let mut mic = state.lock().map_err(|e| e.to_string())?;
     if mic.is_some() {
         // Already open — return current info
@@ -42,16 +46,19 @@ fn mic_open(app: tauri::AppHandle, state: tauri::State<MicMutex>) -> Result<MicI
             bits_per_sample: m.format.bits_per_sample(),
             is_float: m.format.is_float(),
             format: format!("{:?}", m.format),
+            supported_sample_rates: m.supported_sample_rates.clone(),
         });
     }
 
-    let m = recording::open_mic()?;
+    let requested = max_sample_rate.unwrap_or(0);
+    let m = recording::open_mic(requested)?;
     let info = MicInfo {
         device_name: m.device_name.clone(),
         sample_rate: m.sample_rate,
         bits_per_sample: m.format.bits_per_sample(),
         is_float: m.format.is_float(),
         format: format!("{:?}", m.format),
+        supported_sample_rates: m.supported_sample_rates.clone(),
     };
 
     // Start the emitter thread for streaming audio chunks to the frontend
@@ -59,6 +66,11 @@ fn mic_open(app: tauri::AppHandle, state: tauri::State<MicMutex>) -> Result<MicI
 
     *mic = Some(m);
     Ok(info)
+}
+
+#[tauri::command]
+fn mic_list_devices() -> Vec<DeviceInfo> {
+    recording::list_input_devices()
 }
 
 #[tauri::command]
@@ -308,6 +320,7 @@ fn native_playback_status(state: tauri::State<PlaybackMutex>) -> PlaybackStatus 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri::plugin::Builder::<_, ()>::new("usb-audio").build())
         .manage(Mutex::new(None::<MicState>))
         .manage(Mutex::new(None::<PlaybackState>))
         .setup(|app| {
@@ -331,6 +344,7 @@ pub fn run() {
             mic_stop_recording,
             mic_set_listening,
             mic_get_status,
+            mic_list_devices,
             audio_file_info,
             audio_decode_full,
             read_file_bytes,
