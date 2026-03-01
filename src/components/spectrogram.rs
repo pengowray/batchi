@@ -4,7 +4,7 @@ use wasm_bindgen::closure::Closure;
 use std::cell::Cell;
 use std::rc::Rc;
 use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement, MouseEvent};
-use crate::canvas::spectrogram_renderer::{self, Colormap, ColormapMode, FreqMarkerState, FreqShiftMode, FlowAlgo, PreRendered};
+use crate::canvas::spectrogram_renderer::{self, Colormap, ColormapMode, FreqMarkerState, FreqShiftMode, FlowAlgo, PreRendered, SpectDisplaySettings};
 use crate::state::{AppState, CanvasTool, ColormapPreference, MainView, SpectrogramHandle, PlaybackMode, Selection, SpectrogramDisplay};
 
 const LABEL_AREA_WIDTH: f64 = 60.0;
@@ -205,6 +205,10 @@ pub fn Spectrogram() -> impl IntoView {
         let notch_hovering = state.notch_hovering_band.get();
         let harmonic_suppression = state.notch_harmonic_suppression.get();
         let main_view = state.main_view.get();
+        let spect_floor = state.spect_floor_db.get();
+        let spect_range = state.spect_range_db.get();
+        let spect_gamma = state.spect_gamma.get();
+        let spect_gain = state.spect_gain_db.get();
         let _pre = pre_rendered.track();
 
         let Some(canvas_el) = canvas_ref.get() else { return };
@@ -283,6 +287,13 @@ pub fn Spectrogram() -> impl IntoView {
         let visible_time = (display_w as f64 / zoom) * time_res;
         let duration = file.map(|f| f.audio.duration_secs).unwrap_or(0.0);
 
+        let display_settings = SpectDisplaySettings {
+            floor_db: spect_floor,
+            range_db: spect_range,
+            gamma: spect_gamma,
+            gain_db: spect_gain,
+        };
+
         // Step 1: Render base spectrogram.
         // Priority: coherence tiles | flow tiles | normal tiles > pre_rendered > preview > black
         let base_drawn = if main_view == MainView::PhaseCoherence && total_cols > 0 {
@@ -351,6 +362,7 @@ pub fn Spectrogram() -> impl IntoView {
             let drawn = spectrogram_renderer::blit_tiles_viewport(
                 &ctx, canvas, file_idx_val, total_cols,
                 scroll_col, zoom, freq_crop_lo, freq_crop_hi, colormap,
+                &display_settings,
                 file.and_then(|f| f.preview.as_ref()),
                 scroll, visible_time, duration,
             );

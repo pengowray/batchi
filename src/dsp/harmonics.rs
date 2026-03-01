@@ -671,5 +671,6 @@ pub fn compute_tile_phase_data(
         width,
         height,
         pixels,
+        db_data: Vec::new(),
     }
 }

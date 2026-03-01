@@ -1,5 +1,6 @@
 use crate::canvas::colors::{
-    freq_marker_color, freq_marker_label, magnitude_to_greyscale, flow_rgb,
+    freq_marker_color, freq_marker_label, magnitude_to_greyscale, magnitude_to_db,
+    db_to_greyscale, flow_rgb,
     greyscale_to_viridis, greyscale_to_inferno,
     greyscale_to_magma, greyscale_to_plasma, greyscale_to_cividis, greyscale_to_turbo,
 };
@@ -9,11 +10,47 @@ use wasm_bindgen::JsCast;
 use wasm_bindgen::Clamped;
 use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement, ImageData};
 
-/// Pre-rendered spectrogram image data (RGBA pixels).
+/// Pre-rendered spectrogram image data.
+///
+/// Normal spectrogram tiles store `db_data` (f32 dB values per pixel) so that
+/// gain, contrast, and dynamic range can be adjusted at render time without
+/// regenerating tiles.  Flow, coherence, and chromagram tiles store pre-colored
+/// `pixels` (RGBA u8) because their color encoding is coupled to the data.
 pub struct PreRendered {
     pub width: u32,
     pub height: u32,
+    /// RGBA pixel data (4 bytes/pixel).  Used by flow, coherence, chromagram
+    /// tiles and legacy non-tiled rendering.  Empty for normal dB tiles.
     pub pixels: Vec<u8>,
+    /// dB values per pixel (one f32 per pixel, row-major, row 0 = highest freq).
+    /// Used by normal spectrogram tiles.  Empty for pre-colored tiles.
+    pub db_data: Vec<f32>,
+}
+
+/// Display settings for converting dB tile data to pixels at render time.
+#[derive(Clone, Copy)]
+pub struct SpectDisplaySettings {
+    /// dB floor (e.g. -80.0).  Values below this map to black.
+    pub floor_db: f32,
+    /// dB range (e.g. 80.0).  `floor_db + range_db` = ceiling.
+    pub range_db: f32,
+    /// Gamma curve (1.0 = linear, <1 = brighter darks, >1 = more contrast).
+    pub gamma: f32,
+    /// Additive dB gain offset applied before floor/range mapping.
+    pub gain_db: f32,
+}
+
+impl Default for SpectDisplaySettings {
+    fn default() -> Self {
+        Self { floor_db: -80.0, range_db: 80.0, gamma: 1.0, gain_db: 0.0 }
+    }
+}
+
+impl PreRendered {
+    /// Total memory footprint in bytes (for LRU cache accounting).
+    pub fn byte_len(&self) -> usize {
+        self.pixels.len() + self.db_data.len() * std::mem::size_of::<f32>()
+    }
 }
 
 /// Pre-render the entire spectrogram to an RGBA pixel buffer.
@@ -25,6 +62,7 @@ pub fn pre_render(data: &SpectrogramData) -> PreRendered {
             width: 0,
             height: 0,
             pixels: Vec::new(),
+            db_data: Vec::new(),
         };
     }
 
@@ -58,33 +96,34 @@ pub fn pre_render(data: &SpectrogramData) -> PreRendered {
         width,
         height,
         pixels,
+        db_data: Vec::new(),
     }
 }
 
 /// Pre-render a slice of columns (a tile) with a given global max magnitude for normalization.
 /// The global max is passed in so all tiles use the same normalisation scale.
+///
+/// Stores f32 dB values per pixel so that gain, contrast, and dynamic range
+/// can be adjusted at render time without regenerating the tile.
 pub fn pre_render_columns(
     columns: &[crate::types::SpectrogramColumn],
     max_mag: f32,
 ) -> PreRendered {
     if columns.is_empty() || max_mag <= 0.0 {
-        return PreRendered { width: 0, height: 0, pixels: Vec::new() };
+        return PreRendered { width: 0, height: 0, pixels: Vec::new(), db_data: Vec::new() };
     }
     let width = columns.len() as u32;
     let height = columns[0].magnitudes.len() as u32;
-    let mut pixels = vec![0u8; (width * height * 4) as usize];
+    let mut db_data = vec![f32::NEG_INFINITY; (width * height) as usize];
     for (col_idx, col) in columns.iter().enumerate() {
         for (bin_idx, &mag) in col.magnitudes.iter().enumerate() {
-            let grey = magnitude_to_greyscale(mag, max_mag);
+            let db = magnitude_to_db(mag, max_mag);
             let y = height as usize - 1 - bin_idx;
-            let pixel_idx = (y * width as usize + col_idx) * 4;
-            pixels[pixel_idx] = grey;
-            pixels[pixel_idx + 1] = grey;
-            pixels[pixel_idx + 2] = grey;
-            pixels[pixel_idx + 3] = 255;
+            let idx = y * width as usize + col_idx;
+            db_data[idx] = db;
         }
     }
-    PreRendered { width, height, pixels }
+    PreRendered { width, height, pixels: Vec::new(), db_data }
 }
 
 /// Compute the global max magnitude across a full spectrogram (for tile normalisation).
@@ -191,6 +230,7 @@ pub fn composite_flow(
         width: md.width,
         height: md.height,
         pixels,
+        db_data: Vec::new(),
     }
 }
 
@@ -320,7 +360,7 @@ pub fn pre_render_flow_columns(
     use crate::canvas::colormap_2d::build_flow_colormap;
 
     if columns.is_empty() || max_mag <= 0.0 {
-        return PreRendered { width: 0, height: 0, pixels: Vec::new() };
+        return PreRendered { width: 0, height: 0, pixels: Vec::new(), db_data: Vec::new() };
     }
 
     let colormap = build_flow_colormap(intensity_gate, flow_gate, opacity);
@@ -362,7 +402,7 @@ pub fn pre_render_flow_columns(
         }
     }
 
-    PreRendered { width, height, pixels }
+    PreRendered { width, height, pixels, db_data: Vec::new() }
 }
 
 /// Convert a frequency to a canvas Y coordinate.
@@ -720,6 +760,54 @@ fn apply_hfr_colormap_to_tile(
     }
 }
 
+/// Convert dB tile data to RGBA pixels with display settings and colormap applied.
+fn db_tile_to_rgba(
+    db_data: &[f32],
+    width: u32,
+    height: u32,
+    settings: &SpectDisplaySettings,
+    colormap: ColormapMode,
+) -> Vec<u8> {
+    let total = db_data.len();
+    let mut rgba = vec![0u8; total * 4];
+
+    match colormap {
+        ColormapMode::Uniform(cm) => {
+            for (i, &db) in db_data.iter().enumerate() {
+                let grey = db_to_greyscale(db, settings.floor_db, settings.range_db, settings.gamma, settings.gain_db);
+                let [r, g, b] = cm.apply(grey);
+                let pi = i * 4;
+                rgba[pi] = r;
+                rgba[pi + 1] = g;
+                rgba[pi + 2] = b;
+                rgba[pi + 3] = 255;
+            }
+        }
+        ColormapMode::HfrFocus { colormap: cm, ff_lo_frac, ff_hi_frac } => {
+            let h = height as f64;
+            let w = width as usize;
+            let focus_top = (h * (1.0 - ff_hi_frac)).round() as usize;
+            let focus_bot = (h * (1.0 - ff_lo_frac)).round() as usize;
+            for (i, &db) in db_data.iter().enumerate() {
+                let grey = db_to_greyscale(db, settings.floor_db, settings.range_db, settings.gamma, settings.gain_db);
+                let row = i / w;
+                let [r, g, b] = if row >= focus_top && row < focus_bot {
+                    cm.apply(grey)
+                } else {
+                    [grey, grey, grey]
+                };
+                let pi = i * 4;
+                rgba[pi] = r;
+                rgba[pi + 1] = g;
+                rgba[pi + 2] = b;
+                rgba[pi + 3] = 255;
+            }
+        }
+    }
+
+    rgba
+}
+
 /// Composite spectrogram tiles from the tile cache onto the canvas.
 /// Falls back to a preview image for tiles not yet cached.
 /// Returns true if at least one tile was drawn, false if nothing was available.
@@ -733,6 +821,7 @@ pub fn blit_tiles_viewport(
     freq_crop_lo: f64,
     freq_crop_hi: f64,
     colormap: ColormapMode,
+    display_settings: &SpectDisplaySettings,
     // Preview fallback for missing tiles
     preview: Option<&PreviewImage>,
     scroll_offset: f64,    // seconds (for preview mapping)
@@ -783,17 +872,28 @@ pub fn blit_tiles_viewport(
             let th = tile.rendered.height as f64;
             if tw == 0.0 || th == 0.0 { return; }
 
-            // Clone pixels for colormap application
-            let mut pixels = tile.rendered.pixels.clone();
-            match colormap {
-                ColormapMode::Uniform(cm) => apply_colormap_to_tile(&mut pixels, cm),
-                ColormapMode::HfrFocus { colormap: cm, ff_lo_frac, ff_hi_frac } => {
-                    apply_hfr_colormap_to_tile(
-                        &mut pixels, tile.rendered.width, tile.rendered.height,
-                        cm, ff_lo_frac, ff_hi_frac,
-                    );
+            // Convert tile data to RGBA pixels with colormap + display settings
+            let pixels = if !tile.rendered.db_data.is_empty() {
+                // dB tile: apply gain/contrast/colormap at render time
+                db_tile_to_rgba(
+                    &tile.rendered.db_data,
+                    tile.rendered.width, tile.rendered.height,
+                    display_settings, colormap,
+                )
+            } else {
+                // RGBA tile (legacy): clone and apply colormap only
+                let mut px = tile.rendered.pixels.clone();
+                match colormap {
+                    ColormapMode::Uniform(cm) => apply_colormap_to_tile(&mut px, cm),
+                    ColormapMode::HfrFocus { colormap: cm, ff_lo_frac, ff_hi_frac } => {
+                        apply_hfr_colormap_to_tile(
+                            &mut px, tile.rendered.width, tile.rendered.height,
+                            cm, ff_lo_frac, ff_hi_frac,
+                        );
+                    }
                 }
-            }
+                px
+            };
 
             // Create ImageData and draw to off-screen canvas
             let clamped = Clamped(&pixels[..]);
@@ -850,16 +950,25 @@ pub fn blit_tiles_viewport(
                 let th = tile.rendered.height as f64;
                 if tw == 0.0 || th == 0.0 { return; }
 
-                let mut pixels = tile.rendered.pixels.clone();
-                match colormap {
-                    ColormapMode::Uniform(cm) => apply_colormap_to_tile(&mut pixels, cm),
-                    ColormapMode::HfrFocus { colormap: cm, ff_lo_frac, ff_hi_frac } => {
-                        apply_hfr_colormap_to_tile(
-                            &mut pixels, tile.rendered.width, tile.rendered.height,
-                            cm, ff_lo_frac, ff_hi_frac,
-                        );
+                let pixels = if !tile.rendered.db_data.is_empty() {
+                    db_tile_to_rgba(
+                        &tile.rendered.db_data,
+                        tile.rendered.width, tile.rendered.height,
+                        display_settings, colormap,
+                    )
+                } else {
+                    let mut px = tile.rendered.pixels.clone();
+                    match colormap {
+                        ColormapMode::Uniform(cm) => apply_colormap_to_tile(&mut px, cm),
+                        ColormapMode::HfrFocus { colormap: cm, ff_lo_frac, ff_hi_frac } => {
+                            apply_hfr_colormap_to_tile(
+                                &mut px, tile.rendered.width, tile.rendered.height,
+                                cm, ff_lo_frac, ff_hi_frac,
+                            );
+                        }
                     }
-                }
+                    px
+                };
 
                 let clamped = Clamped(&pixels[..]);
                 let Ok(img) = ImageData::new_with_u8_clamped_array_and_sh(

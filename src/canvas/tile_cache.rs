@@ -44,17 +44,17 @@ impl TileCache {
 
     fn insert(&mut self, file_idx: usize, tile_idx: usize, rendered: PreRendered) {
         let key = (file_idx, tile_idx);
-        let bytes = rendered.pixels.len();
+        let bytes = rendered.byte_len();
         // Remove old entry if replacing
         if let Some(old) = self.tiles.remove(&key) {
-            self.total_bytes = self.total_bytes.saturating_sub(old.rendered.pixels.len());
+            self.total_bytes = self.total_bytes.saturating_sub(old.rendered.byte_len());
             self.lru.retain(|k| k != &key);
         }
         // Evict until under cap
         while self.total_bytes + bytes > MAX_BYTES && !self.lru.is_empty() {
             let oldest = self.lru.remove(0);
             if let Some(evicted) = self.tiles.remove(&oldest) {
-                self.total_bytes = self.total_bytes.saturating_sub(evicted.rendered.pixels.len());
+                self.total_bytes = self.total_bytes.saturating_sub(evicted.rendered.byte_len());
             }
         }
         self.total_bytes += bytes;
@@ -79,7 +79,7 @@ impl TileCache {
             .collect();
         for key in keys_to_evict {
             if let Some(evicted) = self.tiles.remove(&key) {
-                self.total_bytes = self.total_bytes.saturating_sub(evicted.rendered.pixels.len());
+                self.total_bytes = self.total_bytes.saturating_sub(evicted.rendered.byte_len());
                 self.lru.retain(|k| k != &key);
             }
         }
@@ -89,7 +89,7 @@ impl TileCache {
         let keys: Vec<_> = self.tiles.keys().copied().filter(|k| k.0 == file_idx).collect();
         for key in keys {
             if let Some(evicted) = self.tiles.remove(&key) {
-                self.total_bytes = self.total_bytes.saturating_sub(evicted.rendered.pixels.len());
+                self.total_bytes = self.total_bytes.saturating_sub(evicted.rendered.byte_len());
                 self.lru.retain(|k| k != &key);
             }
         }
@@ -303,26 +303,48 @@ pub fn render_live_tile_sync(file_idx: usize, tile_idx: usize, col_start: usize,
             return partial;
         }
 
-        // Pad to full TILE_COLS width with black pixels
+        // Pad to full TILE_COLS width with silence (NEG_INFINITY dB / black)
         let full_width = TILE_COLS as u32;
         let height = partial.height;
-        let mut full_pixels = vec![0u8; (full_width * height * 4) as usize];
 
-        for y in 0..height {
-            let src_start = (y * partial.width * 4) as usize;
-            let src_end = src_start + (partial.width * 4) as usize;
-            let dst_start = (y * full_width * 4) as usize;
-            let dst_end = dst_start + (partial.width * 4) as usize;
-            if src_end <= partial.pixels.len() {
-                full_pixels[dst_start..dst_end]
-                    .copy_from_slice(&partial.pixels[src_start..src_end]);
+        if !partial.db_data.is_empty() {
+            // dB tile: pad with NEG_INFINITY (renders as black)
+            let mut full_db = vec![f32::NEG_INFINITY; (full_width * height) as usize];
+            for y in 0..height {
+                let src_start = (y * partial.width) as usize;
+                let src_end = src_start + partial.width as usize;
+                let dst_start = (y * full_width) as usize;
+                let dst_end = dst_start + partial.width as usize;
+                if src_end <= partial.db_data.len() {
+                    full_db[dst_start..dst_end]
+                        .copy_from_slice(&partial.db_data[src_start..src_end]);
+                }
             }
-        }
-
-        PreRendered {
-            width: full_width,
-            height,
-            pixels: full_pixels,
+            PreRendered {
+                width: full_width,
+                height,
+                pixels: Vec::new(),
+                db_data: full_db,
+            }
+        } else {
+            // RGBA tile (legacy path)
+            let mut full_pixels = vec![0u8; (full_width * height * 4) as usize];
+            for y in 0..height {
+                let src_start = (y * partial.width * 4) as usize;
+                let src_end = src_start + (partial.width * 4) as usize;
+                let dst_start = (y * full_width * 4) as usize;
+                let dst_end = dst_start + (partial.width * 4) as usize;
+                if src_end <= partial.pixels.len() {
+                    full_pixels[dst_start..dst_end]
+                        .copy_from_slice(&partial.pixels[src_start..src_end]);
+                }
+            }
+            PreRendered {
+                width: full_width,
+                height,
+                pixels: full_pixels,
+                db_data: Vec::new(),
+            }
         }
     });
 

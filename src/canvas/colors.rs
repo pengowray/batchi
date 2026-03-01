@@ -1,14 +1,34 @@
+/// Convert a magnitude to dB relative to `max_mag`.
+/// Returns a negative value (0 dB = max, more negative = quieter).
+/// Returns `f32::NEG_INFINITY` for zero/negative magnitudes.
+#[inline]
+pub fn magnitude_to_db(mag: f32, max_mag: f32) -> f32 {
+    if max_mag <= 0.0 || mag <= 0.0 {
+        return f32::NEG_INFINITY;
+    }
+    20.0 * (mag / max_mag).log10()
+}
+
 /// Map a spectrogram magnitude to a greyscale pixel value (0-255).
 /// Uses log scale (dB) for perceptual brightness.
 pub fn magnitude_to_greyscale(mag: f32, max_mag: f32) -> u8 {
-    if max_mag <= 0.0 || mag <= 0.0 {
+    let db = magnitude_to_db(mag, max_mag);
+    db_to_greyscale(db, -80.0, 80.0, 1.0, 0.0)
+}
+
+/// Convert a dB value to a greyscale pixel value (0-255) using display settings.
+#[inline]
+pub fn db_to_greyscale(db: f32, floor_db: f32, range_db: f32, gamma: f32, gain_db: f32) -> u8 {
+    if !db.is_finite() {
         return 0;
     }
-    let db = 20.0 * (mag / max_mag).log10();
-    // Clamp to [-80, 0] dB dynamic range
-    let db_clamped = db.max(-80.0).min(0.0);
-    // Map to 0-255
-    ((db_clamped + 80.0) / 80.0 * 255.0) as u8
+    let adjusted = db + gain_db;
+    let normalized = ((adjusted - floor_db) / range_db).clamp(0.0, 1.0);
+    if gamma == 1.0 {
+        (normalized * 255.0) as u8
+    } else {
+        (normalized.powf(gamma) * 255.0) as u8
+    }
 }
 
 /// Resistor color band colors for frequency markers at 10 kHz intervals.

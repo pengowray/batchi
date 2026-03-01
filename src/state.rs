@@ -353,6 +353,16 @@ pub struct AppState {
     // Tile system: incrementing this triggers a spectrogram redraw
     pub tile_ready_signal: RwSignal<u32>,
 
+    // Spectrogram display settings (applied at render time, no tile regen needed)
+    /// dB floor (default -80.0). Values below this map to black.
+    pub spect_floor_db: RwSignal<f32>,
+    /// dB range (default 80.0). floor + range = ceiling.
+    pub spect_range_db: RwSignal<f32>,
+    /// Gamma curve (default 1.0 = linear). <1 = brighter darks, >1 = more contrast.
+    pub spect_gamma: RwSignal<f32>,
+    /// Additive dB gain offset (default 0.0).
+    pub spect_gain_db: RwSignal<f32>,
+
     // Which floating layer panel is currently open
     pub layer_panel_open: RwSignal<Option<LayerPanel>>,
 
@@ -534,6 +544,10 @@ impl AppState {
             show_bookmark_popup: RwSignal::new(false),
             play_from_here_time: RwSignal::new(0.0),
             tile_ready_signal: RwSignal::new(0),
+            spect_floor_db: RwSignal::new(-80.0),
+            spect_range_db: RwSignal::new(80.0),
+            spect_gamma: RwSignal::new(1.0),
+            spect_gain_db: RwSignal::new(0.0),
             layer_panel_open: RwSignal::new(None),
             spectrogram_canvas_width: RwSignal::new(1000.0),
             main_view: RwSignal::new(MainView::Spectrogram),
