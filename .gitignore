@@ -18,6 +18,11 @@
 Thumbs.db
 desktop.ini
 
+# Android signing
+*.keystore
+*.jks
+keystore.properties
+
 # other
 CLAUDE.md
 .env
