@@ -61,19 +61,18 @@ class UsbAudioPlugin(private val activity: Activity) : Plugin(activity) {
     private val usbReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             if (intent.action == ACTION_USB_PERMISSION) {
-                val device = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    intent.getParcelableExtra(UsbManager.EXTRA_DEVICE, UsbDevice::class.java)
-                } else {
-                    @Suppress("DEPRECATION")
-                    intent.getParcelableExtra(UsbManager.EXTRA_DEVICE)
-                }
-                val granted = intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)
-
+                // With FLAG_IMMUTABLE, intent extras are empty (no EXTRA_DEVICE or
+                // EXTRA_PERMISSION_GRANTED). Use the cached device and check permission
+                // directly via UsbManager, matching the batgizmo pattern.
+                val device = pendingPermissionDevice
                 val invoke = pendingPermissionInvoke
                 pendingPermissionInvoke = null
                 pendingPermissionDevice = null
 
                 if (invoke == null) return
+
+                val usbManager = activity.getSystemService(Context.USB_SERVICE) as UsbManager
+                val granted = device != null && usbManager.hasPermission(device)
 
                 if (granted && device != null) {
                     val result = JSObject()
@@ -166,7 +165,7 @@ class UsbAudioPlugin(private val activity: Activity) : Plugin(activity) {
         pendingPermissionDevice = device
 
         val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            PendingIntent.FLAG_MUTABLE
+            PendingIntent.FLAG_IMMUTABLE
         } else {
             0
         }
