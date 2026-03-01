@@ -788,6 +788,10 @@ async fn ensure_mic_open_usb(state: &AppState) -> bool {
         .ok().and_then(|v| v.as_f64()).unwrap_or(1.0) as u32;
     let product_name = js_sys::Reflect::get(&device_info, &JsValue::from_str("productName"))
         .ok().and_then(|v| v.as_string()).unwrap_or_else(|| "USB Audio".into());
+    let interface_number = js_sys::Reflect::get(&device_info, &JsValue::from_str("interfaceNumber"))
+        .ok().and_then(|v| v.as_f64()).unwrap_or(0.0) as u32;
+    let alternate_setting = js_sys::Reflect::get(&device_info, &JsValue::from_str("alternateSetting"))
+        .ok().and_then(|v| v.as_f64()).unwrap_or(0.0) as u32;
 
     if fd < 0 || endpoint_address == 0 || max_packet_size == 0 {
         state.status_message.set(Some("USB device: invalid fd or endpoint".into()));
@@ -808,6 +812,10 @@ async fn ensure_mic_open_usb(state: &AppState) -> bool {
         &JsValue::from_f64(num_channels as f64)).ok();
     js_sys::Reflect::set(&stream_args, &JsValue::from_str("deviceName"),
         &JsValue::from_str(&device_name)).ok();
+    js_sys::Reflect::set(&stream_args, &JsValue::from_str("interfaceNumber"),
+        &JsValue::from_f64(interface_number as f64)).ok();
+    js_sys::Reflect::set(&stream_args, &JsValue::from_str("alternateSetting"),
+        &JsValue::from_f64(alternate_setting as f64)).ok();
 
     match tauri_invoke("usb_start_stream", &stream_args.into()).await {
         Ok(_) => {}

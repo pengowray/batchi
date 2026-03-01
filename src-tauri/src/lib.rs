@@ -293,6 +293,8 @@ fn usb_start_stream(
     sample_rate: u32,
     num_channels: u32,
     device_name: String,
+    interface_number: Option<u32>,
+    alternate_setting: Option<u32>,
 ) -> Result<UsbStreamInfo, String> {
     let usb = state.lock().map_err(|e| e.to_string())?;
     // Stop existing stream if any
@@ -309,6 +311,8 @@ fn usb_start_stream(
         num_channels,
         device_name.clone(),
         app,
+        interface_number.unwrap_or(0),
+        alternate_setting.unwrap_or(0),
     )?;
 
     let info = UsbStreamInfo {

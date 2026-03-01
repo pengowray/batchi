@@ -322,17 +322,40 @@ class UsbAudioPlugin(private val activity: Activity) : Plugin(activity) {
                     "ch=${endpoint.channels} bits=${endpoint.bitResolution} " +
                     "iface=${endpoint.interfaceNumber} alt=${endpoint.alternateSetting}")
 
-            // Set alternate interface setting via USB control transfer
-            if (endpoint.alternateSetting > 0) {
+            // Activate the correct alternate setting via the Android API.
+            // This uses USBDEVFS_SETINTERFACE ioctl under the hood, which properly
+            // updates the kernel's endpoint tables. A raw controlTransfer for
+            // SET_INTERFACE does NOT always update the kernel state, causing
+            // USBDEVFS_SUBMITURB to fail with ENOENT.
+            val targetIface = findUsbInterface(device,
+                endpoint.interfaceNumber, endpoint.alternateSetting)
+            if (targetIface != null) {
+                val ok = connection.setInterface(targetIface)
+                Log.i(TAG, "setInterface(iface=${endpoint.interfaceNumber}, " +
+                        "alt=${endpoint.alternateSetting}) result=$ok")
+                if (!ok) {
+                    Log.w(TAG, "setInterface failed — falling back to controlTransfer")
+                    val setAltResult = connection.controlTransfer(
+                        USB_DIR_OUT_STANDARD_INTERFACE,  // 0x01
+                        USB_REQUEST_SET_INTERFACE,        // 11 (SET_INTERFACE)
+                        endpoint.alternateSetting,
+                        endpoint.interfaceNumber,
+                        null, 0, 1000
+                    )
+                    Log.d(TAG, "controlTransfer SET_INTERFACE result=$setAltResult")
+                }
+            } else if (endpoint.alternateSetting > 0) {
+                // UsbInterface object not found — fall back to controlTransfer
+                Log.w(TAG, "UsbInterface not found for iface=${endpoint.interfaceNumber} " +
+                        "alt=${endpoint.alternateSetting}, using controlTransfer fallback")
                 val setAltResult = connection.controlTransfer(
-                    USB_DIR_OUT_STANDARD_INTERFACE,  // 0x01
-                    USB_REQUEST_SET_INTERFACE,        // 11 (SET_INTERFACE)
-                    endpoint.alternateSetting,        // wValue = alternate setting
-                    endpoint.interfaceNumber,         // wIndex = interface number
+                    USB_DIR_OUT_STANDARD_INTERFACE,
+                    USB_REQUEST_SET_INTERFACE,
+                    endpoint.alternateSetting,
+                    endpoint.interfaceNumber,
                     null, 0, 1000
                 )
-                Log.d(TAG, "SET_INTERFACE alt=${endpoint.alternateSetting} " +
-                        "iface=${endpoint.interfaceNumber} result=$setAltResult")
+                Log.d(TAG, "controlTransfer SET_INTERFACE result=$setAltResult")
             }
 
             // Set sample rate via control transfer
@@ -353,6 +376,8 @@ class UsbAudioPlugin(private val activity: Activity) : Plugin(activity) {
             result.put("sampleRate", actualRate)
             result.put("numChannels", endpoint.channels)
             result.put("bitResolution", endpoint.bitResolution)
+            result.put("interfaceNumber", endpoint.interfaceNumber)
+            result.put("alternateSetting", endpoint.alternateSetting)
             result.put("deviceName", device.deviceName)
             result.put("productName", device.productName ?: "Unknown")
             result.put("uacVersion", audioInfo.uacVersion)
@@ -388,6 +413,25 @@ class UsbAudioPlugin(private val activity: Activity) : Plugin(activity) {
         activeConnection = null
         activeDevice = null
         invoke.resolve(JSObject())
+    }
+
+    /**
+     * Find the Android UsbInterface object matching a specific interface number
+     * and alternate setting. Needed for connection.setInterface() which requires
+     * the actual UsbInterface object, not just raw numbers.
+     */
+    private fun findUsbInterface(
+        device: UsbDevice,
+        interfaceNumber: Int,
+        alternateSetting: Int
+    ): android.hardware.usb.UsbInterface? {
+        for (i in 0 until device.interfaceCount) {
+            val iface = device.getInterface(i)
+            if (iface.id == interfaceNumber && iface.alternateSetting == alternateSetting) {
+                return iface
+            }
+        }
+        return null
     }
 
     /**

@@ -162,6 +162,8 @@ pub fn start_usb_stream(
     num_channels: u32,
     device_name: String,
     app: tauri::AppHandle,
+    interface_number: u32,
+    alternate_setting: u32,
 ) -> Result<UsbStreamState, String> {
     let cancel_flag = Arc::new(AtomicBool::new(false));
     let is_streaming = Arc::new(AtomicBool::new(false));
@@ -183,6 +185,8 @@ pub fn start_usb_stream(
             endpoint_address,
             max_packet_size,
             channels,
+            interface_number,
+            alternate_setting,
             &cancel,
             &streaming,
             &recording,
@@ -227,6 +231,8 @@ pub fn start_usb_stream(
     _num_channels: u32,
     _device_name: String,
     _app: tauri::AppHandle,
+    _interface_number: u32,
+    _alternate_setting: u32,
 ) -> Result<UsbStreamState, String> {
     Err("USB audio streaming is only supported on Android".into())
 }
@@ -274,9 +280,19 @@ mod isochronous {
         _iow(USBDEVFS_MAGIC, 12, std::mem::size_of::<*mut std::ffi::c_void>() as u32);
     const USBDEVFS_REAPURBNDELAY: u32 =
         _iow(USBDEVFS_MAGIC, 13, std::mem::size_of::<*mut std::ffi::c_void>() as u32);
+    const USBDEVFS_CLAIMINTERFACE: u32 =
+        _ior(USBDEVFS_MAGIC, 15, std::mem::size_of::<u32>() as u32);
+    const USBDEVFS_SETINTERFACE: u32 =
+        _ior(USBDEVFS_MAGIC, 4, std::mem::size_of::<UsbdevfsSetinterface>() as u32);
 
     const USBDEVFS_URB_TYPE_ISO: u8 = 0;
     const USBDEVFS_URB_ISO_ASAP: u32 = 0x02;
+
+    #[repr(C)]
+    struct UsbdevfsSetinterface {
+        interface: u32,
+        altsetting: u32,
+    }
 
     #[repr(C)]
     #[derive(Clone)]
@@ -319,12 +335,54 @@ mod isochronous {
         endpoint_address: u32,
         max_packet_size: u32,
         num_channels: usize,
+        interface_number: u32,
+        alternate_setting: u32,
         cancel: &AtomicBool,
         is_streaming: &AtomicBool,
         is_recording: &AtomicBool,
         buffer: &Arc<Mutex<UsbRecordingBuffer>>,
         startup_tx: std::sync::mpsc::SyncSender<Result<(), String>>,
     ) -> Result<(), String> {
+        // Ensure the interface is claimed and alternate setting is active from the
+        // kernel's perspective. The Kotlin side should have already done this via
+        // connection.setInterface(), but we do it again here as a safety net.
+        // CLAIMINTERFACE: claim the audio streaming interface (may already be claimed)
+        let mut iface_num = interface_number;
+        let ret = unsafe {
+            libc::ioctl(fd, USBDEVFS_CLAIMINTERFACE as libc::c_int,
+                &mut iface_num as *mut u32)
+        };
+        if ret != 0 {
+            let err = std::io::Error::last_os_error();
+            // EBUSY means already claimed — that's fine
+            if err.raw_os_error() != Some(libc::EBUSY) {
+                eprintln!("USBDEVFS_CLAIMINTERFACE({}) warning: {}", interface_number, err);
+            }
+        }
+
+        // SETINTERFACE: activate the correct alternate setting so the
+        // isochronous endpoint becomes visible to the kernel
+        if alternate_setting > 0 {
+            let mut setif = UsbdevfsSetinterface {
+                interface: interface_number,
+                altsetting: alternate_setting,
+            };
+            let ret = unsafe {
+                libc::ioctl(fd, USBDEVFS_SETINTERFACE as libc::c_int,
+                    &mut setif as *mut UsbdevfsSetinterface)
+            };
+            if ret != 0 {
+                let err = std::io::Error::last_os_error();
+                let msg = format!(
+                    "USBDEVFS_SETINTERFACE(iface={}, alt={}) failed: {}",
+                    interface_number, alternate_setting, err
+                );
+                let _ = startup_tx.send(Err(msg.clone()));
+                return Err(msg);
+            }
+            eprintln!("USBDEVFS_SETINTERFACE iface={} alt={} OK", interface_number, alternate_setting);
+        }
+
         let requested_bytes_per_frame = max_packet_size as usize;
 
         let mut audio_buffers: Vec<Vec<u8>> = (0..URBS_TO_JUGGLE)
