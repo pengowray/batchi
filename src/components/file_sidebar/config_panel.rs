@@ -117,7 +117,7 @@ pub(super) fn ConfigPanel() -> impl IntoView {
                         <option value="cpal"
                             selected=move || state.mic_mode.get() == MicMode::Cpal
                             disabled=move || !is_tauri
-                        >"cpal"</option>
+                        >"Native audio"</option>
                         <option value="raw_usb"
                             selected=move || state.mic_mode.get() == MicMode::RawUsb
                             disabled=move || !is_tauri
