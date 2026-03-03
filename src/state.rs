@@ -439,6 +439,10 @@ pub struct AppState {
     // Tile system: incrementing this triggers a spectrogram redraw
     pub tile_ready_signal: RwSignal<u32>,
 
+    /// Generation counter for background preload. Incremented when file/LOD changes
+    /// to cancel stale preload jobs.
+    pub bg_preload_gen: RwSignal<u32>,
+
     // Spectrogram display settings (applied at render time, no tile regen needed)
     /// dB floor (default -80.0). Values below this map to black.
     pub spect_floor_db: RwSignal<f32>,
@@ -664,6 +668,7 @@ impl AppState {
             show_bookmark_popup: RwSignal::new(false),
             play_from_here_time: RwSignal::new(0.0),
             tile_ready_signal: RwSignal::new(0),
+            bg_preload_gen: RwSignal::new(0),
             spect_floor_db: RwSignal::new(-80.0),
             spect_range_db: RwSignal::new(80.0),
             spect_gamma: RwSignal::new(1.0),

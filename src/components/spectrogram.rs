@@ -544,6 +544,15 @@ pub fn Spectrogram() -> impl IntoView {
                 let first_tile = (vis_start_lod / TILE_COLS as f64).floor() as usize;
                 let last_tile = ((vis_end_lod - 0.001).max(0.0) / TILE_COLS as f64).floor() as usize;
 
+                // Cancel stale in-flight entries far from viewport (prevents stuck tiles during fast scroll)
+                let viewport_center_tile = ((vis_start_lod + vis_end_lod) / 2.0 / TILE_COLS as f64) as usize;
+                let visible_tile_count = last_tile.saturating_sub(first_tile) + 1;
+                let keep_radius = visible_tile_count.max(10) * 3;
+                tile_cache::cancel_far_in_flight(file_idx_val, ideal_lod, viewport_center_tile, keep_radius);
+
+                // Proactively evict cached tiles far from viewport (free space for new tiles)
+                tile_cache::evict_far(file_idx_val, ideal_lod, viewport_center_tile, visible_tile_count.max(10) * 5);
+
                 let is_loading = state.loading_count.get_untracked() > 0;
 
                 let use_reassign = reassign_on && ideal_lod > 0;
@@ -599,6 +608,21 @@ pub fn Spectrogram() -> impl IntoView {
                             }
                         }
                     }
+                }
+
+                // Recovery: if visible tiles are missing and not being computed,
+                // force a retry after a short delay to break stuck states.
+                let missing = tile_cache::count_missing_visible(file_idx_val, ideal_lod, first_tile, last_tile);
+                if missing > 0 {
+                    let state_recovery = state;
+                    let recovery_cb = Closure::once(move || {
+                        state_recovery.tile_ready_signal.update(|n| *n = n.wrapping_add(1));
+                    });
+                    let _ = web_sys::window().unwrap()
+                        .set_timeout_with_callback_and_timeout_and_arguments_0(
+                            recovery_cb.as_ref().unchecked_ref(), 500,
+                        );
+                    recovery_cb.forget();
                 }
                 }
             }
@@ -963,17 +987,24 @@ pub fn Spectrogram() -> impl IntoView {
 
                 let reassign = state.reassign_enabled.get_untracked();
 
+                let (ahead_secs, max_prefetch) = if is_playing {
+                    (15.0, 60)  // aggressive prefetch during playback
+                } else {
+                    (5.0, 30)
+                };
+
                 tile_cache::schedule_prefetch_tiles(
                     state,
                     file_idx,
                     total_samples,
                     sample_rate,
                     center,
-                    5.0,  // pre-fetch 5 seconds ahead
+                    ahead_secs,
                     3.0,  // keep first 3 seconds ready
                     zoom,
                     flow_algo,
                     reassign,
+                    max_prefetch,
                 );
             });
 
@@ -988,6 +1019,58 @@ pub fn Spectrogram() -> impl IntoView {
             prefetch_handle.set(Some(h));
         });
     }
+
+    // Effect 6: background preload — progressively pre-compute tiles for the whole file
+    // at the current LOD, expanding outward from the viewport center.
+    Effect::new(move || {
+        let _file_idx = state.current_file_index.get();
+        let _zoom = state.zoom_level.get();
+        let _loading = state.loading_count.get();
+        let _fft = state.spect_fft_mode.get();
+
+        use crate::canvas::tile_cache;
+
+        // Don't preload while still loading a file
+        if state.loading_count.get_untracked() > 0 {
+            return;
+        }
+
+        let Some(file_idx) = state.current_file_index.get_untracked() else {
+            tile_cache::stop_background_preload();
+            return;
+        };
+
+        let total_samples = state.files.with_untracked(|files| {
+            files.get(file_idx).map(|f| f.audio.samples.len()).unwrap_or(0)
+        });
+        if total_samples == 0 {
+            tile_cache::stop_background_preload();
+            return;
+        }
+
+        let zoom = state.zoom_level.get_untracked();
+        let lod = tile_cache::select_lod(zoom);
+        let max_tiles = tile_cache::tile_count_for_samples(total_samples, lod);
+        if max_tiles == 0 { return; }
+
+        // Compute center tile from current viewport
+        let scroll = state.scroll_offset.get_untracked();
+        let time_res = state.files.with_untracked(|files| {
+            files.get(file_idx).map(|f| f.spectrogram.time_resolution).unwrap_or(0.01)
+        });
+        let canvas_w = state.spectrogram_canvas_width.get_untracked();
+        let visible_time = if zoom > 0.0 { (canvas_w / zoom) * time_res } else { 1.0 };
+        let center_time = scroll + visible_time / 2.0;
+        let ratio = tile_cache::lod_ratio(lod);
+        let center_col = (center_time / time_res) as f64 * ratio;
+        let center_tile = (center_col / tile_cache::TILE_COLS as f64) as usize;
+
+        // Bump generation to cancel any stale preload
+        state.bg_preload_gen.update(|g| *g = g.wrapping_add(1));
+        let gen = state.bg_preload_gen.get_untracked();
+
+        tile_cache::start_background_preload(state, file_idx, lod, center_tile, max_tiles, gen);
+    });
 
     // Helper to get (px_x, px_y, time, freq) from mouse event
     let mouse_to_xtf = move |ev: &MouseEvent| -> Option<(f64, f64, f64, f64)> {

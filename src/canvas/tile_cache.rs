@@ -28,6 +28,9 @@ pub const TILE_COLS: usize = 256;
 /// ~120 MB cap for tile pixel data.
 const MAX_BYTES: usize = 120 * 1024 * 1024;
 
+/// Maximum time (ms) a tile can be in-flight before being considered stuck.
+const IN_FLIGHT_TIMEOUT_MS: f64 = 10_000.0;
+
 // ── LOD configuration ────────────────────────────────────────────────────────
 
 pub struct LodConfig {
@@ -220,28 +223,40 @@ impl ChromaTileCache {
 thread_local! {
     /// Unified magnitude tile cache — all LOD levels in one cache.
     static CACHE: RefCell<TileCache> = RefCell::new(TileCache::new());
-    /// Set of (file_idx, lod, tile_idx) currently being generated.
-    static IN_FLIGHT: RefCell<std::collections::HashSet<CacheKey>> =
-        RefCell::new(std::collections::HashSet::new());
+    /// Map of (file_idx, lod, tile_idx) → timestamp (ms) for tiles currently being generated.
+    /// Entries older than IN_FLIGHT_TIMEOUT_MS are considered stuck and can be re-scheduled.
+    static IN_FLIGHT: RefCell<HashMap<CacheKey, f64>> =
+        RefCell::new(HashMap::new());
 
     /// Flow-mode tile cache — multi-LOD, same CacheKey as magnitude tiles.
     static FLOW_CACHE: RefCell<TileCache> = RefCell::new(TileCache::new());
-    static FLOW_IN_FLIGHT: RefCell<std::collections::HashSet<CacheKey>> =
-        RefCell::new(std::collections::HashSet::new());
+    static FLOW_IN_FLIGHT: RefCell<HashMap<CacheKey, f64>> =
+        RefCell::new(HashMap::new());
 
     /// Reassignment spectrogram tile cache — multi-LOD, same CacheKey as magnitude tiles.
     static REASSIGN_CACHE: RefCell<TileCache> = RefCell::new(TileCache::new());
-    static REASSIGN_IN_FLIGHT: RefCell<std::collections::HashSet<CacheKey>> =
-        RefCell::new(std::collections::HashSet::new());
+    static REASSIGN_IN_FLIGHT: RefCell<HashMap<CacheKey, f64>> =
+        RefCell::new(HashMap::new());
 
     /// Chromagram tile cache (LOD1-only).
     static CHROMA_CACHE: RefCell<ChromaTileCache> = RefCell::new(ChromaTileCache::new());
-    static CHROMA_IN_FLIGHT: RefCell<std::collections::HashSet<ChromaKey>> =
-        RefCell::new(std::collections::HashSet::new());
+    static CHROMA_IN_FLIGHT: RefCell<HashMap<ChromaKey, f64>> =
+        RefCell::new(HashMap::new());
 
     /// Cached per-file global chromagram normalisation maxima (max_class, max_note).
     static CHROMA_GLOBAL_MAX: RefCell<HashMap<usize, (f32, f32)>> =
         RefCell::new(HashMap::new());
+}
+
+// ── IN_FLIGHT helpers ────────────────────────────────────────────────────────
+
+/// Check if a key is actively in-flight (not stale). Returns true if the
+/// tile is being computed and should not be re-scheduled.
+fn is_in_flight_active<K: Eq + std::hash::Hash>(map: &HashMap<K, f64>, key: &K) -> bool {
+    match map.get(key) {
+        None => false,
+        Some(&ts) => js_sys::Date::now() - ts <= IN_FLIGHT_TIMEOUT_MS,
+    }
 }
 
 // ── Public API: magnitude tile cache ─────────────────────────────────────────
@@ -268,7 +283,7 @@ pub fn borrow_tile<R>(file_idx: usize, lod: u8, tile_idx: usize, f: impl FnOnce(
 
 pub fn clear_file(file_idx: usize) {
     CACHE.with(|c| c.borrow_mut().clear_for_file(file_idx));
-    IN_FLIGHT.with(|s| s.borrow_mut().retain(|k| k.0 != file_idx));
+    IN_FLIGHT.with(|s| s.borrow_mut().retain(|k, _| k.0 != file_idx));
 }
 
 /// Clear all magnitude tiles (all files, all LODs). Used when global
@@ -280,6 +295,37 @@ pub fn clear_all_tiles() {
 
 pub fn evict_far(file_idx: usize, lod: u8, center_tile: usize, keep_radius: usize) {
     CACHE.with(|c| c.borrow_mut().evict_far_from(file_idx, lod, center_tile, keep_radius));
+}
+
+/// Remove IN_FLIGHT entries far from the current viewport center.
+/// Prevents old in-flight computations from blocking cache resources
+/// when the user scrolls fast past them.
+pub fn cancel_far_in_flight(file_idx: usize, lod: u8, center_tile: usize, keep_radius: usize) {
+    IN_FLIGHT.with(|s| {
+        s.borrow_mut().retain(|&(fi, l, ti), _| {
+            fi != file_idx || l != lod || ti.abs_diff(center_tile) <= keep_radius
+        });
+    });
+}
+
+/// Returns the count of visible tiles that are neither cached nor in-flight.
+/// Used by the render effect to detect stuck states needing recovery.
+pub fn count_missing_visible(file_idx: usize, lod: u8, first_tile: usize, last_tile: usize) -> usize {
+    CACHE.with(|c| {
+        let cache = c.borrow();
+        IN_FLIGHT.with(|s| {
+            let inflight = s.borrow();
+            (first_tile..=last_tile).filter(|&t| {
+                let key = (file_idx, lod, t);
+                !cache.tiles.contains_key(&key) && !inflight.contains_key(&key)
+            }).count()
+        })
+    })
+}
+
+/// Returns (used_bytes, max_bytes) for the magnitude tile cache.
+pub fn cache_usage() -> (usize, usize) {
+    CACHE.with(|c| (c.borrow().total_bytes, MAX_BYTES))
 }
 
 /// Returns the number of complete LOD1 tiles for a file currently in the cache.
@@ -301,7 +347,7 @@ pub fn schedule_tile_lod(state: AppState, file_idx: usize, lod: u8, tile_idx: us
 
     let key: CacheKey = (file_idx, lod, tile_idx);
     if CACHE.with(|c| c.borrow().tiles.contains_key(&key)) { return; }
-    if IN_FLIGHT.with(|s| s.borrow().contains(&key)) { return; }
+    if IN_FLIGHT.with(|s| is_in_flight_active(&s.borrow(), &key)) { return; }
 
     // Bounds check: reject tiles that are entirely past the audio data.
     // This prevents futile async work and IN_FLIGHT entries that never resolve.
@@ -311,7 +357,7 @@ pub fn schedule_tile_lod(state: AppState, file_idx: usize, lod: u8, tile_idx: us
     let max_tiles = tile_count_for_samples(total_samples, lod);
     if tile_idx >= max_tiles { return; }
 
-    IN_FLIGHT.with(|s| s.borrow_mut().insert(key));
+    IN_FLIGHT.with(|s| s.borrow_mut().insert(key, js_sys::Date::now()));
 
     let config_hop = LOD_CONFIGS[lod as usize].hop_size;
     let fft_mode = state.spect_fft_mode.get_untracked();
@@ -370,8 +416,8 @@ pub fn schedule_tile_lod(state: AppState, file_idx: usize, lod: u8, tile_idx: us
 pub fn schedule_tile(state: AppState, file: LoadedFile, file_idx: usize, tile_idx: usize) {
     let key: CacheKey = (file_idx, 1, tile_idx);
     if CACHE.with(|c| c.borrow().tiles.contains_key(&key)) { return; }
-    if IN_FLIGHT.with(|s| s.borrow().contains(&key)) { return; }
-    IN_FLIGHT.with(|s| s.borrow_mut().insert(key));
+    if IN_FLIGHT.with(|s| is_in_flight_active(&s.borrow(), &key)) { return; }
+    IN_FLIGHT.with(|s| s.borrow_mut().insert(key, js_sys::Date::now()));
 
     spawn_local(async move {
         yield_to_browser().await;
@@ -519,8 +565,8 @@ pub fn schedule_tile_from_store(state: AppState, file_idx: usize, tile_idx: usiz
 
     let key: CacheKey = (file_idx, 1, tile_idx);
     if CACHE.with(|c| c.borrow().tiles.contains_key(&key)) { return; }
-    if IN_FLIGHT.with(|s| s.borrow().contains(&key)) { return; }
-    IN_FLIGHT.with(|s| s.borrow_mut().insert(key));
+    if IN_FLIGHT.with(|s| is_in_flight_active(&s.borrow(), &key)) { return; }
+    IN_FLIGHT.with(|s| s.borrow_mut().insert(key, js_sys::Date::now()));
 
     spawn_local(async move {
         yield_to_browser().await;
@@ -551,8 +597,9 @@ pub fn schedule_tile_from_store(state: AppState, file_idx: usize, tile_idx: usiz
 
         if let Some(rendered) = rendered {
             CACHE.with(|c| c.borrow_mut().insert(file_idx, 1, tile_idx, rendered));
-            state.tile_ready_signal.update(|n| *n = n.wrapping_add(1));
         }
+        // Always bump signal so render effect retries even if store had no data
+        state.tile_ready_signal.update(|n| *n = n.wrapping_add(1));
     });
 }
 
@@ -613,6 +660,7 @@ pub fn schedule_prefetch_tiles(
     zoom: f64,
     flow_algo: Option<FlowAlgo>,
     reassign: bool,
+    max_prefetch: usize,
 ) {
     let lod = select_lod(zoom);
     let hop = LOD_CONFIGS[lod as usize].hop_size;
@@ -625,8 +673,7 @@ pub fn schedule_prefetch_tiles(
         col / TILE_COLS
     };
 
-    let mut tiles: Vec<usize> = Vec::with_capacity(40);
-    let max_prefetch: usize = 30;
+    let mut tiles: Vec<usize> = Vec::with_capacity(max_prefetch + 10);
 
     // Region 1: ahead of center_time
     let center_tile = time_to_tile(center_time);
@@ -670,8 +717,16 @@ pub fn schedule_tile_on_demand(
 
     let key: CacheKey = (file_idx, 1, tile_idx);
     if CACHE.with(|c| c.borrow().tiles.contains_key(&key)) { return; }
-    if IN_FLIGHT.with(|s| s.borrow().contains(&key)) { return; }
-    IN_FLIGHT.with(|s| s.borrow_mut().insert(key));
+    if IN_FLIGHT.with(|s| is_in_flight_active(&s.borrow(), &key)) { return; }
+
+    // Bounds check: reject tiles past the audio data
+    let total_samples = state.files.with_untracked(|files| {
+        files.get(file_idx).map(|f| f.audio.samples.len()).unwrap_or(0)
+    });
+    let max_tiles = tile_count_for_samples(total_samples, 1);
+    if tile_idx >= max_tiles { return; }
+
+    IN_FLIGHT.with(|s| s.borrow_mut().insert(key, js_sys::Date::now()));
 
     spawn_local(async move {
         yield_to_browser().await;
@@ -696,6 +751,8 @@ pub fn schedule_tile_on_demand(
         let cols = compute_spectrogram_partial(&audio, 2048, 512, col_start, TILE_COLS);
         if cols.is_empty() {
             IN_FLIGHT.with(|s| s.borrow_mut().remove(&key));
+            // Bump signal so render effect retries (e.g. after fast scroll clamping)
+            state.tile_ready_signal.update(|n| *n = n.wrapping_add(1));
             return;
         }
 
@@ -738,7 +795,7 @@ pub fn clear_flow_cache() {
 
 pub fn clear_flow_file(file_idx: usize) {
     FLOW_CACHE.with(|c| c.borrow_mut().clear_for_file(file_idx));
-    FLOW_IN_FLIGHT.with(|s| s.borrow_mut().retain(|k| k.0 != file_idx));
+    FLOW_IN_FLIGHT.with(|s| s.borrow_mut().retain(|k, _| k.0 != file_idx));
 }
 
 /// Schedule a flow tile for background generation at any LOD.
@@ -757,7 +814,7 @@ pub fn schedule_flow_tile(
 
     let key: CacheKey = (file_idx, lod, tile_idx);
     if FLOW_CACHE.with(|c| c.borrow().tiles.contains_key(&key)) { return; }
-    if FLOW_IN_FLIGHT.with(|s| s.borrow().contains(&key)) { return; }
+    if FLOW_IN_FLIGHT.with(|s| is_in_flight_active(&s.borrow(), &key)) { return; }
 
     let total_samples = state.files.with_untracked(|files| {
         files.get(file_idx).map(|f| f.audio.samples.len()).unwrap_or(0)
@@ -765,7 +822,7 @@ pub fn schedule_flow_tile(
     let max_tiles = tile_count_for_samples(total_samples, lod);
     if tile_idx >= max_tiles { return; }
 
-    FLOW_IN_FLIGHT.with(|s| s.borrow_mut().insert(key));
+    FLOW_IN_FLIGHT.with(|s| s.borrow_mut().insert(key, js_sys::Date::now()));
 
     let config_hop = LOD_CONFIGS[lod as usize].hop_size;
     let user_fft = state.spect_fft_mode.get_untracked().max_fft_size();
@@ -881,7 +938,7 @@ pub fn clear_reassign_cache() {
 
 pub fn clear_reassign_file(file_idx: usize) {
     REASSIGN_CACHE.with(|c| c.borrow_mut().clear_for_file(file_idx));
-    REASSIGN_IN_FLIGHT.with(|s| s.borrow_mut().retain(|k| k.0 != file_idx));
+    REASSIGN_IN_FLIGHT.with(|s| s.borrow_mut().retain(|k, _| k.0 != file_idx));
 }
 
 /// Schedule a reassignment spectrogram tile for background generation.
@@ -898,7 +955,7 @@ pub fn schedule_reassign_tile(
 
     let key: CacheKey = (file_idx, lod, tile_idx);
     if REASSIGN_CACHE.with(|c| c.borrow().tiles.contains_key(&key)) { return; }
-    if REASSIGN_IN_FLIGHT.with(|s| s.borrow().contains(&key)) { return; }
+    if REASSIGN_IN_FLIGHT.with(|s| is_in_flight_active(&s.borrow(), &key)) { return; }
 
     let total_samples = state.files.with_untracked(|files| {
         files.get(file_idx).map(|f| f.audio.samples.len()).unwrap_or(0)
@@ -906,7 +963,7 @@ pub fn schedule_reassign_tile(
     let max_tiles = tile_count_for_samples(total_samples, lod);
     if tile_idx >= max_tiles { return; }
 
-    REASSIGN_IN_FLIGHT.with(|s| s.borrow_mut().insert(key));
+    REASSIGN_IN_FLIGHT.with(|s| s.borrow_mut().insert(key, js_sys::Date::now()));
 
     let config_hop = LOD_CONFIGS[lod as usize].hop_size;
     let user_fft = state.spect_fft_mode.get_untracked().max_fft_size();
@@ -998,8 +1055,8 @@ pub fn schedule_chroma_tile(
 
     let key = (file_idx, tile_idx);
     if CHROMA_CACHE.with(|c| c.borrow().tiles.contains_key(&key)) { return; }
-    if CHROMA_IN_FLIGHT.with(|s| s.borrow().contains(&key)) { return; }
-    CHROMA_IN_FLIGHT.with(|s| s.borrow_mut().insert(key));
+    if CHROMA_IN_FLIGHT.with(|s| is_in_flight_active(&s.borrow(), &key)) { return; }
+    CHROMA_IN_FLIGHT.with(|s| s.borrow_mut().insert(key, js_sys::Date::now()));
 
     spawn_local(async move {
         yield_to_browser().await;
@@ -1073,6 +1130,161 @@ pub fn schedule_chroma_tile(
         CHROMA_IN_FLIGHT.with(|s| s.borrow_mut().remove(&key));
         state.tile_ready_signal.update(|n| *n = n.wrapping_add(1));
     });
+}
+
+// ── Background preload ───────────────────────────────────────────────────────
+
+struct BgPreloadState {
+    file_idx: usize,
+    lod: u8,
+    center_tile: usize,
+    max_tiles: usize,
+    next_distance: usize,
+    generation: u32,
+    batch_timer: Option<i32>,
+}
+
+thread_local! {
+    static BG_PRELOAD: RefCell<Option<BgPreloadState>> = RefCell::new(None);
+}
+
+/// Start (or restart) background preloading of tiles at the given LOD,
+/// expanding outward from `center_tile`. Tiles are scheduled in small batches
+/// with 50ms delays to avoid blocking the UI. Stops at 90% cache capacity.
+/// The `generation` counter is checked each step to cancel stale jobs.
+pub fn start_background_preload(
+    state: AppState,
+    file_idx: usize,
+    lod: u8,
+    center_tile: usize,
+    max_tiles: usize,
+    generation: u32,
+) {
+    // Cancel any existing preload
+    BG_PRELOAD.with(|bg| {
+        let mut bg = bg.borrow_mut();
+        if let Some(old) = bg.as_ref() {
+            if let Some(h) = old.batch_timer {
+                let _ = web_sys::window().unwrap().clear_timeout_with_handle(h);
+            }
+        }
+        *bg = Some(BgPreloadState {
+            file_idx,
+            lod,
+            center_tile,
+            max_tiles,
+            next_distance: 0,
+            generation,
+            batch_timer: None,
+        });
+    });
+
+    schedule_preload_batch(state, generation);
+}
+
+/// Stop any in-progress background preload.
+pub fn stop_background_preload() {
+    BG_PRELOAD.with(|bg| {
+        let mut bg = bg.borrow_mut();
+        if let Some(ref s) = *bg {
+            if let Some(h) = s.batch_timer {
+                let _ = web_sys::window().unwrap().clear_timeout_with_handle(h);
+            }
+        }
+        *bg = None;
+    });
+}
+
+fn schedule_preload_batch(state: AppState, generation: u32) {
+    let cb = Closure::once(move || {
+        run_preload_batch(state, generation);
+    });
+    let h = web_sys::window()
+        .unwrap()
+        .set_timeout_with_callback_and_timeout_and_arguments_0(
+            cb.as_ref().unchecked_ref(),
+            50, // 50ms between batches (low priority)
+        )
+        .unwrap_or(0);
+    cb.forget();
+
+    BG_PRELOAD.with(|bg| {
+        if let Some(ref mut s) = *bg.borrow_mut() {
+            if s.generation == generation {
+                s.batch_timer = Some(h);
+            }
+        }
+    });
+}
+
+fn run_preload_batch(state: AppState, generation: u32) {
+    // Check generation (cancel if stale)
+    let current_gen = state.bg_preload_gen.get_untracked();
+    if current_gen != generation { return; }
+
+    let batch = BG_PRELOAD.with(|bg| {
+        let mut bg = bg.borrow_mut();
+        let s = match bg.as_mut() {
+            Some(s) if s.generation == generation => s,
+            _ => return None,
+        };
+
+        // Check if cache is near capacity (stop at 90%)
+        let cache_full = CACHE.with(|c| {
+            c.borrow().total_bytes >= MAX_BYTES * 9 / 10
+        });
+        if cache_full { return None; }
+
+        let mut tiles_to_schedule = Vec::new();
+        let batch_size = 4;
+
+        while tiles_to_schedule.len() < batch_size {
+            if s.next_distance > s.max_tiles {
+                return None; // all distances covered
+            }
+
+            let dist = s.next_distance;
+            s.next_distance += 1;
+
+            // Expand outward from center
+            let candidates = if dist == 0 {
+                vec![s.center_tile]
+            } else {
+                let mut v = Vec::new();
+                if s.center_tile + dist < s.max_tiles {
+                    v.push(s.center_tile + dist);
+                }
+                if let Some(idx) = s.center_tile.checked_sub(dist) {
+                    if idx < s.max_tiles { v.push(idx); }
+                }
+                v
+            };
+
+            for t in candidates {
+                let key = (s.file_idx, s.lod, t);
+                if CACHE.with(|c| c.borrow().tiles.contains_key(&key)) {
+                    continue; // already cached
+                }
+                tiles_to_schedule.push((s.file_idx, s.lod, t));
+            }
+        }
+
+        Some(tiles_to_schedule)
+    });
+
+    if let Some(tiles) = batch {
+        if tiles.is_empty() {
+            // All tiles in this batch were already cached; keep going
+            schedule_preload_batch(state, generation);
+            return;
+        }
+        for &(fi, lod, ti) in &tiles {
+            schedule_tile_lod(state, fi, lod, ti);
+        }
+        // Schedule next batch
+        schedule_preload_batch(state, generation);
+    }
+    // else: cache full or all tiles done — preload stops naturally
 }
 
 // ── Internal helpers ─────────────────────────────────────────────────────────
