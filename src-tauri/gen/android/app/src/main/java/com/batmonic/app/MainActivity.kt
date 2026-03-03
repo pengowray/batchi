@@ -1,10 +1,13 @@
 package com.batmonic.app
 
 import android.os.Bundle
+import android.util.Log
 import android.webkit.PermissionRequest
 import android.webkit.WebChromeClient
 import android.webkit.WebView
 import androidx.activity.enableEdgeToEdge
+
+private const val TAG = "MainActivity"
 
 class MainActivity : TauriActivity() {
   private var usbAudioPlugin: UsbAudioPlugin? = null
@@ -17,16 +20,20 @@ class MainActivity : TauriActivity() {
     pluginManager.load(null, "usb-audio", plugin, "{}")
     super.onCreate(savedInstanceState)
 
-    // Override WebChromeClient to auto-grant audio capture permission to the WebView.
-    // This is needed for Browser mic mode to work on Android (getUserMedia).
-    setupWebViewPermissions()
+    // Defer WebView permission setup until the view hierarchy is ready.
+    // Using post{} ensures the WebView is findable in the view tree.
+    window.decorView.post {
+      setupWebViewPermissions()
+    }
   }
 
+  @Suppress("DEPRECATION")
   override fun onRequestPermissionsResult(
     requestCode: Int,
     permissions: Array<out String>,
     grantResults: IntArray
   ) {
+    Log.i(TAG, "onRequestPermissionsResult: code=$requestCode, results=${grantResults.toList()}")
     super.onRequestPermissionsResult(requestCode, permissions, grantResults)
     // Forward to USB audio plugin for RECORD_AUDIO permission handling
     usbAudioPlugin?.handlePermissionResult(requestCode, grantResults)
@@ -36,16 +43,22 @@ class MainActivity : TauriActivity() {
     // Find the WebView created by Tauri and override its WebChromeClient
     // to grant RESOURCE_AUDIO_CAPTURE requests from the frontend JavaScript.
     val rootView = window.decorView
-    findWebView(rootView)?.let { webView ->
-      val originalClient = webView.webChromeClient
-      webView.webChromeClient = object : WebChromeClient() {
-        override fun onPermissionRequest(request: PermissionRequest) {
-          val resources = request.resources
-          if (resources.contains(PermissionRequest.RESOURCE_AUDIO_CAPTURE)) {
-            request.grant(resources)
-          } else {
-            originalClient?.onPermissionRequest(request) ?: request.deny()
-          }
+    val webView = findWebView(rootView)
+    if (webView == null) {
+      Log.w(TAG, "setupWebViewPermissions: WebView not found in view hierarchy")
+      return
+    }
+    Log.i(TAG, "setupWebViewPermissions: Found WebView, setting up WebChromeClient")
+    val originalClient = webView.webChromeClient
+    webView.webChromeClient = object : WebChromeClient() {
+      override fun onPermissionRequest(request: PermissionRequest) {
+        Log.i(TAG, "onPermissionRequest: ${request.resources.toList()}")
+        val resources = request.resources
+        if (resources.contains(PermissionRequest.RESOURCE_AUDIO_CAPTURE)) {
+          Log.i(TAG, "Granting RESOURCE_AUDIO_CAPTURE")
+          request.grant(resources)
+        } else {
+          originalClient?.onPermissionRequest(request) ?: request.deny()
         }
       }
     }

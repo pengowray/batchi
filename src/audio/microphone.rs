@@ -65,6 +65,30 @@ thread_local! {
 
 use crate::tauri_bridge::{get_tauri_internals, tauri_invoke, tauri_invoke_no_args};
 
+/// Request Android RECORD_AUDIO runtime permission via Tauri plugin.
+/// Call this when the user selects "Browser" mic mode on Tauri (Android).
+/// Returns true if granted, false if denied or not on Android.
+pub async fn request_audio_permission_tauri(state: &AppState) -> bool {
+    if !state.is_tauri {
+        return true; // Not needed on web
+    }
+    match tauri_invoke("plugin:usb-audio|requestAudioPermission",
+        &js_sys::Object::new().into()).await {
+        Ok(result) => {
+            let granted = js_sys::Reflect::get(&result, &JsValue::from_str("granted"))
+                .ok().and_then(|v| v.as_bool()).unwrap_or(false);
+            if !granted {
+                state.show_error_toast("Microphone permission denied");
+            }
+            granted
+        }
+        Err(e) => {
+            log::warn!("requestAudioPermission failed (may not be Android): {}", e);
+            true // Non-fatal on desktop Tauri
+        }
+    }
+}
+
 /// Query the default cpal input device's supported sample rates without opening the mic.
 /// Updates `state.mic_supported_rates` with the result.
 pub async fn query_cpal_supported_rates(state: &AppState) {
@@ -174,6 +198,22 @@ pub async fn query_mic_info(state: &AppState) {
                             state.mic_connection_type.set(Some(conn.to_string()));
                         }
                         state.mic_device_name.set(name);
+
+                        // Extract native sample rate from the device's supported ranges
+                        if let Some(ranges) = js_sys::Reflect::get(&dev, &JsValue::from_str("sample_rate_ranges")).ok() {
+                            let ranges = js_sys::Array::from(&ranges);
+                            let mut max_rate: u32 = 0;
+                            for j in 0..ranges.length() {
+                                let range = ranges.get(j);
+                                let rmax = js_sys::Reflect::get(&range, &JsValue::from_str("max"))
+                                    .ok().and_then(|v| v.as_f64()).unwrap_or(0.0) as u32;
+                                if rmax > max_rate { max_rate = rmax; }
+                            }
+                            // Only set if mic isn't currently open (don't overwrite active rate)
+                            if state.mic_sample_rate.get_untracked() == 0 && max_rate > 0 {
+                                state.mic_sample_rate.set(max_rate);
+                            }
+                        }
                         break;
                     }
                 }
@@ -204,6 +244,10 @@ pub async fn resolve_auto_mode(state: &AppState) -> MicMode {
     // Check for USB audio devices
     let devices_result = tauri_invoke("plugin:usb-audio|listUsbDevices",
         &js_sys::Object::new().into()).await;
+
+    if let Err(ref e) = devices_result {
+        log::warn!("resolve_auto_mode: listUsbDevices failed: {}", e);
+    }
 
     if let Ok(devices) = devices_result {
         let devices_arr = js_sys::Reflect::get(&devices, &JsValue::from_str("devices"))
@@ -304,26 +348,6 @@ fn web_mic_is_open() -> bool {
 async fn ensure_mic_open_web(state: &AppState) -> bool {
     if web_mic_is_open() {
         return true;
-    }
-
-    // On Android Tauri, request RECORD_AUDIO runtime permission first.
-    // The WebView's getUserMedia won't work without it.
-    if state.is_tauri {
-        match tauri_invoke("plugin:usb-audio|requestAudioPermission",
-            &js_sys::Object::new().into()).await {
-            Ok(result) => {
-                let granted = js_sys::Reflect::get(&result, &JsValue::from_str("granted"))
-                    .ok().and_then(|v| v.as_bool()).unwrap_or(false);
-                if !granted {
-                    state.status_message.set(Some("Microphone permission denied".into()));
-                    return false;
-                }
-            }
-            Err(e) => {
-                log::warn!("requestAudioPermission failed (may not be Android): {}", e);
-                // Non-fatal: continue anyway (desktop Tauri doesn't need this)
-            }
-        }
     }
 
     let window = match web_sys::window() {
@@ -505,8 +529,7 @@ fn close_mic_web(state: &AppState) {
     state.mic_sample_rate.set(0);
     state.mic_samples_recorded.set(0);
     state.mic_bits_per_sample.set(16);
-    state.mic_device_name.set(None);
-    state.mic_connection_type.set(None);
+    // Don't clear mic_device_name/mic_connection_type — persist for settings display
     log::info!("Web mic closed");
 }
 
@@ -712,8 +735,6 @@ async fn close_mic_tauri(state: &AppState) {
     state.mic_sample_rate.set(0);
     state.mic_samples_recorded.set(0);
     state.mic_bits_per_sample.set(16);
-    state.mic_device_name.set(None);
-    state.mic_connection_type.set(None);
     log::info!("Native mic closed");
 }
 
@@ -1203,8 +1224,6 @@ async fn close_mic_usb(state: &AppState) {
     state.mic_sample_rate.set(0);
     state.mic_samples_recorded.set(0);
     state.mic_bits_per_sample.set(16);
-    state.mic_device_name.set(None);
-    state.mic_connection_type.set(None);
     log::info!("USB mic closed");
 }
 
@@ -1580,11 +1599,19 @@ fn start_live_recording(state: &AppState, sample_rate: u32) -> usize {
         },
     };
 
+    // Use rate-adaptive FFT sizes matching spawn_live_processing_loop
+    let (live_fft, live_hop) = if sample_rate >= 192_000 {
+        (256.0, 64.0)
+    } else if sample_rate >= 96_000 {
+        (512.0, 128.0)
+    } else {
+        (1024.0, 256.0)
+    };
     let placeholder_spec = SpectrogramData {
         columns: Arc::new(Vec::new()),
         total_columns: 0,
-        freq_resolution: sample_rate as f64 / 2048.0,
-        time_resolution: 512.0 / sample_rate as f64,
+        freq_resolution: sample_rate as f64 / live_fft,
+        time_resolution: live_hop / sample_rate as f64,
         max_freq: sample_rate as f64 / 2.0,
         sample_rate,
     };
@@ -1614,9 +1641,16 @@ fn start_live_recording(state: &AppState, sample_rate: u32) -> usize {
 fn spawn_live_processing_loop(state: AppState, file_index: usize, sample_rate: u32) {
     use crate::canvas::{spectral_store, tile_cache::{self, TILE_COLS}};
 
-    const FFT_SIZE: usize = 2048;
-    const HOP_SIZE: usize = 512;
-    const PROCESS_INTERVAL_MS: i32 = 200;
+    // Rate-adaptive FFT: smaller windows at high sample rates for better
+    // temporal resolution and lower CPU cost during live recording.
+    let (fft_size, hop_size): (usize, usize) = if sample_rate >= 192_000 {
+        (256, 64)
+    } else if sample_rate >= 96_000 {
+        (512, 128)
+    } else {
+        (1024, 256)
+    };
+    const PROCESS_INTERVAL_MS: i32 = 100;
 
     wasm_bindgen_futures::spawn_local(async move {
         let mut last_processed_col: usize = 0;
@@ -1646,15 +1680,24 @@ fn spawn_live_processing_loop(state: AppState, file_index: usize, sample_rate: u
                 break;
             }
 
-            // Borrow live buffer and process new samples
-            let any_update = with_live_samples(is_tauri, |samples| {
-                if samples.len() < FFT_SIZE {
-                    return false;
+            // Phase 1: Compute FFT columns (blocking, but fast with small FFT sizes)
+            // Returns tile rendering info to be done after yielding.
+            struct TileWork {
+                total_cols: usize,
+                first_tile: usize,
+                last_tile: usize,
+                live_tile_idx: usize,
+                live_tile_start: usize,
+                live_cols: usize,
+            }
+            let work = with_live_samples(is_tauri, |samples| -> Option<TileWork> {
+                if samples.len() < fft_size {
+                    return None;
                 }
 
-                let total_possible_cols = (samples.len() - FFT_SIZE) / HOP_SIZE + 1;
+                let total_possible_cols = (samples.len() - fft_size) / hop_size + 1;
                 if total_possible_cols <= last_processed_col {
-                    return false;
+                    return None;
                 }
 
                 let new_col_count = total_possible_cols - last_processed_col;
@@ -1666,39 +1709,18 @@ fn spawn_live_processing_loop(state: AppState, file_index: usize, sample_rate: u
                 let new_cols = compute_stft_columns(
                     samples,
                     sample_rate,
-                    FFT_SIZE,
-                    HOP_SIZE,
+                    fft_size,
+                    hop_size,
                     last_processed_col,
                     new_col_count,
                 );
 
                 if new_cols.is_empty() {
-                    return false;
+                    return None;
                 }
 
                 // Insert into spectral store
                 spectral_store::insert_columns(file_index, last_processed_col, &new_cols);
-
-                // Render completed tiles (all 256 columns present)
-                let first_tile = last_processed_col / TILE_COLS;
-                let last_tile = (total_possible_cols.saturating_sub(1)) / TILE_COLS;
-                for tile_idx in first_tile..last_tile {
-                    let tile_start = tile_idx * TILE_COLS;
-                    let tile_end = tile_start + TILE_COLS;
-                    if tile_end <= total_possible_cols {
-                        if spectral_store::tile_complete(file_index, tile_start, tile_end) {
-                            tile_cache::render_tile_from_store_sync(file_index, tile_idx);
-                        }
-                    }
-                }
-
-                // Render the rightmost partial (live) tile
-                let live_tile_idx = total_possible_cols.saturating_sub(1) / TILE_COLS;
-                let live_tile_start = live_tile_idx * TILE_COLS;
-                let live_cols = total_possible_cols.saturating_sub(live_tile_start);
-                if live_cols > 0 && live_cols < TILE_COLS {
-                    tile_cache::render_live_tile_sync(file_index, live_tile_idx, live_tile_start, live_cols);
-                }
 
                 // Update file metadata
                 let duration = samples.len() as f64 / sample_rate as f64;
@@ -1711,7 +1733,8 @@ fn spawn_live_processing_loop(state: AppState, file_index: usize, sample_rate: u
 
                 // Periodically snapshot the full buffer for waveform rendering (~1s interval)
                 let snapshot_threshold = (sample_rate as usize).max(44100);
-                if samples.len() - last_snapshot_len >= snapshot_threshold || last_snapshot_len == 0 {
+                let do_snapshot = samples.len() - last_snapshot_len >= snapshot_threshold || last_snapshot_len == 0;
+                if do_snapshot {
                     let snapshot = Arc::new(samples.to_vec());
                     state.files.update(|files| {
                         if let Some(f) = files.get_mut(file_index) {
@@ -1721,9 +1744,41 @@ fn spawn_live_processing_loop(state: AppState, file_index: usize, sample_rate: u
                     last_snapshot_len = samples.len();
                 }
 
+                let first_tile = last_processed_col / TILE_COLS;
+                let last_tile = (total_possible_cols.saturating_sub(1)) / TILE_COLS;
+                let live_tile_idx = total_possible_cols.saturating_sub(1) / TILE_COLS;
+                let live_tile_start = live_tile_idx * TILE_COLS;
+                let live_cols = total_possible_cols.saturating_sub(live_tile_start);
+
                 last_processed_col = total_possible_cols;
-                true
+                Some(TileWork {
+                    total_cols: total_possible_cols,
+                    first_tile, last_tile,
+                    live_tile_idx, live_tile_start, live_cols,
+                })
             });
+
+            // Phase 2: Yield to browser so timer/events can update
+            let any_update = work.is_some();
+            if let Some(tw) = work {
+                tile_cache::yield_to_browser().await;
+
+                // Phase 3: Render tiles (after yielding)
+                for tile_idx in tw.first_tile..tw.last_tile {
+                    let tile_start = tile_idx * TILE_COLS;
+                    let tile_end = tile_start + TILE_COLS;
+                    if tile_end <= tw.total_cols {
+                        if spectral_store::tile_complete(file_index, tile_start, tile_end) {
+                            tile_cache::render_tile_from_store_sync(file_index, tile_idx);
+                        }
+                    }
+                }
+
+                // Render the rightmost partial (live) tile
+                if tw.live_cols > 0 && tw.live_cols < TILE_COLS {
+                    tile_cache::render_live_tile_sync(file_index, tw.live_tile_idx, tw.live_tile_start, tw.live_cols);
+                }
+            }
 
             if any_update {
                 state.tile_ready_signal.update(|n| *n = n.wrapping_add(1));
@@ -1733,7 +1788,7 @@ fn spawn_live_processing_loop(state: AppState, file_index: usize, sample_rate: u
                     files.get(file_index).map(|f| f.spectrogram.total_columns).unwrap_or(0)
                 });
                 if total_cols > 0 {
-                    let time_res = HOP_SIZE as f64 / sample_rate as f64;
+                    let time_res = hop_size as f64 / sample_rate as f64;
                     let recording_time = total_cols as f64 * time_res;
                     let canvas_w = state.spectrogram_canvas_width.get_untracked();
                     let zoom = state.zoom_level.get_untracked();

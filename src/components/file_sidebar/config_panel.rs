@@ -72,6 +72,12 @@ pub(super) fn ConfigPanel() -> impl IntoView {
                 crate::audio::microphone::resolve_auto_mode(&state).await;
             });
         }
+        // Request RECORD_AUDIO permission when switching to Browser mode on Tauri (Android)
+        if mode == MicMode::Browser && state.is_tauri {
+            spawn_local(async move {
+                crate::audio::microphone::request_audio_permission_tauri(&state).await;
+            });
+        }
     };
 
     let on_max_sr_change = move |ev: web_sys::Event| {
@@ -92,6 +98,16 @@ pub(super) fn ConfigPanel() -> impl IntoView {
                 crate::audio::microphone::query_mic_info(&state).await;
             });
         }
+    }
+
+    // Re-query mic info when USB connection status changes
+    if is_tauri {
+        Effect::new(move |_| {
+            let _usb = state.mic_usb_connected.get(); // subscribe to USB changes
+            spawn_local(async move {
+                crate::audio::microphone::query_mic_info(&state).await;
+            });
+        });
     }
 
     // Check if a specific rate is available based on mode + actual device rates
@@ -215,7 +231,7 @@ pub(super) fn ConfigPanel() -> impl IntoView {
                                     }</span>
                                 </div>
                             })}
-                            {(bits > 0 && bits != 16).then(|| view! {
+                            {(bits > 0).then(|| view! {
                                 <div class="mic-info-row">
                                     <span class="mic-info-label">"Depth"</span>
                                     <span class="mic-info-value">{format!("{}-bit", bits)}</span>

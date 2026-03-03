@@ -62,66 +62,74 @@ pub fn App() -> impl IntoView {
         }
     }
 
-    // Auto mic mode: check for USB device at startup and listen for hotplug events
+    // Auto mic mode: check for USB device at startup (delayed to ensure Tauri internals are ready)
     if state.is_tauri && state.mic_mode.get_untracked() == MicMode::Auto {
         wasm_bindgen_futures::spawn_local(async move {
+            // Wait 1.5s for Tauri plugin system to fully initialize
+            let p = js_sys::Promise::new(&mut |resolve, _| {
+                if let Some(w) = web_sys::window() {
+                    let _ = w.set_timeout_with_callback_and_timeout_and_arguments_0(&resolve, 1500);
+                }
+            });
+            let _ = wasm_bindgen_futures::JsFuture::from(p).await;
             microphone::resolve_auto_mode(&state).await;
         });
     }
 
-    // Listen for USB hotplug events (emitted by UsbAudioPlugin Kotlin BroadcastReceiver)
+    // Poll for USB device changes every 3 seconds (Tauri only)
     if state.is_tauri {
-        use crate::tauri_bridge::get_tauri_internals;
-        if let Some(tauri) = get_tauri_internals() {
-            let state_cb = state;
-            let hotplug_handler = Closure::<dyn FnMut(JsValue)>::new(move |event: JsValue| {
-                let payload = js_sys::Reflect::get(&event, &JsValue::from_str("payload"))
-                    .ok().unwrap_or(event.clone());
-                let action = js_sys::Reflect::get(&payload, &JsValue::from_str("action"))
-                    .ok().and_then(|v| v.as_string()).unwrap_or_default();
-                let product = js_sys::Reflect::get(&payload, &JsValue::from_str("productName"))
+        wasm_bindgen_futures::spawn_local(async move {
+            use crate::tauri_bridge::tauri_invoke;
+            let mut was_connected = false;
+            loop {
+                // Sleep 3 seconds
+                let p = js_sys::Promise::new(&mut |resolve, _| {
+                    if let Some(w) = web_sys::window() {
+                        let _ = w.set_timeout_with_callback_and_timeout_and_arguments_0(&resolve, 3000);
+                    }
+                });
+                let _ = wasm_bindgen_futures::JsFuture::from(p).await;
+
+                // Skip polling when mic is active (recording/listening)
+                if state.mic_listening.get_untracked() || state.mic_recording.get_untracked() {
+                    continue;
+                }
+
+                // Poll USB status via Kotlin plugin
+                let status = match tauri_invoke("plugin:usb-audio|checkUsbStatus",
+                    &js_sys::Object::new().into()).await {
+                    Ok(v) => v,
+                    Err(_) => continue,
+                };
+
+                let is_connected = js_sys::Reflect::get(&status, &JsValue::from_str("audioDeviceAttached"))
+                    .ok().and_then(|v| v.as_bool()).unwrap_or(false);
+                let last_event = js_sys::Reflect::get(&status, &JsValue::from_str("lastEvent"))
+                    .ok().and_then(|v| v.as_string());
+                let product_name = js_sys::Reflect::get(&status, &JsValue::from_str("productName"))
                     .ok().and_then(|v| v.as_string()).unwrap_or_else(|| "USB Audio".into());
 
-                if action == "attached" {
-                    state_cb.mic_usb_connected.set(true);
-                    if state_cb.mic_mode.get_untracked() == MicMode::Auto
-                        && !state_cb.mic_listening.get_untracked()
-                        && !state_cb.mic_recording.get_untracked()
-                    {
-                        state_cb.show_info_toast(format!("USB mic detected: {}", product));
-                        let st = state_cb;
-                        wasm_bindgen_futures::spawn_local(async move {
-                            microphone::resolve_auto_mode(&st).await;
-                        });
-                    }
-                } else if action == "detached" {
-                    state_cb.mic_usb_connected.set(false);
-                    if state_cb.mic_mode.get_untracked() == MicMode::Auto {
-                        state_cb.mic_effective_mode.set(MicMode::Cpal);
-                        state_cb.show_info_toast("USB mic disconnected, using native audio");
-                    }
-                }
-            });
+                // Update USB connected state
+                state.mic_usb_connected.set(is_connected);
 
-            // Use Tauri's event system to listen for the custom event
-            // The Kotlin plugin emits via __TAURI_INTERNALS__.__emit
-            let transform_fn = js_sys::Reflect::get(&tauri, &JsValue::from_str("transformCallback")).ok();
-            let invoke_fn = js_sys::Reflect::get(&tauri, &JsValue::from_str("invoke")).ok();
-            if let (Some(transform), Some(invoke)) = (transform_fn, invoke_fn) {
-                let transform = js_sys::Function::from(transform);
-                let invoke = js_sys::Function::from(invoke);
-                if let Ok(handler_id) = transform.call1(&tauri, hotplug_handler.as_ref().unchecked_ref()) {
-                    let args = js_sys::Object::new();
-                    js_sys::Reflect::set(&args, &"event".into(), &JsValue::from_str("usb-device-change")).ok();
-                    let target = js_sys::Object::new();
-                    js_sys::Reflect::set(&target, &"kind".into(), &JsValue::from_str("Any")).ok();
-                    js_sys::Reflect::set(&args, &"target".into(), &target).ok();
-                    js_sys::Reflect::set(&args, &"handler".into(), &handler_id).ok();
-                    let _ = invoke.call2(&tauri, &JsValue::from_str("plugin:event|listen"), &args.into());
+                // Handle hotplug events
+                if let Some(event) = last_event {
+                    if event == "attached" && !was_connected {
+                        if state.mic_mode.get_untracked() == MicMode::Auto {
+                            state.show_info_toast(format!("USB mic detected: {}", product_name));
+                            microphone::resolve_auto_mode(&state).await;
+                        }
+                    } else if event == "detached" && was_connected {
+                        if state.mic_mode.get_untracked() == MicMode::Auto {
+                            state.mic_effective_mode.set(MicMode::Cpal);
+                            state.show_info_toast("USB mic disconnected, using native audio");
+                        }
+                    }
                 }
+
+                was_connected = is_connected;
             }
-            hotplug_handler.forget(); // keep alive for the lifetime of the app
-        }
+        });
     }
 
     // Live playback parameter switching: when any playback-relevant signal

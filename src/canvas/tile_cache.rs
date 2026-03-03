@@ -1290,7 +1290,7 @@ fn run_preload_batch(state: AppState, generation: u32) {
 // ── Internal helpers ─────────────────────────────────────────────────────────
 
 /// Yield once to the browser event loop via a zero-duration setTimeout.
-async fn yield_to_browser() {
+pub async fn yield_to_browser() {
     let promise = js_sys::Promise::new(&mut |resolve, _reject| {
         let win = web_sys::window().unwrap();
         let cb = Closure::once_into_js(move || {
