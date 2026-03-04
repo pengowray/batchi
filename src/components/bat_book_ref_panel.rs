@@ -75,8 +75,11 @@ pub fn BatBookRefPanel() -> impl IntoView {
             if let Some(file) = files.get(idx) {
                 let nyquist = file.audio.sample_rate as f64 / 2.0;
                 if entry.freq_lo_hz < nyquist {
+                    let clamped_hi = entry.freq_hi_hz.min(nyquist);
+                    state.hfr_saved_ff_lo.set(Some(entry.freq_lo_hz));
+                    state.hfr_saved_ff_hi.set(Some(clamped_hi));
                     state.ff_freq_lo.set(entry.freq_lo_hz);
-                    state.ff_freq_hi.set(entry.freq_hi_hz.min(nyquist));
+                    state.ff_freq_hi.set(clamped_hi);
                     state.hfr_enabled.set(true);
                 }
             }

@@ -153,6 +153,10 @@ fn apply_bat_book_ff(state: &AppState) {
         ));
     }
 
+    // Set saved HFR values so that Effect A in HfrButton picks them up
+    // instead of using defaults (18 kHz–nyquist).
+    state.hfr_saved_ff_lo.set(Some(lo));
+    state.hfr_saved_ff_hi.set(Some(clamped_hi));
     state.ff_freq_lo.set(lo);
     state.ff_freq_hi.set(clamped_hi);
     state.hfr_enabled.set(true);
