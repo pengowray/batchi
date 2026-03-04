@@ -9,6 +9,7 @@ use crate::bat_book::types::{BatBookRegion, BatBookEntry};
 pub fn BatBookStrip() -> impl IntoView {
     let state = expect_context::<AppState>();
     let region_menu_open = RwSignal::new(false);
+    let scroll_ref = NodeRef::<leptos::html::Div>::new();
 
     let manifest = Memo::new(move |_| {
         let region = state.bat_book_region.get();
@@ -19,15 +20,33 @@ pub fn BatBookStrip() -> impl IntoView {
         state.bat_book_open.set(false);
     };
 
+    // Clicking the title also closes the strip
+    let on_title_click = move |ev: web_sys::MouseEvent| {
+        ev.stop_propagation();
+        state.bat_book_open.set(false);
+    };
+
     let on_config = move |ev: web_sys::MouseEvent| {
         ev.stop_propagation();
         region_menu_open.update(|v| *v = !*v);
     };
 
+    // Convert vertical scroll to horizontal scroll in the chip area
+    let on_wheel = move |ev: web_sys::WheelEvent| {
+        if let Some(el) = scroll_ref.get() {
+            let el: &web_sys::HtmlElement = el.as_ref();
+            let delta = ev.delta_y();
+            if delta.abs() > 0.0 {
+                ev.prevent_default();
+                el.set_scroll_left(el.scroll_left() + delta as i32);
+            }
+        }
+    };
+
     view! {
-        <div class="bat-book-strip">
+        <div class="bat-book-strip" on:click=move |_| { region_menu_open.set(false); }>
             <div class="bat-book-header">
-                <span class="bat-book-title">"Bat Book"</span>
+                <span class="bat-book-title" on:click=on_title_click style="cursor:pointer">"Bat Book"</span>
                 <span class="bat-book-region-label">
                     {move || state.bat_book_region.get().short_label()}
                 </span>
@@ -70,7 +89,7 @@ pub fn BatBookStrip() -> impl IntoView {
                     "\u{00d7}"
                 </button>
             </div>
-            <div class="bat-book-scroll">
+            <div class="bat-book-scroll" node_ref=scroll_ref on:wheel=on_wheel>
                 {move || {
                     let m = manifest.get();
                     m.entries.iter().map(|entry| {
@@ -82,38 +101,142 @@ pub fn BatBookStrip() -> impl IntoView {
     }
 }
 
+/// Compute the combined FF range from all selected entries.
+/// Returns (lo, hi) or None if nothing selected.
+fn combined_ff_range(state: &AppState) -> Option<(f64, f64)> {
+    let ids = state.bat_book_selected_ids.get_untracked();
+    if ids.is_empty() {
+        return None;
+    }
+    let region = state.bat_book_region.get_untracked();
+    let manifest = get_manifest(region);
+    let mut lo = f64::MAX;
+    let mut hi = f64::MIN;
+    for entry in &manifest.entries {
+        if ids.iter().any(|id| id == entry.id) {
+            lo = lo.min(entry.freq_lo_hz);
+            hi = hi.max(entry.freq_hi_hz);
+        }
+    }
+    if lo < hi { Some((lo, hi)) } else { None }
+}
+
+/// Apply the combined FF range from selected bat book entries.
+/// Shows toasts for out-of-range conditions.
+fn apply_bat_book_ff(state: &AppState) {
+    let Some((lo, hi)) = combined_ff_range(state) else { return };
+
+    // Only apply if a file is loaded
+    let files = state.files.get_untracked();
+    let Some(idx) = state.current_file_index.get_untracked() else { return };
+    let Some(file) = files.get(idx) else { return };
+    let nyquist = file.audio.sample_rate as f64 / 2.0;
+
+    if lo >= nyquist {
+        // Entirely out of range
+        state.show_info_toast(format!(
+            "Frequency range {}\u{2013}{} kHz is above this file's Nyquist ({} kHz)",
+            (lo / 1000.0) as u32,
+            (hi / 1000.0) as u32,
+            (nyquist / 1000.0) as u32,
+        ));
+        return;
+    }
+
+    let clamped_hi = hi.min(nyquist);
+    if clamped_hi < hi {
+        state.show_info_toast(format!(
+            "Frequency range clamped to {}\u{2013}{} kHz (file Nyquist: {} kHz)",
+            (lo / 1000.0) as u32,
+            (clamped_hi / 1000.0) as u32,
+            (nyquist / 1000.0) as u32,
+        ));
+    }
+
+    state.ff_freq_lo.set(lo);
+    state.ff_freq_hi.set(clamped_hi);
+    state.hfr_enabled.set(true);
+}
+
 #[component]
 fn BatBookChip(entry: BatBookEntry) -> impl IntoView {
     let state = expect_context::<AppState>();
     let entry_id = entry.id.to_string();
-    let entry_id_click = entry_id.clone();
-    let freq_lo = entry.freq_lo_hz;
-    let freq_hi = entry.freq_hi_hz;
+    let entry_id_for_click = entry_id.clone();
     let name = entry.name;
     let freq_label = entry.freq_range_label();
     let call_type = entry.call_type;
 
-    let is_selected = move || {
-        state.bat_book_selected_id.get().as_deref() == Some(entry_id.as_str())
+    let is_selected = {
+        let eid = entry_id.clone();
+        move || {
+            state.bat_book_selected_ids.get().iter().any(|id| id == &eid)
+        }
     };
 
     let on_click = move |ev: web_sys::MouseEvent| {
         ev.stop_propagation();
-        state.bat_book_selected_id.set(Some(entry_id_click.clone()));
-        state.bat_book_ref_open.set(true);
+        let multi = ev.ctrl_key() || ev.meta_key();
+        let eid = entry_id_for_click.clone();
 
-        // Set FF range if a file is loaded
-        if state.current_file_index.get_untracked().is_some() {
-            // Clamp to Nyquist if needed
-            let files = state.files.get_untracked();
-            let nyquist = state.current_file_index.get_untracked()
-                .and_then(|i| files.get(i))
-                .map(|f| f.audio.sample_rate as f64 / 2.0)
-                .unwrap_or(freq_hi);
-            state.ff_freq_lo.set(freq_lo);
-            state.ff_freq_hi.set(freq_hi.min(nyquist));
-            state.hfr_enabled.set(true);
+        let was_selected = state.bat_book_selected_ids.get_untracked().iter().any(|id| id == &eid);
+
+        if was_selected && !multi {
+            // Click selected bat again: deselect and restore previous FF
+            state.bat_book_selected_ids.set(Vec::new());
+            state.bat_book_ref_open.set(false);
+            // Restore saved FF state
+            if state.current_file_index.get_untracked().is_some() {
+                let saved_lo = state.bat_book_saved_ff_lo.get_untracked();
+                let saved_hi = state.bat_book_saved_ff_hi.get_untracked();
+                let saved_hfr = state.bat_book_saved_hfr.get_untracked();
+                state.ff_freq_lo.set(saved_lo);
+                state.ff_freq_hi.set(saved_hi);
+                state.hfr_enabled.set(saved_hfr);
+            }
+            return;
         }
+
+        if multi && was_selected {
+            // Shift-click an already-selected bat: remove from selection
+            state.bat_book_selected_ids.update(|ids| ids.retain(|id| id != &eid));
+            if state.bat_book_selected_ids.get_untracked().is_empty() {
+                state.bat_book_ref_open.set(false);
+                // Restore saved FF state
+                if state.current_file_index.get_untracked().is_some() {
+                    state.ff_freq_lo.set(state.bat_book_saved_ff_lo.get_untracked());
+                    state.ff_freq_hi.set(state.bat_book_saved_ff_hi.get_untracked());
+                    state.hfr_enabled.set(state.bat_book_saved_hfr.get_untracked());
+                }
+            } else {
+                // Recalculate combined range
+                apply_bat_book_ff(&state);
+            }
+            return;
+        }
+
+        // Save current FF state before first selection
+        let currently_empty = state.bat_book_selected_ids.get_untracked().is_empty();
+        if currently_empty {
+            state.bat_book_saved_ff_lo.set(state.ff_freq_lo.get_untracked());
+            state.bat_book_saved_ff_hi.set(state.ff_freq_hi.get_untracked());
+            state.bat_book_saved_hfr.set(state.hfr_enabled.get_untracked());
+        }
+
+        if multi {
+            // Ctrl/Cmd-click: add to selection
+            state.bat_book_selected_ids.update(|ids| {
+                if !ids.iter().any(|id| id == &eid) {
+                    ids.push(eid);
+                }
+            });
+        } else {
+            // Normal click: replace selection
+            state.bat_book_selected_ids.set(vec![eid]);
+        }
+
+        state.bat_book_ref_open.set(true);
+        apply_bat_book_ff(&state);
     };
 
     let class = move || {

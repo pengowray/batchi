@@ -2485,17 +2485,17 @@ body.sidebar-resizing {
 
 /* ── Bat Book ─────────────────────────────────────────────────────────────── */
 
-/* Tab handle on the left edge */
+/* Tab handle on the right edge; hidden while strip is open */
 .bat-book-tab {
     position: absolute;
     bottom: 8px;
-    left: 0;
+    right: 0;
     width: 24px;
     min-height: 56px;
     background: rgba(20, 20, 20, 0.88);
     border: 1px solid rgba(80, 80, 80, 0.45);
-    border-left: none;
-    border-radius: 0 6px 6px 0;
+    border-right: none;
+    border-radius: 6px 0 0 6px;
     color: #777;
     cursor: pointer;
     padding: 6px 3px;
@@ -2513,9 +2513,7 @@ body.sidebar-resizing {
 }
 
 .bat-book-tab.open {
-    background: rgba(26, 60, 40, 0.92);
-    border-color: rgba(80, 180, 130, 0.6);
-    color: #8fc;
+    display: none;
 }
 
 .bat-book-tab-label {
@@ -2773,6 +2771,24 @@ body.sidebar-resizing {
 .ref-panel-call-type {
     font-size: 10px;
     color: #777;
+}
+
+.ref-panel-entry {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.ref-panel-entry + .ref-panel-entry {
+    margin-top: 6px;
+    padding-top: 6px;
+    border-top: 1px solid #2a2a2a;
+}
+
+.ref-panel-entry-name {
+    font-size: 11px;
+    font-weight: 600;
+    color: #ccc;
 }
 
 .ref-panel-desc {

@@ -628,8 +628,13 @@ pub struct AppState {
     // Bat Book
     pub bat_book_open: RwSignal<bool>,
     pub bat_book_region: RwSignal<crate::bat_book::types::BatBookRegion>,
-    pub bat_book_selected_id: RwSignal<Option<String>>,
+    /// Currently selected bat book entry IDs (supports multi-select via shift-click).
+    pub bat_book_selected_ids: RwSignal<Vec<String>>,
     pub bat_book_ref_open: RwSignal<bool>,
+    /// Saved FF state before bat book selection, for restoring on deselect.
+    pub bat_book_saved_ff_lo: RwSignal<f64>,
+    pub bat_book_saved_ff_hi: RwSignal<f64>,
+    pub bat_book_saved_hfr: RwSignal<bool>,
 }
 
 fn detect_tauri() -> bool {
@@ -817,8 +822,11 @@ impl AppState {
 
             bat_book_open: RwSignal::new(false),
             bat_book_region: RwSignal::new(crate::bat_book::types::BatBookRegion::Global),
-            bat_book_selected_id: RwSignal::new(None),
+            bat_book_selected_ids: RwSignal::new(Vec::new()),
             bat_book_ref_open: RwSignal::new(false),
+            bat_book_saved_ff_lo: RwSignal::new(0.0),
+            bat_book_saved_ff_hi: RwSignal::new(0.0),
+            bat_book_saved_hfr: RwSignal::new(false),
         };
 
         // On mobile, start with sidebar collapsed

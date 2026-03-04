@@ -11,7 +11,7 @@ use super::types::{BatBookEntry, BatBookManifest, BatBookRegion};
 const GLOBAL_ENTRIES: &[BatBookEntry] = &[
     BatBookEntry {
         id: "rhinolophidae",
-        name: "Horseshoe Bats",
+        name: "Horseshoe bats",
         family: "Rhinolophidae",
         call_type: "CF",
         freq_lo_hz: 30_000.0,
@@ -20,7 +20,7 @@ const GLOBAL_ENTRIES: &[BatBookEntry] = &[
     },
     BatBookEntry {
         id: "hipposideridae",
-        name: "Roundleaf Bats",
+        name: "Roundleaf bats",
         family: "Hipposideridae",
         call_type: "CF",
         freq_lo_hz: 60_000.0,
@@ -29,7 +29,7 @@ const GLOBAL_ENTRIES: &[BatBookEntry] = &[
     },
     BatBookEntry {
         id: "vespertilionidae",
-        name: "Vesper Bats",
+        name: "Vesper bats",
         family: "Vespertilionidae",
         call_type: "FM",
         freq_lo_hz: 15_000.0,
@@ -38,7 +38,7 @@ const GLOBAL_ENTRIES: &[BatBookEntry] = &[
     },
     BatBookEntry {
         id: "molossidae",
-        name: "Free-tailed Bats",
+        name: "Free-tailed bats",
         family: "Molossidae",
         call_type: "QCF",
         freq_lo_hz: 10_000.0,
@@ -47,7 +47,7 @@ const GLOBAL_ENTRIES: &[BatBookEntry] = &[
     },
     BatBookEntry {
         id: "emballonuridae",
-        name: "Sheath-tailed Bats",
+        name: "Sheath-tailed bats",
         family: "Emballonuridae",
         call_type: "QCF",
         freq_lo_hz: 20_000.0,
@@ -56,7 +56,7 @@ const GLOBAL_ENTRIES: &[BatBookEntry] = &[
     },
     BatBookEntry {
         id: "phyllostomidae",
-        name: "Leaf-nosed Bats",
+        name: "Leaf-nosed bats",
         family: "Phyllostomidae",
         call_type: "FM",
         freq_lo_hz: 40_000.0,
@@ -65,7 +65,7 @@ const GLOBAL_ENTRIES: &[BatBookEntry] = &[
     },
     BatBookEntry {
         id: "mormoopidae",
-        name: "Ghost-faced Bats",
+        name: "Ghost-faced bats",
         family: "Mormoopidae",
         call_type: "CF-FM",
         freq_lo_hz: 45_000.0,
@@ -74,7 +74,7 @@ const GLOBAL_ENTRIES: &[BatBookEntry] = &[
     },
     BatBookEntry {
         id: "miniopteridae",
-        name: "Bent-winged Bats",
+        name: "Bent-winged bats",
         family: "Miniopteridae",
         call_type: "FM",
         freq_lo_hz: 45_000.0,
@@ -83,7 +83,7 @@ const GLOBAL_ENTRIES: &[BatBookEntry] = &[
     },
     BatBookEntry {
         id: "nycteridae",
-        name: "Slit-faced Bats",
+        name: "Slit-faced bats",
         family: "Nycteridae",
         call_type: "FM",
         freq_lo_hz: 30_000.0,
@@ -92,7 +92,7 @@ const GLOBAL_ENTRIES: &[BatBookEntry] = &[
     },
     BatBookEntry {
         id: "megadermatidae",
-        name: "False Vampires",
+        name: "False vampires",
         family: "Megadermatidae",
         call_type: "FM",
         freq_lo_hz: 20_000.0,
@@ -101,7 +101,7 @@ const GLOBAL_ENTRIES: &[BatBookEntry] = &[
     },
     BatBookEntry {
         id: "pteropodidae",
-        name: "Fruit Bats",
+        name: "Fruit bats",
         family: "Pteropodidae",
         call_type: "clicks",
         freq_lo_hz: 10_000.0,
