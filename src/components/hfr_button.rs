@@ -243,6 +243,7 @@ pub fn HfrButton() -> impl IntoView {
     // ── Dropdown closures (from hfr_mode_button) ──
     let set_mode = |state: AppState, mode: PlaybackMode| {
         move |_: web_sys::MouseEvent| {
+            state.hfr_saved_playback_mode.set(Some(mode));
             state.hfr_enabled.set(true);
             state.playback_mode.set(mode);
         }
