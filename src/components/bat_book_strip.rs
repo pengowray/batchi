@@ -153,6 +153,10 @@ fn apply_bat_book_ff(state: &AppState) {
         ));
     }
 
+    // Save the user's previous hfr_saved values before we overwrite them,
+    // so deselecting the bat book entry can restore them.
+    state.bat_book_saved_hfr_ff_lo.set(state.hfr_saved_ff_lo.get_untracked());
+    state.bat_book_saved_hfr_ff_hi.set(state.hfr_saved_ff_hi.get_untracked());
     // Set saved HFR values so that Effect A in HfrButton picks them up
     // instead of using defaults (18 kHz–nyquist).
     state.hfr_saved_ff_lo.set(Some(lo));
@@ -196,6 +200,10 @@ fn BatBookChip(entry: BatBookEntry) -> impl IntoView {
                 let saved_lo = state.bat_book_saved_ff_lo.get_untracked();
                 let saved_hi = state.bat_book_saved_ff_hi.get_untracked();
                 let saved_hfr = state.bat_book_saved_hfr.get_untracked();
+                // Restore hfr_saved values before setting hfr_enabled,
+                // so Effect A picks up the user's original HFR state.
+                state.hfr_saved_ff_lo.set(state.bat_book_saved_hfr_ff_lo.get_untracked());
+                state.hfr_saved_ff_hi.set(state.bat_book_saved_hfr_ff_hi.get_untracked());
                 state.ff_freq_lo.set(saved_lo);
                 state.ff_freq_hi.set(saved_hi);
                 state.hfr_enabled.set(saved_hfr);
@@ -211,6 +219,8 @@ fn BatBookChip(entry: BatBookEntry) -> impl IntoView {
                 state.bat_book_last_clicked_id.set(None);
                 // Restore saved FF state
                 if state.current_file_index.get_untracked().is_some() {
+                    state.hfr_saved_ff_lo.set(state.bat_book_saved_hfr_ff_lo.get_untracked());
+                    state.hfr_saved_ff_hi.set(state.bat_book_saved_hfr_ff_hi.get_untracked());
                     state.ff_freq_lo.set(state.bat_book_saved_ff_lo.get_untracked());
                     state.ff_freq_hi.set(state.bat_book_saved_ff_hi.get_untracked());
                     state.hfr_enabled.set(state.bat_book_saved_hfr.get_untracked());

@@ -635,6 +635,9 @@ pub struct AppState {
     pub bat_book_saved_ff_lo: RwSignal<f64>,
     pub bat_book_saved_ff_hi: RwSignal<f64>,
     pub bat_book_saved_hfr: RwSignal<bool>,
+    /// Saved hfr_saved_ff values before bat book overwrote them.
+    pub bat_book_saved_hfr_ff_lo: RwSignal<Option<f64>>,
+    pub bat_book_saved_hfr_ff_hi: RwSignal<Option<f64>>,
     /// Last-clicked bat book entry ID, used for shift-click range selection.
     pub bat_book_last_clicked_id: RwSignal<Option<String>>,
 }
@@ -829,6 +832,8 @@ impl AppState {
             bat_book_saved_ff_lo: RwSignal::new(0.0),
             bat_book_saved_ff_hi: RwSignal::new(0.0),
             bat_book_saved_hfr: RwSignal::new(false),
+            bat_book_saved_hfr_ff_lo: RwSignal::new(None),
+            bat_book_saved_hfr_ff_hi: RwSignal::new(None),
             bat_book_last_clicked_id: RwSignal::new(None),
         };
 
