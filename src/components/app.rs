@@ -1,7 +1,7 @@
 use leptos::prelude::*;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
-use crate::state::{AppState, LayerPanel, MainView, MicMode, SpectrogramDisplay};
+use crate::state::{AppState, LayerPanel, MainView, MicMode, PlayStartMode, SpectrogramDisplay};
 use crate::audio::playback;
 use crate::audio::microphone;
 use crate::components::file_sidebar::FileSidebar;
@@ -224,7 +224,17 @@ pub fn App() -> impl IntoView {
                 if state_kb.is_playing.get_untracked() {
                     playback::stop(&state_kb);
                 } else {
-                    playback::play(&state_kb);
+                    match state_kb.play_start_mode.get_untracked() {
+                        PlayStartMode::All => playback::play_from_start(&state_kb),
+                        PlayStartMode::FromHere => playback::play_from_here(&state_kb),
+                        PlayStartMode::Selected => {
+                            if state_kb.selection.get_untracked().is_some() {
+                                playback::play(&state_kb);
+                            } else {
+                                playback::play_from_start(&state_kb);
+                            }
+                        }
+                    }
                 }
             }
         }
