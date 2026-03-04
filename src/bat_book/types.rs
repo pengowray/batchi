@@ -1,3 +1,27 @@
+/// How common a species is in a given region.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Commonness {
+    VeryCommon,
+    Common,
+    Uncommon,
+    Rare,
+    Endangered,
+    Vagrant,
+}
+
+impl Commonness {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::VeryCommon => "Very Common",
+            Self::Common => "Common",
+            Self::Uncommon => "Uncommon",
+            Self::Rare => "Rare",
+            Self::Endangered => "Endangered",
+            Self::Vagrant => "Vagrant",
+        }
+    }
+}
+
 /// A bat book manifest containing entries for a region.
 #[derive(Clone, Debug, PartialEq)]
 pub struct BatBookManifest {
@@ -5,16 +29,18 @@ pub struct BatBookManifest {
     pub entries: Vec<BatBookEntry>,
 }
 
-/// A single bat book entry (typically a family or broad category).
+/// A single bat book entry — either a family (global) or a species (regional).
 #[derive(Clone, Debug, PartialEq)]
 pub struct BatBookEntry {
-    /// Unique identifier, e.g. "vespertilionidae"
+    /// Unique identifier, e.g. "vespertilionidae" or "chalinolobus_gouldii"
     pub id: &'static str,
-    /// Display name, e.g. "Vesper Bats"
+    /// Display name, e.g. "Vesper Bats" or "Gould's Wattled Bat"
     pub name: &'static str,
+    /// Scientific (binomial) name, e.g. "Chalinolobus gouldii" (empty for family-level)
+    pub scientific_name: &'static str,
     /// Taxonomic family name
     pub family: &'static str,
-    /// Call type abbreviation (CF, FM, QCF, CF-FM, clicks)
+    /// Call type abbreviation (CF, FM, QCF, CF-FM, clicks, none)
     pub call_type: &'static str,
     /// Lower bound of typical echolocation frequency range (Hz)
     pub freq_lo_hz: f64,
@@ -22,11 +48,16 @@ pub struct BatBookEntry {
     pub freq_hi_hz: f64,
     /// Short description
     pub description: &'static str,
+    /// How common the species is in the region (None for family-level entries)
+    pub commonness: Option<Commonness>,
 }
 
 impl BatBookEntry {
-    /// Format frequency range as "XX–YY kHz"
+    /// Format frequency range as "XX\u{2013}YY kHz"
     pub fn freq_range_label(&self) -> String {
+        if self.freq_lo_hz == 0.0 && self.freq_hi_hz == 0.0 {
+            return "\u{2014}".to_string(); // em dash for no echolocation
+        }
         format!(
             "{}\u{2013}{} kHz",
             (self.freq_lo_hz / 1000.0) as u32,
@@ -43,6 +74,7 @@ pub enum BatBookRegion {
     Europe,
     NorthAmerica,
     Australia,
+    VicAustralia,
     Africa,
     Asia,
     SouthAmerica,
@@ -55,6 +87,7 @@ impl BatBookRegion {
             Self::Europe => "Europe",
             Self::NorthAmerica => "North America",
             Self::Australia => "Australia",
+            Self::VicAustralia => "VIC, Australia",
             Self::Africa => "Africa",
             Self::Asia => "Asia",
             Self::SouthAmerica => "South America",
@@ -67,6 +100,7 @@ impl BatBookRegion {
             Self::Europe => "Europe",
             Self::NorthAmerica => "N. America",
             Self::Australia => "Australia",
+            Self::VicAustralia => "VIC, AU",
             Self::Africa => "Africa",
             Self::Asia => "Asia",
             Self::SouthAmerica => "S. America",
@@ -81,5 +115,6 @@ impl BatBookRegion {
         Self::Africa,
         Self::Asia,
         Self::Australia,
+        Self::VicAustralia,
     ];
 }

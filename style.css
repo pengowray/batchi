@@ -2846,6 +2846,19 @@ body.sidebar-resizing {
     color: #ccc;
 }
 
+.ref-panel-sci {
+    font-size: 10px;
+    color: #aaa;
+    margin-top: -1px;
+}
+
+.ref-panel-commonness {
+    font-size: 9px;
+    color: #8a8;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
 .ref-panel-desc {
     font-size: 10px;
     color: #666;
