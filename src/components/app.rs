@@ -294,6 +294,22 @@ pub fn App() -> impl IntoView {
         }
     };
 
+    // Prevent browser from opening dropped files (navigating away from the app).
+    // This also ensures the sidebar drop zone receives drop events reliably.
+    {
+        let doc = web_sys::window().unwrap().document().unwrap();
+        let on_dragover = Closure::<dyn Fn(web_sys::Event)>::new(|ev: web_sys::Event| {
+            ev.prevent_default();
+        });
+        let on_drop = Closure::<dyn Fn(web_sys::Event)>::new(|ev: web_sys::Event| {
+            ev.prevent_default();
+        });
+        let _ = doc.add_event_listener_with_callback("dragover", on_dragover.as_ref().unchecked_ref());
+        let _ = doc.add_event_listener_with_callback("drop", on_drop.as_ref().unchecked_ref());
+        on_dragover.forget();
+        on_drop.forget();
+    }
+
     // Android back button: close sidebar when open
     if is_mobile {
         let state_back = state.clone();

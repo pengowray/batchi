@@ -19,6 +19,11 @@ pub(super) fn FilesPanel() -> impl IntoView {
     let current_idx = state.current_file_index;
     let loading_count = state.loading_count;
 
+    let on_dragenter = move |ev: DragEvent| {
+        ev.prevent_default();
+        drag_over.set(true);
+    };
+
     let on_dragover = move |ev: DragEvent| {
         ev.prevent_default();
         drag_over.set(true);
@@ -93,8 +98,16 @@ pub(super) fn FilesPanel() -> impl IntoView {
         ev.prevent_default();
         drag_over.set(false);
 
-        let Some(dt) = ev.data_transfer() else { return };
-        let Some(file_list) = dt.files() else { return };
+        let Some(dt) = ev.data_transfer() else {
+            log::warn!("Drop: no DataTransfer");
+            return;
+        };
+        let Some(file_list) = dt.files() else {
+            log::warn!("Drop: no files in DataTransfer");
+            return;
+        };
+
+        log::info!("Drop: {} file(s)", file_list.length());
 
         for i in 0..file_list.length() {
             let Some(file) = file_list.get(i) else { continue };
@@ -113,6 +126,7 @@ pub(super) fn FilesPanel() -> impl IntoView {
     view! {
         <div
             class=move || if drag_over.get() { "drop-zone drag-over" } else { "drop-zone" }
+            on:dragenter=on_dragenter
             on:dragover=on_dragover
             on:dragleave=on_dragleave
             on:drop=on_drop
