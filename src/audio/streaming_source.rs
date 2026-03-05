@@ -8,7 +8,7 @@
 //! If a region is not cached, `read_samples()` returns silence for those frames.
 
 use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::audio::loader::WavHeader;
@@ -144,8 +144,6 @@ pub struct StreamingWavSource {
     head_frames: usize,
     /// LRU cache for chunks beyond the head region.
     cache: RefCell<ChunkCache>,
-    /// Chunks currently being fetched (prevents duplicate concurrent reads).
-    fetching: RefCell<HashSet<u64>>,
 }
 
 // SAFETY: WASM is single-threaded; these are required by AudioSource: Send + Sync.
@@ -192,7 +190,6 @@ impl StreamingWavSource {
             head_raw: head_raw.map(Arc::new),
             head_frames,
             cache: RefCell::new(ChunkCache::new()),
-            fetching: RefCell::new(HashSet::new()),
         }
     }
 
@@ -211,32 +208,16 @@ impl StreamingWavSource {
         let first_chunk = fetch_start / CHUNK_FRAMES as u64;
         let last_chunk = end_frame.saturating_sub(1) / CHUNK_FRAMES as u64;
 
-        // Collect which chunks actually need fetching
-        let mut to_fetch: Vec<u64> = Vec::new();
-        {
-            let mut cache = self.cache.borrow_mut();
-            let fetching = self.fetching.borrow();
-            for chunk_idx in first_chunk..=last_chunk {
+        for chunk_idx in first_chunk..=last_chunk {
+            // Skip chunks already cached, but touch LRU to protect from eviction
+            // while we await fetching subsequent chunks
+            {
+                let mut cache = self.cache.borrow_mut();
                 if cache.contains(chunk_idx) {
-                    // Already cached — touch LRU so it doesn't get evicted
-                    // while we await fetching other chunks
                     cache.touch(chunk_idx);
-                } else if !fetching.contains(&chunk_idx) {
-                    to_fetch.push(chunk_idx);
+                    continue;
                 }
-                // else: another task is already fetching this chunk — skip
             }
-        }
-
-        // Mark chunks as in-flight
-        {
-            let mut fetching = self.fetching.borrow_mut();
-            for &idx in &to_fetch {
-                fetching.insert(idx);
-            }
-        }
-
-        for chunk_idx in to_fetch {
             // Compute byte range for this chunk
             let chunk_start_frame = chunk_idx * CHUNK_FRAMES as u64;
             let chunk_end_frame = (chunk_start_frame + CHUNK_FRAMES as u64).min(self.total_frames);
@@ -259,7 +240,6 @@ impl StreamingWavSource {
                 Ok(b) => b,
                 Err(e) => {
                     log::warn!("StreamingWavSource: prefetch chunk {} failed: {}", chunk_idx, e);
-                    self.fetching.borrow_mut().remove(&chunk_idx);
                     continue;
                 }
             };
@@ -276,7 +256,6 @@ impl StreamingWavSource {
             };
 
             self.cache.borrow_mut().insert(chunk_idx, CachedChunk { mono, raw });
-            self.fetching.borrow_mut().remove(&chunk_idx);
         }
     }
 
