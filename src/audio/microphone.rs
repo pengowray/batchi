@@ -1027,6 +1027,7 @@ fn finalize_recording_tauri(result: JsValue, state: AppState) {
     let samples: Arc<Vec<f32>> = samples.into();
     let source = Arc::new(InMemorySource {
         samples: samples.clone(),
+        raw_samples: None,
         sample_rate,
         channels: 1,
     });
@@ -1785,6 +1786,7 @@ fn start_live_recording(state: &AppState, sample_rate: u32) -> usize {
     let samples: Arc<Vec<f32>> = Arc::new(Vec::new());
     let source = Arc::new(InMemorySource {
         samples: samples.clone(),
+        raw_samples: None,
         sample_rate,
         channels: 1,
     });
@@ -2107,6 +2109,7 @@ fn finalize_live_recording(samples: Vec<f32>, sample_rate: u32, state: AppState)
     let samples: Arc<Vec<f32>> = samples.into();
     let source = Arc::new(InMemorySource {
         samples: samples.clone(),
+        raw_samples: None,
         sample_rate,
         channels: 1,
     });
@@ -2204,6 +2207,7 @@ fn finalize_recording(samples: Vec<f32>, sample_rate: u32, state: AppState) {
     let samples: Arc<Vec<f32>> = samples.into();
     let source = Arc::new(InMemorySource {
         samples: samples.clone(),
+        raw_samples: None,
         sample_rate,
         channels: 1,
     });

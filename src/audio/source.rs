@@ -90,6 +90,9 @@ pub trait AudioSource: Send + Sync {
 pub struct InMemorySource {
     /// Mono-mixed samples (current format, always populated).
     pub samples: Arc<Vec<f32>>,
+    /// Original interleaved samples (for multi-channel access).
+    /// `None` for mono files (where `samples` already contains the single channel).
+    pub raw_samples: Option<Arc<Vec<f32>>>,
     /// Sample rate in Hz.
     pub sample_rate: u32,
     /// Original channel count before mono mixing.
@@ -102,7 +105,50 @@ impl std::fmt::Debug for InMemorySource {
             .field("len", &self.samples.len())
             .field("sample_rate", &self.sample_rate)
             .field("channels", &self.channels)
+            .field("has_raw", &self.raw_samples.is_some())
             .finish()
+    }
+}
+
+impl InMemorySource {
+    /// Get the number of per-channel frames.
+    fn frame_count(&self) -> usize {
+        self.samples.len()
+    }
+
+    /// Extract a single channel from raw interleaved samples.
+    fn extract_channel(&self, ch: u32, start: u64, buf: &mut [f32]) -> usize {
+        let raw = match &self.raw_samples {
+            Some(r) => r,
+            None => {
+                // Mono file — Channel(0) is the same as MonoMix
+                return self.read_mono(start, buf);
+            }
+        };
+        let ch = ch as usize;
+        let channels = self.channels as usize;
+        if ch >= channels {
+            // Invalid channel index — return silence
+            for s in buf.iter_mut() { *s = 0.0; }
+            return buf.len().min(self.frame_count().saturating_sub(start as usize));
+        }
+        let start = start as usize;
+        let frames = self.frame_count();
+        let avail = frames.saturating_sub(start);
+        let n = buf.len().min(avail);
+        for i in 0..n {
+            buf[i] = raw[(start + i) * channels + ch];
+        }
+        n
+    }
+
+    /// Read from the mono-mixed buffer.
+    fn read_mono(&self, start: u64, buf: &mut [f32]) -> usize {
+        let start = start as usize;
+        let avail = self.samples.len().saturating_sub(start);
+        let n = buf.len().min(avail);
+        buf[..n].copy_from_slice(&self.samples[start..start + n]);
+        n
     }
 }
 
@@ -130,22 +176,58 @@ impl AudioSource for InMemorySource {
         buf: &mut [f32],
     ) -> usize {
         match channel {
-            ChannelView::MonoMix => {
-                let start = start as usize;
-                let avail = self.samples.len().saturating_sub(start);
-                let n = buf.len().min(avail);
-                buf[..n].copy_from_slice(&self.samples[start..start + n]);
-                n
+            ChannelView::MonoMix => self.read_mono(start, buf),
+            ChannelView::Channel(ch) => {
+                if self.channels == 1 {
+                    self.read_mono(start, buf)
+                } else {
+                    self.extract_channel(ch, start, buf)
+                }
             }
-            // Future: channel extraction from raw_samples (Phase 3)
-            ChannelView::Channel(_) | ChannelView::Difference => {
-                // Fall back to mono mix for now
-                self.read_samples(ChannelView::MonoMix, start, buf)
+            ChannelView::Difference => {
+                if self.channels < 2 || self.raw_samples.is_none() {
+                    // Mono: difference is silence
+                    let n = buf.len().min(self.frame_count().saturating_sub(start as usize));
+                    for s in buf[..n].iter_mut() { *s = 0.0; }
+                    return n;
+                }
+                let raw = self.raw_samples.as_ref().unwrap();
+                let start = start as usize;
+                let channels = self.channels as usize;
+                let frames = self.frame_count();
+                let avail = frames.saturating_sub(start);
+                let n = buf.len().min(avail);
+                for i in 0..n {
+                    let base = (start + i) * channels;
+                    buf[i] = raw[base] - raw[base + 1];
+                }
+                n
             }
         }
     }
 
     fn as_contiguous(&self) -> Option<&[f32]> {
         Some(&self.samples)
+    }
+}
+
+impl ChannelView {
+    /// Short label for UI display.
+    pub fn label(&self) -> &'static str {
+        match self {
+            ChannelView::MonoMix => "L+R",
+            ChannelView::Channel(0) => "L",
+            ChannelView::Channel(1) => "R",
+            ChannelView::Channel(n) => {
+                // For channels beyond stereo, we can't return a static str easily.
+                // This is a pragmatic compromise.
+                match n {
+                    2 => "Ch3",
+                    3 => "Ch4",
+                    _ => "Ch?",
+                }
+            }
+            ChannelView::Difference => "L-R",
+        }
     }
 }

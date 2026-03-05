@@ -6,6 +6,7 @@ use crate::canvas::waveform_renderer;
 use crate::dsp::filters::{apply_eq_filter, apply_eq_filter_fast, cascaded_lowpass};
 use crate::dsp::zc_divide::zc_rate_per_bin;
 use crate::state::{AppState, CanvasTool, FilterQuality, PlaybackMode};
+use crate::audio::source::ChannelView;
 
 const ZC_BIN_DURATION: f64 = 0.001; // 1ms bins
 
@@ -16,11 +17,12 @@ pub fn Waveform() -> impl IntoView {
     let hand_drag_start = RwSignal::new((0.0f64, 0.0f64));
     let pinch_state: RwSignal<Option<crate::components::pinch::PinchState>> = RwSignal::new(None);
 
-    // Cache ZC bins — recompute when the file or EQ settings change.
+    // Cache ZC bins — recompute when the file, channel, or EQ settings change.
     let zc_bins = Memo::new(move |_| {
         let files = state.files.get();
         let idx = state.current_file_index.get();
         let filter_enabled = state.filter_enabled.get();
+        let cv = state.channel_view.get();
         // Subscribe to EQ params so memo recomputes when they change
         let freq_low = state.filter_freq_low.get();
         let freq_high = state.filter_freq_high.get();
@@ -33,13 +35,17 @@ pub fn Waveform() -> impl IntoView {
 
         idx.and_then(|i| files.get(i).cloned()).map(|file| {
             let sr = file.audio.sample_rate;
+            let ch_samples = match cv {
+                ChannelView::MonoMix => std::borrow::Cow::Borrowed(file.audio.samples.as_slice()),
+                _ => std::borrow::Cow::Owned(file.audio.source.read_region(cv, 0, file.audio.source.total_samples() as usize)),
+            };
             let samples = if filter_enabled {
                 match quality {
-                    FilterQuality::Fast => apply_eq_filter_fast(&file.audio.samples, sr, freq_low, freq_high, db_below, db_selected, db_harmonics, db_above, band_mode),
-                    FilterQuality::HQ => apply_eq_filter(&file.audio.samples, sr, freq_low, freq_high, db_below, db_selected, db_harmonics, db_above, band_mode),
+                    FilterQuality::Fast => apply_eq_filter_fast(&ch_samples, sr, freq_low, freq_high, db_below, db_selected, db_harmonics, db_above, band_mode),
+                    FilterQuality::HQ => apply_eq_filter(&ch_samples, sr, freq_low, freq_high, db_below, db_selected, db_harmonics, db_above, band_mode),
                 }
             } else {
-                file.audio.samples.to_vec()
+                ch_samples.into_owned()
             };
             zc_rate_per_bin(&samples, sr, ZC_BIN_DURATION, filter_enabled)
         })
@@ -53,11 +59,16 @@ pub fn Waveform() -> impl IntoView {
         if ff_lo <= 0.0 { return None; }
         let files = state.files.get();
         let idx = state.current_file_index.get();
+        let cv = state.channel_view.get();
 
         idx.and_then(|i| files.get(i).cloned()).map(|file| {
             let sr = file.audio.sample_rate;
-            let lp = cascaded_lowpass(&file.audio.samples, ff_lo, sr, 4);
-            file.audio.samples.iter().zip(lp.iter())
+            let ch_samples = match cv {
+                ChannelView::MonoMix => std::borrow::Cow::Borrowed(file.audio.samples.as_slice()),
+                _ => std::borrow::Cow::Owned(file.audio.source.read_region(cv, 0, file.audio.source.total_samples() as usize)),
+            };
+            let lp = cascaded_lowpass(&ch_samples, ff_lo, sr, 4);
+            ch_samples.iter().zip(lp.iter())
                 .map(|(s, l)| s - l)
                 .collect::<Vec<f32>>()
         })
@@ -73,6 +84,7 @@ pub fn Waveform() -> impl IntoView {
         let hfr = state.hfr_enabled.get();
         let is_playing = state.is_playing.get();
         let canvas_tool = state.canvas_tool.get();
+        let cv = state.channel_view.get();
         let auto_gain = state.auto_gain.get();
         let gain_db = if auto_gain {
             state.compute_auto_gain()
@@ -105,6 +117,16 @@ pub fn Waveform() -> impl IntoView {
             let sel_time = selection.map(|s| (s.time_start, s.time_end));
             let max_freq_khz = file.spectrogram.max_freq / 1000.0;
 
+            // Get channel-aware samples for waveform rendering
+            let ch_buf;
+            let waveform_samples: &[f32] = match cv {
+                ChannelView::MonoMix => &file.audio.samples,
+                _ => {
+                    ch_buf = file.audio.source.read_region(cv, 0, file.audio.source.total_samples() as usize);
+                    &ch_buf
+                }
+            };
+
             if mode == PlaybackMode::ZeroCrossing {
                 if let Some(bins) = zc_bins.get().as_ref() {
                     waveform_renderer::draw_zc_rate(
@@ -125,7 +147,7 @@ pub fn Waveform() -> impl IntoView {
                 if let Some(filtered) = hfr_filtered.get().as_ref() {
                     waveform_renderer::draw_waveform_hfr(
                         &ctx,
-                        &file.audio.samples,
+                        waveform_samples,
                         filtered,
                         file.audio.sample_rate,
                         scroll,
@@ -139,7 +161,7 @@ pub fn Waveform() -> impl IntoView {
                 } else {
                     waveform_renderer::draw_waveform(
                         &ctx,
-                        &file.audio.samples,
+                        waveform_samples,
                         file.audio.sample_rate,
                         scroll,
                         zoom,
@@ -153,7 +175,7 @@ pub fn Waveform() -> impl IntoView {
             } else {
                 waveform_renderer::draw_waveform(
                     &ctx,
-                    &file.audio.samples,
+                    waveform_samples,
                     file.audio.sample_rate,
                     scroll,
                     zoom,

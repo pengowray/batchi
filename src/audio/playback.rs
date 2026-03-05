@@ -41,9 +41,10 @@ pub fn replay_live(state: &AppState) {
 
     let selection = state.selection.get_untracked();
     let sr = file.audio.sample_rate;
+    let total = file.audio.source.total_samples() as usize;
     let sel_end = selection.map(|s| s.time_end).unwrap_or(file.audio.duration_secs);
-    let start_sample = ((current_time * sr as f64) as usize).min(file.audio.samples.len());
-    let end_sample = ((sel_end * sr as f64) as usize).min(file.audio.samples.len());
+    let start_sample = ((current_time * sr as f64) as usize).min(total);
+    let end_sample = ((sel_end * sr as f64) as usize).min(total);
 
     if end_sample <= start_sample {
         state.is_playing.set(false);
@@ -52,9 +53,11 @@ pub fn replay_live(state: &AppState) {
 
     let params = snapshot_params(state, selection, sr);
     let remaining_duration = (end_sample - start_sample) as f64 / sr as f64;
+    let channel_view = state.channel_view.get_untracked();
 
     streaming_playback::start_stream(
-        file.audio.samples.clone(),
+        file.audio.source.clone(),
+        channel_view,
         sr,
         start_sample,
         end_sample,
@@ -125,17 +128,20 @@ pub fn play_from_time(state: &AppState, start_secs: f64) {
     let Some(file) = idx.and_then(|i| files.get(i)) else { return };
 
     let sr = file.audio.sample_rate;
+    let total = file.audio.source.total_samples() as usize;
     let selection = state.selection.get_untracked();
     let end_secs = selection.map(|s| s.time_end).unwrap_or(file.audio.duration_secs);
     let start_secs = start_secs.max(0.0).min(end_secs);
     let start_sample = (start_secs * sr as f64) as usize;
-    let end_sample = ((end_secs * sr as f64) as usize).min(file.audio.samples.len());
+    let end_sample = ((end_secs * sr as f64) as usize).min(total);
     if end_sample <= start_sample { return; }
 
     let params = snapshot_params(state, selection, sr);
+    let channel_view = state.channel_view.get_untracked();
 
     streaming_playback::start_stream(
-        file.audio.samples.clone(),
+        file.audio.source.clone(),
+        channel_view,
         sr,
         start_sample,
         end_sample,
@@ -173,9 +179,11 @@ pub fn play(state: &AppState) {
     let params = snapshot_params(state, selection, sr);
     let play_start_time = selection.map(|s| s.time_start).unwrap_or(0.0);
     let play_duration = (end_sample - start_sample) as f64 / sr as f64;
+    let channel_view = state.channel_view.get_untracked();
 
     streaming_playback::start_stream(
-        file.audio.samples.clone(),
+        file.audio.source.clone(),
+        channel_view,
         sr,
         start_sample,
         end_sample,
@@ -200,14 +208,15 @@ pub fn play(state: &AppState) {
 /// Returns (start_sample, end_sample) for the current selection or full file.
 fn extract_selection_range(audio: &AudioData, selection: Option<Selection>) -> (usize, usize) {
     let sr = audio.sample_rate;
+    let total = audio.source.total_samples() as usize;
     if let Some(sel) = selection {
-        let start = ((sel.time_start * sr as f64) as usize).min(audio.samples.len());
-        let end = ((sel.time_end * sr as f64) as usize).min(audio.samples.len());
+        let start = ((sel.time_start * sr as f64) as usize).min(total);
+        let end = ((sel.time_end * sr as f64) as usize).min(total);
         if end > start {
             return (start, end);
         }
     }
-    (0, audio.samples.len())
+    (0, total)
 }
 
 /// Build a PlaybackParams snapshot from current AppState.

@@ -325,6 +325,7 @@ pub fn OverviewPanel() -> impl IntoView {
         let ff_hi_hz = state.ff_freq_hi.get();
         let bookmarks = state.bookmarks.get();
         let main_canvas_w = state.spectrogram_canvas_width.get();
+        let cv = state.channel_view.get();
         let auto_gain = state.auto_gain.get();
         let gain_db = if auto_gain { state.compute_auto_gain() } else { state.gain_db.get() };
 
@@ -406,9 +407,17 @@ pub fn OverviewPanel() -> impl IntoView {
                 }
             }
             OverviewView::Waveform => {
+                let ov_buf;
+                let ov_samples: &[f32] = match cv {
+                    crate::audio::source::ChannelView::MonoMix => &file.audio.samples,
+                    _ => {
+                        ov_buf = file.audio.source.read_region(cv, 0, file.audio.source.total_samples() as usize);
+                        &ov_buf
+                    }
+                };
                 draw_overview_waveform(
                     &ctx, canvas,
-                    &file.audio.samples,
+                    ov_samples,
                     file.audio.sample_rate,
                     file.spectrogram.time_resolution,
                     scroll, zoom,

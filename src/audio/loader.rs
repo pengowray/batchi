@@ -119,15 +119,8 @@ fn load_wav(bytes: &[u8]) -> Result<AudioData, String> {
 
     let guano = parse_guano(bytes);
 
-    let samples = mix_to_mono(&all_samples, channels);
+    let (samples, source) = build_source(all_samples, channels, sample_rate);
     let duration_secs = samples.len() as f64 / sample_rate as f64;
-    let samples = Arc::new(samples);
-
-    let source = Arc::new(InMemorySource {
-        samples: samples.clone(),
-        sample_rate,
-        channels,
-    });
 
     Ok(AudioData {
         samples,
@@ -160,15 +153,8 @@ fn load_flac(bytes: &[u8]) -> Result<AudioData, String> {
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| format!("FLAC sample error: {e}"))?;
 
-    let samples = mix_to_mono(&all_samples, channels);
+    let (samples, source) = build_source(all_samples, channels, sample_rate);
     let duration_secs = samples.len() as f64 / sample_rate as f64;
-    let samples = Arc::new(samples);
-
-    let source = Arc::new(InMemorySource {
-        samples: samples.clone(),
-        sample_rate,
-        channels,
-    });
 
     Ok(AudioData {
         samples,
@@ -206,15 +192,8 @@ fn load_ogg(bytes: &[u8]) -> Result<AudioData, String> {
         }
     }
 
-    let samples = mix_to_mono(&all_samples, channels);
+    let (samples, source) = build_source(all_samples, channels, sample_rate);
     let duration_secs = samples.len() as f64 / sample_rate as f64;
-    let samples = Arc::new(samples);
-
-    let source = Arc::new(InMemorySource {
-        samples: samples.clone(),
-        sample_rate,
-        channels,
-    });
 
     Ok(AudioData {
         samples,
@@ -305,15 +284,8 @@ fn load_mp3(bytes: &[u8]) -> Result<AudioData, String> {
         }
     }
 
-    let samples = mix_to_mono(&all_samples, channels);
+    let (samples, source) = build_source(all_samples, channels, sample_rate);
     let duration_secs = samples.len() as f64 / sample_rate as f64;
-    let samples = Arc::new(samples);
-
-    let source = Arc::new(InMemorySource {
-        samples: samples.clone(),
-        sample_rate,
-        channels,
-    });
 
     Ok(AudioData {
         samples,
@@ -331,10 +303,33 @@ fn load_mp3(bytes: &[u8]) -> Result<AudioData, String> {
     })
 }
 
-fn mix_to_mono(samples: &[f32], channels: u32) -> Vec<f32> {
+/// Build mono-mixed samples and an InMemorySource from decoded interleaved samples.
+/// For mono files, raw_samples is None (saves memory by sharing the Arc).
+fn build_source(all_samples: Vec<f32>, channels: u32, sample_rate: u32) -> (Arc<Vec<f32>>, Arc<InMemorySource>) {
     if channels == 1 {
-        return samples.to_vec();
+        let samples = Arc::new(all_samples);
+        let source = Arc::new(InMemorySource {
+            samples: samples.clone(),
+            raw_samples: None,
+            sample_rate,
+            channels: 1,
+        });
+        (samples, source)
+    } else {
+        let raw = Arc::new(all_samples);
+        let mono = mix_to_mono(&raw, channels);
+        let samples = Arc::new(mono);
+        let source = Arc::new(InMemorySource {
+            samples: samples.clone(),
+            raw_samples: Some(raw),
+            sample_rate,
+            channels,
+        });
+        (samples, source)
     }
+}
+
+fn mix_to_mono(samples: &[f32], channels: u32) -> Vec<f32> {
     let ch = channels as usize;
     samples
         .chunks_exact(ch)

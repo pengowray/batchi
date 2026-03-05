@@ -263,36 +263,7 @@ pub fn compute_spectrogram_partial(
     col_start: usize,
     col_count: usize,
 ) -> Vec<SpectrogramColumn> {
-    if audio.samples.len() < fft_size || col_count == 0 {
-        return vec![];
-    }
-
-    let fft = FFT_PLANNER.with(|p| p.borrow_mut().plan_fft_forward(fft_size));
-    let window = hann_window(fft_size);
-    let mut input = fft.make_input_vec();
-    let mut spectrum = fft.make_output_vec();
-
-    let total_cols = (audio.samples.len() - fft_size) / hop_size + 1;
-    let col_end = (col_start + col_count).min(total_cols);
-
-    let mut columns = Vec::with_capacity(col_end.saturating_sub(col_start));
-    for col_i in col_start..col_end {
-        let pos = col_i * hop_size;
-        if pos + fft_size > audio.samples.len() {
-            break;
-        }
-        for (inp, (&s, &w)) in input
-            .iter_mut()
-            .zip(audio.samples[pos..pos + fft_size].iter().zip(window.iter()))
-        {
-            *inp = s * w;
-        }
-        fft.process(&mut input, &mut spectrum).expect("FFT failed");
-        let magnitudes: Vec<f32> = spectrum.iter().map(|c| c.norm()).collect();
-        let time_offset = pos as f64 / audio.sample_rate as f64;
-        columns.push(SpectrogramColumn { magnitudes, time_offset });
-    }
-    columns
+    compute_stft_columns(&audio.samples, audio.sample_rate, fft_size, hop_size, col_start, col_count)
 }
 
 /// Compute STFT columns directly from a sample slice.
@@ -455,6 +426,7 @@ mod tests {
         let samples = Arc::new(samples);
         let source = Arc::new(InMemorySource {
             samples: samples.clone(),
+            raw_samples: None,
             sample_rate,
             channels: 1,
         });

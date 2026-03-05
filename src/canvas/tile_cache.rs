@@ -21,6 +21,8 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 use crate::canvas::spectrogram_renderer::{self, PreRendered, FlowAlgo};
 use crate::state::{AppState, LoadedFile};
+use crate::audio::source::ChannelView;
+use crate::types::AudioData;
 
 /// Number of spectrogram columns per tile (constant across all LODs).
 pub const TILE_COLS: usize = 256;
@@ -68,6 +70,17 @@ pub fn tile_count_for_samples(total_samples: usize, lod: u8) -> usize {
     if total_samples < config.fft_size { return 0; }
     let total_cols = (total_samples - config.fft_size) / config.hop_size + 1;
     (total_cols + TILE_COLS - 1) / TILE_COLS
+}
+
+/// Get channel-aware samples from AudioData. For MonoMix, borrows directly
+/// from the pre-computed mono buffer (zero-cost). Other channels extract from source.
+fn channel_samples<'a>(audio: &'a AudioData, cv: ChannelView) -> std::borrow::Cow<'a, [f32]> {
+    match cv {
+        ChannelView::MonoMix => std::borrow::Cow::Borrowed(&audio.samples),
+        _ => std::borrow::Cow::Owned(
+            audio.source.read_region(cv, 0, audio.source.total_samples() as usize)
+        ),
+    }
 }
 
 /// Map a tile index from one LOD to the corresponding tile at a lower (coarser) LOD.
@@ -293,6 +306,15 @@ pub fn clear_all_tiles() {
     IN_FLIGHT.with(|s| s.borrow_mut().clear());
 }
 
+/// Clear all tile caches (main, flow, reassign, chroma). Used when a global
+/// parameter like channel_view changes and all tiles need recomputation.
+pub fn clear_all_caches() {
+    clear_all_tiles();
+    clear_flow_cache();
+    clear_reassign_cache();
+    clear_chroma_cache();
+}
+
 pub fn evict_far(file_idx: usize, lod: u8, center_tile: usize, keep_radius: usize) {
     CACHE.with(|c| c.borrow_mut().evict_far_from(file_idx, lod, center_tile, keep_radius));
 }
@@ -343,7 +365,7 @@ pub fn tiles_ready(file_idx: usize, n_tiles: usize) -> usize {
 /// For single-FFT mode, the size is clamped to at least the LOD's hop size.
 /// For multi-resolution mode, each band uses its own FFT size.
 pub fn schedule_tile_lod(state: AppState, file_idx: usize, lod: u8, tile_idx: usize) {
-    use crate::dsp::fft::compute_spectrogram_partial;
+    use crate::dsp::fft::compute_stft_columns;
 
     let key: CacheKey = (file_idx, lod, tile_idx);
     if CACHE.with(|c| c.borrow().tiles.contains_key(&key)) { return; }
@@ -352,7 +374,7 @@ pub fn schedule_tile_lod(state: AppState, file_idx: usize, lod: u8, tile_idx: us
     // Bounds check: reject tiles that are entirely past the audio data.
     // This prevents futile async work and IN_FLIGHT entries that never resolve.
     let total_samples = state.files.with_untracked(|files| {
-        files.get(file_idx).map(|f| f.audio.samples.len()).unwrap_or(0)
+        files.get(file_idx).map(|f| f.audio.source.total_samples() as usize).unwrap_or(0)
     });
     let max_tiles = tile_count_for_samples(total_samples, lod);
     if tile_idx >= max_tiles { return; }
@@ -385,9 +407,11 @@ pub fn schedule_tile_lod(state: AppState, file_idx: usize, lod: u8, tile_idx: us
             return;
         };
 
-        // Compute STFT columns for this tile
+        // Compute STFT columns for this tile using channel-aware samples
+        let cv = state.channel_view.get_untracked();
+        let samples = channel_samples(&audio, cv);
         let col_start = tile_idx * TILE_COLS;
-        let cols = compute_spectrogram_partial(&audio, actual_fft, config_hop, col_start, TILE_COLS);
+        let cols = compute_stft_columns(&samples, audio.sample_rate, actual_fft, config_hop, col_start, TILE_COLS);
         IN_FLIGHT.with(|s| s.borrow_mut().remove(&key));
 
         if cols.is_empty() {
@@ -707,7 +731,7 @@ pub fn schedule_tile_on_demand(
     tile_idx: usize,
 ) {
     use crate::canvas::spectral_store;
-    use crate::dsp::fft::compute_spectrogram_partial;
+    use crate::dsp::fft::compute_stft_columns;
 
     let key: CacheKey = (file_idx, 1, tile_idx);
     if CACHE.with(|c| c.borrow().tiles.contains_key(&key)) { return; }
@@ -715,7 +739,7 @@ pub fn schedule_tile_on_demand(
 
     // Bounds check: reject tiles past the audio data
     let total_samples = state.files.with_untracked(|files| {
-        files.get(file_idx).map(|f| f.audio.samples.len()).unwrap_or(0)
+        files.get(file_idx).map(|f| f.audio.source.total_samples() as usize).unwrap_or(0)
     });
     let max_tiles = tile_count_for_samples(total_samples, 1);
     if tile_idx >= max_tiles { return; }
@@ -740,9 +764,11 @@ pub fn schedule_tile_on_demand(
             return;
         };
 
+        let cv = state.channel_view.get_untracked();
+        let samples = channel_samples(&audio, cv);
         let col_start = tile_idx * TILE_COLS;
 
-        let cols = compute_spectrogram_partial(&audio, 2048, 512, col_start, TILE_COLS);
+        let cols = compute_stft_columns(&samples, audio.sample_rate, 2048, 512, col_start, TILE_COLS);
         if cols.is_empty() {
             IN_FLIGHT.with(|s| s.borrow_mut().remove(&key));
             // Bump signal so render effect retries (e.g. after fast scroll clamping)
@@ -804,14 +830,14 @@ pub fn schedule_flow_tile(
     tile_idx: usize,
     algo: FlowAlgo,
 ) {
-    use crate::dsp::fft::compute_spectrogram_partial;
+    use crate::dsp::fft::compute_stft_columns;
 
     let key: CacheKey = (file_idx, lod, tile_idx);
     if FLOW_CACHE.with(|c| c.borrow().tiles.contains_key(&key)) { return; }
     if FLOW_IN_FLIGHT.with(|s| is_in_flight_active(&s.borrow(), &key)) { return; }
 
     let total_samples = state.files.with_untracked(|files| {
-        files.get(file_idx).map(|f| f.audio.samples.len()).unwrap_or(0)
+        files.get(file_idx).map(|f| f.audio.source.total_samples() as usize).unwrap_or(0)
     });
     let max_tiles = tile_count_for_samples(total_samples, lod);
     if tile_idx >= max_tiles { return; }
@@ -841,6 +867,8 @@ pub fn schedule_flow_tile(
             return;
         };
 
+        let cv = state.channel_view.get_untracked();
+        let ch_samples = channel_samples(&audio, cv);
         let col_start = tile_idx * TILE_COLS;
 
         let rendered = match algo {
@@ -849,13 +877,13 @@ pub fn schedule_flow_tile(
 
                 let sample_start = col_start * config_hop;
                 let extra = if algo == FlowAlgo::PhaseCoherence { TILE_COLS + 1 } else { TILE_COLS };
-                let sample_end = (sample_start + extra * config_hop + actual_fft).min(audio.samples.len());
-                if sample_start >= audio.samples.len() || sample_start >= sample_end {
+                let sample_end = (sample_start + extra * config_hop + actual_fft).min(ch_samples.len());
+                if sample_start >= ch_samples.len() || sample_start >= sample_end {
                     FLOW_IN_FLIGHT.with(|s| s.borrow_mut().remove(&key));
                     return;
                 }
 
-                let samples = &audio.samples[sample_start..sample_end];
+                let samples = &ch_samples[sample_start..sample_end];
 
                 yield_to_browser().await;
 
@@ -872,8 +900,8 @@ pub fn schedule_flow_tile(
             FlowAlgo::Optical | FlowAlgo::Centroid | FlowAlgo::Gradient => {
                 // Compute STFT from raw audio at the LOD's hop size and user FFT size
                 let prev_col = if tile_idx > 0 {
-                    let prev_cols = compute_spectrogram_partial(
-                        &audio, actual_fft, config_hop, col_start.saturating_sub(1), 1,
+                    let prev_cols = compute_stft_columns(
+                        &ch_samples, audio.sample_rate, actual_fft, config_hop, col_start.saturating_sub(1), 1,
                     );
                     prev_cols.first().map(|c| c.magnitudes.clone())
                 } else {
@@ -882,8 +910,8 @@ pub fn schedule_flow_tile(
 
                 yield_to_browser().await;
 
-                let cols = compute_spectrogram_partial(
-                    &audio, actual_fft, config_hop, col_start, TILE_COLS,
+                let cols = compute_stft_columns(
+                    &ch_samples, audio.sample_rate, actual_fft, config_hop, col_start, TILE_COLS,
                 );
                 if cols.is_empty() {
                     FLOW_IN_FLIGHT.with(|s| s.borrow_mut().remove(&key));
@@ -951,7 +979,7 @@ pub fn schedule_reassign_tile(
     if REASSIGN_IN_FLIGHT.with(|s| is_in_flight_active(&s.borrow(), &key)) { return; }
 
     let total_samples = state.files.with_untracked(|files| {
-        files.get(file_idx).map(|f| f.audio.samples.len()).unwrap_or(0)
+        files.get(file_idx).map(|f| f.audio.source.total_samples() as usize).unwrap_or(0)
     });
     let max_tiles = tile_count_for_samples(total_samples, lod);
     if tile_idx >= max_tiles { return; }
@@ -981,15 +1009,17 @@ pub fn schedule_reassign_tile(
             return;
         };
 
+        let cv = state.channel_view.get_untracked();
+        let ch_samples = channel_samples(&audio, cv);
         let sample_start = tile_idx * TILE_COLS * config_hop;
         let sample_end = (sample_start + TILE_COLS * config_hop + actual_fft)
-            .min(audio.samples.len());
-        if sample_start >= audio.samples.len() || sample_start >= sample_end {
+            .min(ch_samples.len());
+        if sample_start >= ch_samples.len() || sample_start >= sample_end {
             REASSIGN_IN_FLIGHT.with(|s| s.borrow_mut().remove(&key));
             return;
         }
 
-        let samples = &audio.samples[sample_start..sample_end];
+        let samples = &ch_samples[sample_start..sample_end];
 
         yield_to_browser().await;
 

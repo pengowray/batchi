@@ -261,6 +261,7 @@ pub enum LayerPanel {
     MainView,
     PlayMode,
     RecordMode,
+    Channel,
 }
 
 /// A navigation history entry (for overview back/forward buttons).

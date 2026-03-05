@@ -11,6 +11,7 @@ use wasm_bindgen_futures::JsFuture;
 use std::cell::RefCell;
 use std::sync::Arc;
 
+use crate::audio::source::{AudioSource, ChannelView};
 use crate::state::{PlaybackMode, FilterQuality};
 use crate::dsp::heterodyne::heterodyne_mix;
 use crate::dsp::pitch_shift::pitch_shift_realtime;
@@ -115,9 +116,11 @@ pub(crate) fn is_streaming() -> bool {
 
 /// Start streaming playback of a sample range.
 ///
+/// `source` provides sample data; `channel_view` selects which channel(s) to play.
 /// Returns the final playback sample rate (may differ from source for TE mode).
 pub(crate) fn start_stream(
-    source_samples: Arc<Vec<f32>>,
+    source: Arc<dyn AudioSource>,
+    channel_view: ChannelView,
     sample_rate: u32,
     start_sample: usize,
     end_sample: usize,
@@ -137,6 +140,11 @@ pub(crate) fn start_stream(
         }
         _ => sample_rate,
     };
+
+    // Stereo passthrough: Normal mode + stereo source + MonoMix view
+    let stereo_out = matches!(params.mode, PlaybackMode::Normal)
+        && source.channel_count() >= 2
+        && channel_view == ChannelView::MonoMix;
 
     // Create AudioContext at the final playback rate
     let opts = AudioContextOptions::new();
@@ -158,7 +166,9 @@ pub(crate) fn start_stream(
         ctx,
         gain_node,
         generation,
-        source_samples,
+        source,
+        channel_view,
+        stereo_out,
         sample_rate,
         final_rate,
         start_sample,
@@ -174,7 +184,9 @@ async fn chunk_loop(
     ctx: AudioContext,
     gain_node: web_sys::GainNode,
     generation: u32,
-    source: Arc<Vec<f32>>,
+    source: Arc<dyn AudioSource>,
+    channel_view: ChannelView,
+    stereo_out: bool,
     source_rate: u32,
     final_rate: u32,
     start_sample: usize,
@@ -197,9 +209,8 @@ async fn chunk_loop(
     let cached_gain: Option<f64> = if params.auto_gain {
         let max_scan = (source_rate as usize) * 15; // ~15 seconds
         let scan_end = end_sample.min(start_sample + max_scan);
-        let peak = source[start_sample..scan_end]
-            .iter()
-            .fold(0.0f32, |mx, s| mx.max(s.abs()));
+        let scan_samples = source.read_region(channel_view, start_sample as u64, scan_end - start_sample);
+        let peak = scan_samples.iter().fold(0.0f32, |mx, s| mx.max(s.abs()));
         if peak < 1e-10 {
             Some(0.0)
         } else {
@@ -235,17 +246,16 @@ async fn chunk_loop(
         };
         let trailing_len = trailing_end - chunk_end;
 
-        let chunk_with_warmup = &source[warmup_start..trailing_end];
+        // Read chunk from source (mono view for DSP processing)
+        let chunk_with_warmup = source.read_region(channel_view, warmup_start as u64, trailing_end - warmup_start);
 
         // Apply EQ/bandpass filter
-        let filtered = apply_filters(chunk_with_warmup, source_rate, &params);
+        let filtered = apply_filters(&chunk_with_warmup, source_rate, &params);
 
         // Apply DSP mode transform
         let processed = apply_dsp_mode(&filtered, source_rate, &params);
 
         // Trim warmup and trailing overlap from the output.
-        // All DSP modes preserve input length (output.len() == input.len()),
-        // so warmup_len and trailing_len map 1:1 to output positions.
         let trim_start = warmup_len;
         let trim_end = processed.len().saturating_sub(trailing_len);
         let trimmed = if trim_start < trim_end {
@@ -261,9 +271,21 @@ async fn chunk_loop(
 
         // Schedule this chunk in Web Audio
         if !final_samples.is_empty() {
-            schedule_buffer(&ctx, &gain_node, &final_samples, final_rate, scheduled_time);
-            let chunk_duration = final_samples.len() as f64 / final_rate as f64;
-            scheduled_time += chunk_duration;
+            if stereo_out {
+                // Stereo passthrough: read L and R channels separately, apply same gain
+                let chunk_len = chunk_end - pos;
+                let mut left = source.read_region(ChannelView::Channel(0), pos as u64, chunk_len);
+                let mut right = source.read_region(ChannelView::Channel(1), pos as u64, chunk_len);
+                apply_gain(&mut left, gain);
+                apply_gain(&mut right, gain);
+                schedule_buffer_stereo(&ctx, &gain_node, &left, &right, final_rate, scheduled_time);
+                let chunk_duration = left.len() as f64 / final_rate as f64;
+                scheduled_time += chunk_duration;
+            } else {
+                schedule_buffer(&ctx, &gain_node, &final_samples, final_rate, scheduled_time);
+                let chunk_duration = final_samples.len() as f64 / final_rate as f64;
+                scheduled_time += chunk_duration;
+            }
         }
 
         pos = chunk_end;
@@ -366,6 +388,21 @@ fn schedule_buffer(ctx: &AudioContext, dest: &web_sys::GainNode, samples: &[f32]
         return;
     };
     let _ = buffer.copy_to_channel(samples, 0);
+    let Ok(source) = ctx.create_buffer_source() else {
+        return;
+    };
+    source.set_buffer(Some(&buffer));
+    let _ = source.connect_with_audio_node(dest);
+    let _ = source.start_with_when(when);
+}
+
+fn schedule_buffer_stereo(ctx: &AudioContext, dest: &web_sys::GainNode, left: &[f32], right: &[f32], sample_rate: u32, when: f64) {
+    let len = left.len().min(right.len());
+    let Ok(buffer) = ctx.create_buffer(2, len as u32, sample_rate as f32) else {
+        return;
+    };
+    let _ = buffer.copy_to_channel(&left[..len], 0);
+    let _ = buffer.copy_to_channel(&right[..len], 1);
     let Ok(source) = ctx.create_buffer_source() else {
         return;
     };

@@ -2,6 +2,7 @@ use leptos::prelude::*;
 use wasm_bindgen::prelude::*;
 use crate::state::{AppState, CanvasTool, LayerPanel, PlayStartMode, RecordMode};
 use crate::audio::{microphone, playback};
+use crate::audio::source::ChannelView;
 use crate::components::hfr_button::HfrButton;
 use crate::components::combo_button::ComboButton;
 
@@ -233,6 +234,65 @@ pub fn BottomToolbar() -> impl IntoView {
                     </button>
                 }
             })}
+
+            // ── Channel selector (stereo+ only) ──
+            {move || {
+                let files = state.files.get();
+                let idx = state.current_file_index.get();
+                let num_ch = idx.and_then(|i| files.get(i)).map(|f| f.audio.channels).unwrap_or(1);
+                (num_ch > 1).then(|| {
+                    let cv = state.channel_view.get();
+                    let ch_is_open = state.layer_panel_open.get() == Some(LayerPanel::Channel);
+                    let label = match cv {
+                        ChannelView::MonoMix => "L+R",
+                        ChannelView::Channel(0) => "L",
+                        ChannelView::Channel(1) => "R",
+                        ChannelView::Difference => "L-R",
+                        ChannelView::Channel(n) => match n { 2 => "Ch3", 3 => "Ch4", _ => "Ch?" },
+                    };
+                    view! {
+                        <div style="position:relative">
+                            <button
+                                class=move || if ch_is_open { "layer-btn open" } else { "layer-btn" }
+                                on:click=move |_| toggle_panel(&state, LayerPanel::Channel)
+                                title="Channel view"
+                            >
+                                <span class="layer-btn-category">"Ch"</span>
+                                <span class="layer-btn-value">{label}</span>
+                            </button>
+                            {ch_is_open.then(|| {
+                                let set_ch = move |cv: ChannelView| {
+                                    state.channel_view.set(cv);
+                                    crate::canvas::tile_cache::clear_all_caches();
+                                    state.tile_ready_signal.update(|n| *n = n.wrapping_add(1));
+                                    state.layer_panel_open.set(None);
+                                };
+                                view! {
+                                    <div class="layer-panel" style="bottom: calc(100% + 4px); left: 0; min-width:100px;">
+                                        <div class="layer-panel-title">"Channel"</div>
+                                        <button
+                                            class=move || layer_opt_class(state.channel_view.get() == ChannelView::MonoMix)
+                                            on:click=move |_| set_ch(ChannelView::MonoMix)
+                                        >"Mix (L+R)"</button>
+                                        <button
+                                            class=move || layer_opt_class(state.channel_view.get() == ChannelView::Channel(0))
+                                            on:click=move |_| set_ch(ChannelView::Channel(0))
+                                        >"Left"</button>
+                                        <button
+                                            class=move || layer_opt_class(state.channel_view.get() == ChannelView::Channel(1))
+                                            on:click=move |_| set_ch(ChannelView::Channel(1))
+                                        >"Right"</button>
+                                        <button
+                                            class=move || layer_opt_class(state.channel_view.get() == ChannelView::Difference)
+                                            on:click=move |_| set_ch(ChannelView::Difference)
+                                        >"Diff (L-R)"</button>
+                                    </div>
+                                }
+                            })}
+                        </div>
+                    }
+                })
+            }}
 
             <div class="bottom-toolbar-sep"></div>
 
