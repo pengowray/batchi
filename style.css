@@ -859,6 +859,22 @@ body.sidebar-resizing {
     color: #fff;
 }
 
+.add-files-btn {
+    background: transparent;
+    border: 1px dashed #444;
+    color: #777;
+    font-size: 12px;
+    padding: 4px 10px;
+    margin-top: 4px;
+    width: 100%;
+}
+
+.add-files-btn:hover {
+    border-color: #666;
+    color: #aaa;
+    background: #2a2a2a;
+}
+
 .demo-picker {
     display: flex;
     flex-direction: column;

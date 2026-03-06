@@ -58,7 +58,9 @@ pub fn parse_wav_header_with_file_size(header_bytes: &[u8], file_size: Option<u6
             header_bytes[pos + 4..pos + 8].try_into().map_err(|_| "Invalid chunk size")?,
         ) as u64;
         let body_start = pos + 8;
-        let body_end = body_start + chunk_size as usize;
+        // Use u64 to avoid usize overflow on 32-bit WASM for large chunks
+        let body_end_u64 = body_start as u64 + chunk_size;
+        let chunk_fits = body_end_u64 <= header_bytes.len() as u64;
 
         match chunk_id {
             b"ds64" => {
@@ -74,9 +76,10 @@ pub fn parse_wav_header_with_file_size(header_bytes: &[u8], file_size: Option<u6
                 }
             }
             b"fmt " => {
-                if chunk_size < 16 || body_end > header_bytes.len() {
+                if chunk_size < 16 || !chunk_fits {
                     return Err("fmt chunk too small or truncated".into());
                 }
+                let body_end = body_end_u64 as usize;
                 let fmt = &header_bytes[body_start..body_end];
                 let format_tag = u16::from_le_bytes([fmt[0], fmt[1]]);
                 let channels = u16::from_le_bytes([fmt[2], fmt[3]]);
@@ -92,17 +95,18 @@ pub fn parse_wav_header_with_file_size(header_bytes: &[u8], file_size: Option<u6
                 } else {
                     data_size = Some(chunk_size);
                 }
-                // Don't break — there might be GUANO after, but we record offset+size
-                // For streaming, we have what we need once we see data
-                if guano.is_some() || body_end > header_bytes.len() {
-                    break; // GUANO already found, or data extends past our header bytes
+                // Data chunk extends past our header bytes — stop scanning
+                if guano.is_some() || !chunk_fits {
+                    break;
                 }
                 // Skip past the data chunk to look for GUANO after it
-                pos = body_start + ((chunk_size as usize + 1) & !1);
+                let aligned = ((chunk_size + 1) & !1) as usize;
+                pos = body_start + aligned;
                 continue;
             }
             b"guan" => {
-                if body_end <= header_bytes.len() {
+                if chunk_fits {
+                    let body_end = body_end_u64 as usize;
                     let guan_bytes = &header_bytes[body_start..body_end];
                     guano = guano::parse_guano_chunk(guan_bytes);
                 }
@@ -110,7 +114,12 @@ pub fn parse_wav_header_with_file_size(header_bytes: &[u8], file_size: Option<u6
             _ => {}
         }
 
-        pos = body_start + ((chunk_size as usize + 1) & !1);
+        // Advance to next chunk (word-aligned)
+        let aligned = ((chunk_size + 1) & !1) as usize;
+        match body_start.checked_add(aligned) {
+            Some(next) if next > pos => pos = next,
+            _ => break, // overflow or no progress — stop
+        }
     }
 
     let (format_tag, sample_rate, channels, bits_per_sample) =
