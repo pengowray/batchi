@@ -3,7 +3,7 @@ use leptos::prelude::*;
 use wasm_bindgen::{Clamped, JsCast};
 use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement, ImageData, MouseEvent};
 use crate::canvas::waveform_renderer;
-use crate::state::{AppState, LayerPanel, NavEntry, OverviewFreqMode, OverviewView};
+use crate::state::{AppState, LayerPanel, OverviewFreqMode, OverviewView};
 use crate::types::PreviewImage;
 
 thread_local! {
@@ -34,23 +34,7 @@ fn get_overview_tmp_canvas(w: u32, h: u32) -> Option<(HtmlCanvasElement, CanvasR
 // ── Navigation helpers ────────────────────────────────────────────────────────
 
 fn push_nav(state: &AppState) {
-    let entry = NavEntry {
-        scroll_offset: state.scroll_offset.get_untracked(),
-        zoom_level: state.zoom_level.get_untracked(),
-    };
-    let idx = state.nav_index.get_untracked();
-    state.nav_history.update(|hist| {
-        hist.truncate(idx + 1);
-        if hist.last().map(|e: &NavEntry| (e.scroll_offset - entry.scroll_offset).abs() < 0.05).unwrap_or(false) {
-            return; // Don't push nearly identical entries
-        }
-        hist.push(entry);
-        if hist.len() > 100 {
-            hist.remove(0);
-        }
-    });
-    let new_len = state.nav_history.get_untracked().len();
-    state.nav_index.set(new_len.saturating_sub(1));
+    state.push_nav();
 }
 
 fn nav_back(state: &AppState) {

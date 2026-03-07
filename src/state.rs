@@ -947,6 +947,27 @@ impl AppState {
         files.get(idx).cloned()
     }
 
+    /// Push current scroll/zoom onto the navigation history stack.
+    pub fn push_nav(&self) {
+        let entry = NavEntry {
+            scroll_offset: self.scroll_offset.get_untracked(),
+            zoom_level: self.zoom_level.get_untracked(),
+        };
+        let idx = self.nav_index.get_untracked();
+        self.nav_history.update(|hist| {
+            hist.truncate(idx + 1);
+            if hist.last().map(|e: &NavEntry| (e.scroll_offset - entry.scroll_offset).abs() < 0.05).unwrap_or(false) {
+                return;
+            }
+            hist.push(entry);
+            if hist.len() > 100 {
+                hist.remove(0);
+            }
+        });
+        let new_len = self.nav_history.get_untracked().len();
+        self.nav_index.set(new_len.saturating_sub(1));
+    }
+
     pub fn show_info_toast(&self, msg: impl Into<String>) {
         self.status_level.set(StatusLevel::Info);
         self.status_message.set(Some(msg.into()));

@@ -883,16 +883,43 @@ fn restore_selection(state: AppState, annotation_id: &str) {
     };
     for a in &set.annotations {
         if a.id == annotation_id {
-            if let AnnotationKind::Selection(ref sel) = a.kind {
-                state.selection.set(Some(crate::state::Selection {
-                    time_start: sel.time_start,
-                    time_end: sel.time_end,
-                    freq_low: sel.freq_low,
-                    freq_high: sel.freq_high,
-                }));
+            let jump_time = match &a.kind {
+                AnnotationKind::Selection(sel) => {
+                    state.selection.set(Some(crate::state::Selection {
+                        time_start: sel.time_start,
+                        time_end: sel.time_end,
+                        freq_low: sel.freq_low,
+                        freq_high: sel.freq_high,
+                    }));
+                    Some((sel.time_start + sel.time_end) / 2.0)
+                }
+                AnnotationKind::Marker(m) => Some(m.time),
+                AnnotationKind::Measurement(m) => Some((m.start_time + m.end_time) / 2.0),
+                _ => None,
+            };
+            if let Some(t) = jump_time {
+                jump_to_time(state, t);
             }
             return;
         }
+    }
+}
+
+/// Push nav history, then scroll so that `time` is centered in the spectrogram view.
+fn jump_to_time(state: AppState, time: f64) {
+    state.push_nav();
+    state.suspend_follow();
+
+    let files = state.files.get_untracked();
+    let idx = state.current_file_index.get_untracked();
+    if let Some(file) = idx.and_then(|i| files.get(i)) {
+        let zoom = state.zoom_level.get_untracked();
+        let canvas_w = state.spectrogram_canvas_width.get_untracked();
+        let half_visible = (canvas_w / zoom) * file.spectrogram.time_resolution / 2.0;
+        let visible = half_visible * 2.0;
+        let max_scroll = (file.audio.duration_secs - visible).max(0.0);
+        let centered = (time - half_visible).clamp(0.0, max_scroll);
+        state.scroll_offset.set(centered);
     }
 }
 
