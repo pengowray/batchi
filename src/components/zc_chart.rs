@@ -415,7 +415,7 @@ pub fn ZcDotChart() -> impl IntoView {
             let delta = if ev.delta_y() > 0.0 { 0.9 } else { 1.1 };
             state.zoom_level.update(|z| *z = (*z * delta).max(0.1).min(100.0));
         } else {
-            let delta = ev.delta_y() * 0.001;
+            let delta = (ev.delta_y() + ev.delta_x()) * 0.001;
             let max_scroll = {
                 let files = state.files.get_untracked();
                 let idx = state.current_file_index.get_untracked().unwrap_or(0);

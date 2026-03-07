@@ -577,7 +577,7 @@ pub fn OverviewPanel() -> impl IntoView {
     let on_wheel = move |ev: web_sys::WheelEvent| {
         ev.prevent_default();
         let total_duration = file_duration();
-        let delta = ev.delta_y() * 0.0003 * total_duration.max(1.0);
+        let delta = (ev.delta_y() + ev.delta_x()) * 0.0003 * total_duration.max(1.0);
         let visible_time = {
             let files = state.files.get_untracked();
             let idx = state.current_file_index.get_untracked();

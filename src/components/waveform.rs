@@ -290,7 +290,7 @@ pub fn Waveform() -> impl IntoView {
                 *z = (*z * delta).max(0.1).min(100.0);
             });
         } else {
-            let delta = ev.delta_y() * 0.001;
+            let delta = (ev.delta_y() + ev.delta_x()) * 0.001;
             let max_scroll = {
                 let files = state.files.get_untracked();
                 let idx = state.current_file_index.get_untracked().unwrap_or(0);
