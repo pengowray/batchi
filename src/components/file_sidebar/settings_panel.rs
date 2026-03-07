@@ -4,7 +4,7 @@ use crate::audio::source::ChannelView;
 use crate::state::{AppState, FftMode, FlowColorScheme, MainView, SpectrogramDisplay};
 use crate::components::slider_row::SliderRow;
 use crate::dsp::zero_crossing::zero_crossing_frequency;
-use crate::annotations::{Annotation, AnnotationKind, AnnotationSet, SavedSelection, generate_uuid, now_iso8601};
+use crate::annotations::{Annotation, AnnotationKind, AnnotationSet, Group, SavedSelection, generate_uuid, now_iso8601, build_annotation_tree, AnnotationNode, collect_descendants, renumber_children};
 
 #[component]
 pub(crate) fn SpectrogramSettingsPanel() -> impl IntoView {
@@ -496,6 +496,8 @@ pub(crate) fn SelectionPanel() -> impl IntoView {
                 created_at: now_iso8601(),
                 modified_at: now_iso8601(),
                 notes: None,
+                parent_id: None,
+                sort_order: None,
             };
             state.annotation_store.update(|store| {
                 store.ensure_len(idx + 1);
@@ -573,29 +575,57 @@ pub(crate) fn SelectionPanel() -> impl IntoView {
     }
 }
 
+/// Get the display label for an annotation.
+fn annotation_display(a: &Annotation) -> (String, Option<String>) {
+    match &a.kind {
+        AnnotationKind::Selection(sel) => {
+            let auto_label = match (sel.freq_low, sel.freq_high) {
+                (Some(fl), Some(fh)) => format!("{:.3}–{:.3}s, {:.0}–{:.0} kHz",
+                    sel.time_start, sel.time_end,
+                    fl / 1000.0, fh / 1000.0),
+                _ => format!("{:.3}–{:.3}s", sel.time_start, sel.time_end),
+            };
+            let display = sel.label.clone().unwrap_or_else(|| auto_label);
+            (display, sel.label.clone())
+        }
+        AnnotationKind::Marker(m) => {
+            let auto_label = format!("{:.3}s", m.time);
+            let display = m.label.clone().unwrap_or_else(|| auto_label);
+            (display, m.label.clone())
+        }
+        AnnotationKind::Group(g) => {
+            let display = g.label.clone().unwrap_or_else(|| "Group".to_string());
+            (display, g.label.clone())
+        }
+        AnnotationKind::Measurement(m) => {
+            let display = m.label.clone().unwrap_or_else(|| {
+                format!("{:.3}–{:.3}s", m.start_time, m.end_time)
+            });
+            (display, m.label.clone())
+        }
+    }
+}
+
+/// Icon prefix for annotation kind.
+fn annotation_icon(kind: &AnnotationKind) -> &'static str {
+    match kind {
+        AnnotationKind::Selection(_) => "\u{25AD} ",  // rectangle
+        AnnotationKind::Marker(_) => "\u{25C6} ",     // diamond
+        AnnotationKind::Group(_) => "",                // handled by collapse toggle
+        AnnotationKind::Measurement(_) => "\u{21D4} ", // double arrow
+    }
+}
+
 #[component]
 fn SavedSelectionsList() -> impl IntoView {
     let state = expect_context::<AppState>();
 
-    let saved_selections = move || {
+    let annotation_tree = move || {
         let idx = state.current_file_index.get()?;
         let store = state.annotation_store.get();
         let set = store.sets.get(idx)?.as_ref()?;
-        let selections: Vec<(String, String, Option<String>)> = set.annotations.iter().filter_map(|a| {
-            if let AnnotationKind::Selection(ref sel) = a.kind {
-                let auto_label = match (sel.freq_low, sel.freq_high) {
-                    (Some(fl), Some(fh)) => format!("{:.3}–{:.3}s, {:.0}–{:.0} kHz",
-                        sel.time_start, sel.time_end,
-                        fl / 1000.0, fh / 1000.0),
-                    _ => format!("{:.3}–{:.3}s", sel.time_start, sel.time_end),
-                };
-                let display = sel.label.clone().unwrap_or_else(|| auto_label.clone());
-                Some((a.id.clone(), display, sel.label.clone()))
-            } else {
-                None
-            }
-        }).collect();
-        if selections.is_empty() { None } else { Some(selections) }
+        if set.annotations.is_empty() { return None; }
+        Some(build_annotation_tree(&set.annotations))
     };
 
     let on_export = move |_: web_sys::MouseEvent| {
@@ -606,6 +636,14 @@ fn SavedSelectionsList() -> impl IntoView {
         import_annotations(state);
     };
 
+    let on_group = move |_: web_sys::MouseEvent| {
+        group_selected(state);
+    };
+
+    let on_ungroup = move |_: web_sys::MouseEvent| {
+        ungroup_selected(state);
+    };
+
     let has_annotations = move || {
         let idx = state.current_file_index.get()?;
         let store = state.annotation_store.get();
@@ -613,85 +651,44 @@ fn SavedSelectionsList() -> impl IntoView {
         if set.annotations.is_empty() { None } else { Some(true) }
     };
 
+    let selected_is_group = move || {
+        let sel_id = state.selected_annotation_id.get()?;
+        let idx = state.current_file_index.get()?;
+        let store = state.annotation_store.get();
+        let set = store.sets.get(idx)?.as_ref()?;
+        set.annotations.iter().find(|a| a.id == sel_id)
+            .filter(|a| matches!(a.kind, AnnotationKind::Group(_)))
+            .map(|_| true)
+    };
+
     view! {
         {move || {
-            if let Some(selections) = saved_selections() {
+            if let Some(tree) = annotation_tree() {
                 view! {
                     <div class="setting-group">
-                        <div class="setting-group-title">"Saved Selections"</div>
-                        {selections.into_iter().map(|(id, display, existing_label)| {
-                            let id_click = id.clone();
-                            let id_delete = id.clone();
-                            let id_edit = id.clone();
-                            let editing = RwSignal::new(false);
-                            let edit_value = RwSignal::new(existing_label.unwrap_or_default());
-                            view! {
-                                <div class="saved-selection-item"
-                                    on:click=move |_| {
-                                        restore_selection(state, &id_click);
-                                    }
-                                >
-                                    {move || {
-                                        if editing.get() {
-                                            let id_save = id_edit.clone();
-                                            let id_save2 = id_edit.clone();
-                                            let input_ref = NodeRef::<leptos::html::Input>::new();
-                                            Effect::new(move |_| {
-                                                if let Some(el) = input_ref.get() {
-                                                    let _ = el.focus();
-                                                }
-                                            });
-                                            view! {
-                                                <input
-                                                    class="saved-selection-label-input"
-                                                    type="text"
-                                                    prop:value=move || edit_value.get()
-                                                    placeholder="Label..."
-                                                    node_ref=input_ref
-                                                    on:input=move |ev| {
-                                                        edit_value.set(leptos::prelude::event_target_value(&ev));
-                                                    }
-                                                    on:keydown=move |ev| {
-                                                        if ev.key() == "Enter" {
-                                                            let val = edit_value.get_untracked();
-                                                            let label = if val.trim().is_empty() { None } else { Some(val) };
-                                                            update_annotation_label(state, &id_save, label);
-                                                            editing.set(false);
-                                                        } else if ev.key() == "Escape" {
-                                                            editing.set(false);
-                                                        }
-                                                    }
-                                                    on:blur=move |_| {
-                                                        let val = edit_value.get_untracked();
-                                                        let label = if val.trim().is_empty() { None } else { Some(val) };
-                                                        update_annotation_label(state, &id_save2, label);
-                                                        editing.set(false);
-                                                    }
-                                                    on:click=move |e| { e.stop_propagation(); }
-                                                />
-                                            }.into_any()
-                                        } else {
-                                            view! {
-                                                <span class="saved-selection-label">{display.clone()}</span>
-                                            }.into_any()
-                                        }
-                                    }}
-                                    <button class="saved-selection-edit"
-                                        title="Edit label"
-                                        on:click=move |e| {
-                                            e.stop_propagation();
-                                            editing.set(true);
-                                        }
-                                    >"\u{270E}"</button>
-                                    <button class="saved-selection-delete"
-                                        on:click=move |e| {
-                                            e.stop_propagation();
-                                            delete_annotation(state, &id_delete);
-                                        }
-                                    >"\u{00d7}"</button>
-                                </div>
+                        <div class="setting-group-title">"Annotations"</div>
+                        <div class="annotation-tree"
+                            on:dragover=move |ev: web_sys::DragEvent| {
+                                ev.prevent_default();
                             }
-                        }).collect_view()}
+                            on:drop=move |_ev: web_sys::DragEvent| {
+                                perform_drop(state);
+                            }
+                        >
+                            {render_tree_nodes(tree, state)}
+                        </div>
+                        <div class="setting-row" style="gap: 4px; padding: 4px 8px;">
+                            <button class="sidebar-btn annotation-toolbar-btn"
+                                title="Group selected"
+                                on:click=on_group
+                                disabled=move || state.selected_annotation_id.get().is_none()
+                            >"Group"</button>
+                            <button class="sidebar-btn annotation-toolbar-btn"
+                                title="Ungroup"
+                                on:click=on_ungroup
+                                disabled=move || selected_is_group().is_none()
+                            >"Ungroup"</button>
+                        </div>
                     </div>
                 }.into_any()
             } else {
@@ -718,6 +715,162 @@ fn SavedSelectionsList() -> impl IntoView {
     }
 }
 
+fn render_tree_nodes(nodes: Vec<AnnotationNode>, state: AppState) -> impl IntoView {
+    nodes.into_iter().map(move |node| {
+        let id = node.annotation.id.clone();
+        let (display, existing_label) = annotation_display(&node.annotation);
+        let icon = annotation_icon(&node.annotation.kind);
+        let is_group = matches!(node.annotation.kind, AnnotationKind::Group(_));
+        let is_collapsed = match &node.annotation.kind {
+            AnnotationKind::Group(g) => g.collapsed.unwrap_or(false),
+            _ => false,
+        };
+        let depth = node.depth;
+        let children = node.children;
+
+        let id_click = id.clone();
+        let id_delete = id.clone();
+        let id_edit = id.clone();
+        let id_drag = id.clone();
+        let id_dragover = id.clone();
+        let id_dragover2 = id.clone();
+
+        let editing = RwSignal::new(false);
+        let edit_value = RwSignal::new(existing_label.unwrap_or_default());
+
+        let indent_px = depth * 16;
+
+        view! {
+            <div
+                class="annotation-tree-item"
+                class:annotation-selected=move || state.selected_annotation_id.get().as_deref() == Some(id_click.as_str())
+                class:annotation-drop-target=move || {
+                    state.drop_target.get().as_ref().map(|(tid, _)| tid.as_str()) == Some(id_dragover.as_str())
+                }
+                class:annotation-group-item=is_group
+                style:padding-left=format!("{}px", 8 + indent_px)
+                draggable="true"
+                on:click=move |_| {
+                    let click_id = id.clone();
+                    if is_group {
+                        toggle_group_collapsed(state, &click_id);
+                    } else {
+                        restore_selection(state, &click_id);
+                    }
+                    state.selected_annotation_id.set(Some(id.clone()));
+                }
+                on:dragstart=move |ev: web_sys::DragEvent| {
+                    state.dragging_annotation_id.set(Some(id_drag.clone()));
+                    if let Some(dt) = ev.data_transfer() {
+                        let _ = dt.set_data("text/plain", &id_drag);
+                        dt.set_effect_allowed("move");
+                    }
+                }
+                on:dragover=move |ev: web_sys::DragEvent| {
+                    ev.prevent_default();
+                    if let Some(dt) = ev.data_transfer() {
+                        dt.set_drop_effect("move");
+                    }
+                    // Determine drop position based on mouse Y within element
+                    let target: web_sys::HtmlElement = ev.current_target().unwrap().unchecked_into();
+                    let rect = target.get_bounding_client_rect();
+                    let y = ev.client_y() as f64 - rect.top();
+                    let h = rect.height();
+                    let position = if is_group && y > h * 0.25 && y < h * 0.75 {
+                        "inside".to_string()
+                    } else if y < h * 0.5 {
+                        "before".to_string()
+                    } else {
+                        "after".to_string()
+                    };
+                    state.drop_target.set(Some((id_dragover2.clone(), position)));
+                }
+                on:dragleave=move |_: web_sys::DragEvent| {
+                    // Only clear if we're leaving the tree item
+                    state.drop_target.set(None);
+                }
+                on:drop=move |ev: web_sys::DragEvent| {
+                    ev.prevent_default();
+                    ev.stop_propagation();
+                    perform_drop(state);
+                }
+            >
+                {if is_group {
+                    let collapse_char = if is_collapsed { "\u{25B6}" } else { "\u{25BC}" };
+                    view! { <span class="annotation-collapse-toggle">{collapse_char}" "</span> }.into_any()
+                } else {
+                    view! { <span class="annotation-icon">{icon}</span> }.into_any()
+                }}
+                {move || {
+                    if editing.get() {
+                        let id_save = id_edit.clone();
+                        let id_save2 = id_edit.clone();
+                        let input_ref = NodeRef::<leptos::html::Input>::new();
+                        Effect::new(move |_| {
+                            if let Some(el) = input_ref.get() {
+                                let _ = el.focus();
+                            }
+                        });
+                        view! {
+                            <input
+                                class="saved-selection-label-input"
+                                type="text"
+                                prop:value=move || edit_value.get()
+                                placeholder="Label..."
+                                node_ref=input_ref
+                                on:input=move |ev| {
+                                    edit_value.set(leptos::prelude::event_target_value(&ev));
+                                }
+                                on:keydown=move |ev| {
+                                    if ev.key() == "Enter" {
+                                        let val = edit_value.get_untracked();
+                                        let label = if val.trim().is_empty() { None } else { Some(val) };
+                                        update_annotation_label(state, &id_save, label);
+                                        editing.set(false);
+                                    } else if ev.key() == "Escape" {
+                                        editing.set(false);
+                                    }
+                                }
+                                on:blur=move |_| {
+                                    let val = edit_value.get_untracked();
+                                    let label = if val.trim().is_empty() { None } else { Some(val) };
+                                    update_annotation_label(state, &id_save2, label);
+                                    editing.set(false);
+                                }
+                                on:click=move |e| { e.stop_propagation(); }
+                            />
+                        }.into_any()
+                    } else {
+                        view! {
+                            <span class="saved-selection-label">{display.clone()}</span>
+                        }.into_any()
+                    }
+                }}
+                <button class="saved-selection-edit"
+                    title="Edit label"
+                    on:click=move |e| {
+                        e.stop_propagation();
+                        editing.set(true);
+                    }
+                >"\u{270E}"</button>
+                <button class="saved-selection-delete"
+                    on:click=move |e| {
+                        e.stop_propagation();
+                        delete_annotation(state, &id_delete);
+                    }
+                >"\u{00d7}"</button>
+            </div>
+            {if is_group && !is_collapsed && !children.is_empty() {
+                view! { <div class="annotation-group-children">{render_tree_nodes(children, state)}</div> }.into_any()
+            } else {
+                view! { <span></span> }.into_any()
+            }}
+        }
+    }).collect_view()
+}
+
+// --- Helper functions ---
+
 fn restore_selection(state: AppState, annotation_id: &str) {
     let idx = match state.current_file_index.get_untracked() {
         Some(i) => i,
@@ -737,9 +890,7 @@ fn restore_selection(state: AppState, annotation_id: &str) {
                     freq_low: sel.freq_low,
                     freq_high: sel.freq_high,
                 }));
-                state.selected_annotation_id.set(Some(annotation_id.to_string()));
             }
-
             return;
         }
     }
@@ -750,11 +901,23 @@ fn delete_annotation(state: AppState, annotation_id: &str) {
         Some(i) => i,
         None => return,
     };
+    // Also delete all descendants
+    let descendants = {
+        let store = state.annotation_store.get_untracked();
+        let set = match store.sets.get(idx).and_then(|s| s.as_ref()) {
+            Some(s) => s,
+            None => return,
+        };
+        collect_descendants(&set.annotations, annotation_id)
+    };
     state.annotation_store.update(|store| {
         if let Some(Some(ref mut set)) = store.sets.get_mut(idx) {
-            set.annotations.retain(|a| a.id != annotation_id);
+            set.annotations.retain(|a| a.id != annotation_id && !descendants.contains(&a.id));
         }
     });
+    if state.selected_annotation_id.get_untracked().as_deref() == Some(annotation_id) {
+        state.selected_annotation_id.set(None);
+    }
     state.annotations_dirty.set(true);
 }
 
@@ -766,9 +929,186 @@ fn update_annotation_label(state: AppState, annotation_id: &str, label: Option<S
     state.annotation_store.update(|store| {
         if let Some(Some(ref mut set)) = store.sets.get_mut(idx) {
             if let Some(a) = set.annotations.iter_mut().find(|a| a.id == annotation_id) {
-                if let AnnotationKind::Selection(ref mut sel) = a.kind {
-                    sel.label = label;
-                    a.modified_at = now_iso8601();
+                match a.kind {
+                    AnnotationKind::Selection(ref mut sel) => { sel.label = label; }
+                    AnnotationKind::Marker(ref mut m) => { m.label = label; }
+                    AnnotationKind::Group(ref mut g) => { g.label = label; }
+                    AnnotationKind::Measurement(ref mut m) => { m.label = label; }
+                }
+                a.modified_at = now_iso8601();
+            }
+        }
+    });
+    state.annotations_dirty.set(true);
+}
+
+fn toggle_group_collapsed(state: AppState, annotation_id: &str) {
+    let idx = match state.current_file_index.get_untracked() {
+        Some(i) => i,
+        None => return,
+    };
+    state.annotation_store.update(|store| {
+        if let Some(Some(ref mut set)) = store.sets.get_mut(idx) {
+            if let Some(a) = set.annotations.iter_mut().find(|a| a.id == annotation_id) {
+                if let AnnotationKind::Group(ref mut g) = a.kind {
+                    let cur = g.collapsed.unwrap_or(false);
+                    g.collapsed = Some(!cur);
+                }
+            }
+        }
+    });
+    state.annotations_dirty.set(true);
+}
+
+fn group_selected(state: AppState) {
+    let sel_id = match state.selected_annotation_id.get_untracked() {
+        Some(id) => id,
+        None => return,
+    };
+    let idx = match state.current_file_index.get_untracked() {
+        Some(i) => i,
+        None => return,
+    };
+
+    // Create a new group and move the selected annotation into it
+    let group_id = generate_uuid();
+    let now = now_iso8601();
+
+    state.annotation_store.update(|store| {
+        if let Some(Some(ref mut set)) = store.sets.get_mut(idx) {
+            // Get the selected annotation's parent and sort_order
+            let (parent, order) = set.annotations.iter()
+                .find(|a| a.id == sel_id)
+                .map(|a| (a.parent_id.clone(), a.sort_order))
+                .unwrap_or((None, None));
+
+            // Create group at the same level as the selected item
+            let group = Annotation {
+                id: group_id.clone(),
+                kind: AnnotationKind::Group(Group {
+                    label: None,
+                    color: None,
+                    collapsed: Some(false),
+                }),
+                created_at: now.clone(),
+                modified_at: now,
+                notes: None,
+                parent_id: parent,
+                sort_order: order,
+            };
+            set.annotations.push(group);
+
+            // Move the selected annotation into the group
+            if let Some(a) = set.annotations.iter_mut().find(|a| a.id == sel_id) {
+                a.parent_id = Some(group_id.clone());
+                a.sort_order = Some(0.0);
+            }
+
+            // Renumber siblings at the old level
+            let parent_key = set.annotations.iter()
+                .find(|a| a.id == group_id)
+                .and_then(|a| a.parent_id.clone());
+            renumber_children(&mut set.annotations, parent_key.as_deref());
+        }
+    });
+    state.selected_annotation_id.set(Some(group_id));
+    state.annotations_dirty.set(true);
+}
+
+fn ungroup_selected(state: AppState) {
+    let group_id = match state.selected_annotation_id.get_untracked() {
+        Some(id) => id,
+        None => return,
+    };
+    let idx = match state.current_file_index.get_untracked() {
+        Some(i) => i,
+        None => return,
+    };
+
+    state.annotation_store.update(|store| {
+        if let Some(Some(ref mut set)) = store.sets.get_mut(idx) {
+            // Verify it's a group
+            let group_parent = match set.annotations.iter().find(|a| a.id == group_id) {
+                Some(a) if matches!(a.kind, AnnotationKind::Group(_)) => a.parent_id.clone(),
+                _ => return,
+            };
+
+            // Move all direct children to the group's parent level
+            for a in set.annotations.iter_mut() {
+                if a.parent_id.as_deref() == Some(group_id.as_str()) {
+                    a.parent_id = group_parent.clone();
+                }
+            }
+
+            // Remove the group itself
+            set.annotations.retain(|a| a.id != group_id);
+
+            // Renumber at the parent level
+            renumber_children(&mut set.annotations, group_parent.as_deref());
+        }
+    });
+    state.selected_annotation_id.set(None);
+    state.annotations_dirty.set(true);
+}
+
+fn perform_drop(state: AppState) {
+    let dragged_id = match state.dragging_annotation_id.get_untracked() {
+        Some(id) => id,
+        None => return,
+    };
+    let (target_id, position) = match state.drop_target.get_untracked() {
+        Some(t) => t,
+        None => { state.dragging_annotation_id.set(None); return; }
+    };
+
+    // Clear drag state
+    state.dragging_annotation_id.set(None);
+    state.drop_target.set(None);
+
+    if dragged_id == target_id { return; }
+
+    let idx = match state.current_file_index.get_untracked() {
+        Some(i) => i,
+        None => return,
+    };
+
+    state.annotation_store.update(|store| {
+        if let Some(Some(ref mut set)) = store.sets.get_mut(idx) {
+            // Don't allow dropping into own descendants
+            let descendants = collect_descendants(&set.annotations, &dragged_id);
+            if descendants.contains(&target_id) { return; }
+
+            // Find target's parent and sort_order
+            let target_info = set.annotations.iter()
+                .find(|a| a.id == target_id)
+                .map(|a| (a.parent_id.clone(), a.sort_order.unwrap_or(0.0), matches!(a.kind, AnnotationKind::Group(_))));
+            let (target_parent, target_order, target_is_group) = match target_info {
+                Some(info) => info,
+                None => return,
+            };
+
+            match position.as_str() {
+                "inside" if target_is_group => {
+                    // Drop inside a group
+                    if let Some(a) = set.annotations.iter_mut().find(|a| a.id == dragged_id) {
+                        a.parent_id = Some(target_id.clone());
+                        a.sort_order = Some(f64::MAX); // append to end
+                    }
+                    renumber_children(&mut set.annotations, Some(target_id.as_str()));
+                }
+                "before" => {
+                    if let Some(a) = set.annotations.iter_mut().find(|a| a.id == dragged_id) {
+                        a.parent_id = target_parent.clone();
+                        a.sort_order = Some(target_order - 0.5);
+                    }
+                    renumber_children(&mut set.annotations, target_parent.as_deref());
+                }
+                "after" | _ => {
+                    if let Some(a) = set.annotations.iter_mut().find(|a| a.id == dragged_id) {
+                        a.parent_id = target_parent.clone();
+                        a.sort_order = Some(target_order + 0.5);
+                    }
+                    renumber_children(&mut set.annotations, target_parent.as_deref());
                 }
             }
         }
@@ -829,7 +1169,6 @@ fn import_annotations(state: AppState) {
                     state.annotation_store.update(|store| {
                         store.ensure_len(idx + 1);
                         if let Some(Some(ref mut existing)) = store.sets.get_mut(idx) {
-                            // Merge: append imported annotations
                             existing.annotations.extend(imported.annotations);
                         } else {
                             store.sets[idx] = Some(imported);

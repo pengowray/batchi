@@ -688,6 +688,10 @@ pub struct AppState {
     pub annotation_store: RwSignal<AnnotationStore>,
     pub annotations_dirty: RwSignal<bool>,
     pub selected_annotation_id: RwSignal<Option<AnnotationId>>,
+    /// Id of annotation currently being dragged in the sidebar tree.
+    pub dragging_annotation_id: RwSignal<Option<AnnotationId>>,
+    /// Drop target: (target_id, position) where position is "before", "after", or "inside" (for groups).
+    pub drop_target: RwSignal<Option<(AnnotationId, String)>>,
 
     // Display-affecting checkboxes (spectrogram intensity settings)
     pub display_auto_gain: RwSignal<bool>,
@@ -903,6 +907,8 @@ impl AppState {
             annotation_store: RwSignal::new(AnnotationStore::default()),
             annotations_dirty: RwSignal::new(false),
             selected_annotation_id: RwSignal::new(None),
+            dragging_annotation_id: RwSignal::new(None),
+            drop_target: RwSignal::new(None),
 
             display_auto_gain: RwSignal::new(false),
             display_eq: RwSignal::new(false),

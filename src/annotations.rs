@@ -114,6 +114,18 @@ pub struct Measurement {
     pub label: Option<String>,
 }
 
+/// A named group that can contain other annotations or nested groups.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Group {
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub label: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub color: Option<String>,
+    /// Whether the group is collapsed in the UI.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub collapsed: Option<bool>,
+}
+
 /// Tagged annotation kind — extensible for future types.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type")]
@@ -121,6 +133,7 @@ pub enum AnnotationKind {
     Selection(SavedSelection),
     Marker(Marker),
     Measurement(Measurement),
+    Group(Group),
 }
 
 /// A single annotation with metadata.
@@ -133,6 +146,12 @@ pub struct Annotation {
     pub modified_at: String,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub notes: Option<String>,
+    /// Parent group id. None = root level.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub parent_id: Option<AnnotationId>,
+    /// Sort order within parent. Lower values sort first.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub sort_order: Option<f64>,
 }
 
 /// Per-file annotation collection — serialized to .batm sidecar files (YAML).
@@ -192,4 +211,104 @@ pub fn generate_uuid() -> String {
 pub fn now_iso8601() -> String {
     let date = js_sys::Date::new_0();
     date.to_iso_string().as_string().unwrap_or_default()
+}
+
+/// A node in the annotation tree (used for rendering).
+#[derive(Clone, Debug)]
+pub struct AnnotationNode {
+    pub annotation: Annotation,
+    pub children: Vec<AnnotationNode>,
+    pub depth: usize,
+}
+
+/// Build a tree from a flat annotation list using parent_id references.
+/// Annotations with unknown parent_ids are placed at root.
+pub fn build_annotation_tree(annotations: &[Annotation]) -> Vec<AnnotationNode> {
+    use std::collections::HashMap;
+
+    // Index annotations by id
+    let id_set: std::collections::HashSet<&str> = annotations.iter().map(|a| a.id.as_str()).collect();
+
+    // Collect children per parent_id (None = root)
+    let mut children_map: HashMap<Option<&str>, Vec<&Annotation>> = HashMap::new();
+    for a in annotations {
+        // If parent_id references a non-existent id, treat as root
+        let parent = match &a.parent_id {
+            Some(pid) if id_set.contains(pid.as_str()) => Some(pid.as_str()),
+            _ => None,
+        };
+        children_map.entry(parent).or_default().push(a);
+    }
+
+    // Sort each group by sort_order then by created_at
+    for list in children_map.values_mut() {
+        list.sort_by(|a, b| {
+            let oa = a.sort_order.unwrap_or(f64::MAX);
+            let ob = b.sort_order.unwrap_or(f64::MAX);
+            oa.partial_cmp(&ob).unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.created_at.cmp(&b.created_at))
+        });
+    }
+
+    fn build_children(
+        parent_key: Option<&str>,
+        children_map: &HashMap<Option<&str>, Vec<&Annotation>>,
+        depth: usize,
+    ) -> Vec<AnnotationNode> {
+        let Some(children) = children_map.get(&parent_key) else {
+            return Vec::new();
+        };
+        children.iter().map(|a| {
+            let kids = build_children(Some(a.id.as_str()), children_map, depth + 1);
+            AnnotationNode {
+                annotation: (*a).clone(),
+                children: kids,
+                depth,
+            }
+        }).collect()
+    }
+
+    build_children(None, &children_map, 0)
+}
+
+/// Flatten a tree back into a depth-first ordered list (for display).
+pub fn flatten_tree(nodes: &[AnnotationNode]) -> Vec<(AnnotationId, usize)> {
+    let mut out = Vec::new();
+    for node in nodes {
+        out.push((node.annotation.id.clone(), node.depth));
+        out.extend(flatten_tree(&node.children));
+    }
+    out
+}
+
+/// Collect all descendant ids of an annotation (for recursive deletion / grouping).
+pub fn collect_descendants(annotations: &[Annotation], parent_id: &str) -> Vec<AnnotationId> {
+    let mut result = Vec::new();
+    for a in annotations {
+        if a.parent_id.as_deref() == Some(parent_id) {
+            result.push(a.id.clone());
+            result.extend(collect_descendants(annotations, &a.id));
+        }
+    }
+    result
+}
+
+/// Assign consecutive sort_order values to annotations at a given parent level.
+pub fn renumber_children(annotations: &mut [Annotation], parent_id: Option<&str>) {
+    let mut indices: Vec<usize> = annotations.iter().enumerate()
+        .filter(|(_, a)| a.parent_id.as_deref() == parent_id)
+        .map(|(i, _)| i)
+        .collect();
+    // Sort by existing sort_order then created_at
+    indices.sort_by(|&i, &j| {
+        let a = &annotations[i];
+        let b = &annotations[j];
+        let oa = a.sort_order.unwrap_or(f64::MAX);
+        let ob = b.sort_order.unwrap_or(f64::MAX);
+        oa.partial_cmp(&ob).unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.created_at.cmp(&b.created_at))
+    });
+    for (rank, &idx) in indices.iter().enumerate() {
+        annotations[idx].sort_order = Some(rank as f64);
+    }
 }

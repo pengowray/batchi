@@ -605,6 +605,67 @@ body.sidebar-resizing {
     border-color: #4a8a5a;
 }
 
+/* Annotation tree */
+.annotation-tree {
+    max-height: 300px;
+    overflow-y: auto;
+}
+.annotation-tree-item {
+    display: flex;
+    align-items: center;
+    padding: 3px 8px;
+    cursor: pointer;
+    gap: 4px;
+    border: 1px solid transparent;
+    border-radius: 3px;
+    margin: 1px 2px;
+    transition: background 0.1s;
+    user-select: none;
+}
+.annotation-tree-item:hover {
+    background: rgba(255, 255, 255, 0.05);
+}
+.annotation-tree-item.annotation-selected {
+    background: rgba(80, 160, 255, 0.12);
+    border-color: rgba(80, 160, 255, 0.3);
+}
+.annotation-tree-item.annotation-drop-target {
+    border-color: rgba(120, 200, 80, 0.6);
+    background: rgba(120, 200, 80, 0.08);
+}
+.annotation-tree-item.annotation-group-item {
+    font-weight: 600;
+}
+.annotation-tree-item[draggable="true"] {
+    cursor: grab;
+}
+.annotation-tree-item[draggable="true"]:active {
+    cursor: grabbing;
+    opacity: 0.6;
+}
+.annotation-collapse-toggle {
+    font-size: 9px;
+    color: #888;
+    width: 12px;
+    text-align: center;
+    flex-shrink: 0;
+}
+.annotation-icon {
+    font-size: 10px;
+    color: #777;
+    width: 14px;
+    text-align: center;
+    flex-shrink: 0;
+}
+.annotation-group-children {
+    /* Children are indented via padding-left on each item */
+}
+.annotation-toolbar-btn {
+    flex: 1;
+    font-size: 11px;
+    padding: 3px 6px;
+}
+
 .saved-selection-item {
     display: flex;
     align-items: center;
