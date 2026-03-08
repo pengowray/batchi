@@ -8,6 +8,7 @@ pub mod tauri_bridge;
 pub mod bat_book;
 pub mod annotations;
 pub mod file_identity;
+pub mod opfs;
 
 use leptos::prelude::*;
 use components::app::App;

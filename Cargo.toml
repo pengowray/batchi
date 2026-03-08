@@ -59,6 +59,14 @@ web-sys = { version = "0.3", features = [
     "MediaStreamAudioSourceNode",
     "ScriptProcessorNode",
     "AudioProcessingEvent",
+    "StorageManager",
+    "FileSystemDirectoryHandle",
+    "FileSystemFileHandle",
+    "FileSystemGetDirectoryOptions",
+    "FileSystemGetFileOptions",
+    "FileSystemCreateWritableOptions",
+    "FileSystemWritableFileStream",
+    "WritableStream",
 ] }
 js-sys = "0.3"
 wasm-bindgen = "0.2"

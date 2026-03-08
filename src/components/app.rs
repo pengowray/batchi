@@ -251,6 +251,11 @@ pub fn App() -> impl IntoView {
                 });
             }
 
+            // Clear annotation selection when switching files
+            if old_idx != new_idx {
+                state.selected_annotation_id.set(None);
+            }
+
             // Restore settings from the incoming file
             if let Some(ni) = new_idx {
                 let files = state.files.get_untracked();
@@ -268,6 +273,20 @@ pub fn App() -> impl IntoView {
                     state.noise_reduce_floor.set(s.noise_reduce_floor.clone());
                 }
             }
+        });
+    }
+
+    // Auto-save annotations to OPFS (browser) or sidecar (Tauri) when dirty.
+    if !state.is_tauri {
+        Effect::new(move |_| {
+            let dirty = state.annotations_dirty.get();
+            if !dirty { return; }
+            state.annotations_dirty.set(false);
+            let idx = match state.current_file_index.get_untracked() {
+                Some(i) => i,
+                None => return,
+            };
+            crate::opfs::save_annotations_to_opfs(state, idx);
         });
     }
 

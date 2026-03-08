@@ -121,6 +121,15 @@ pub fn start_identity_computation(
         files.get(file_index).map_or(false, |f| f.identity.is_some())
     });
     if already_has_identity {
+        // Still try OPFS load even if identity was already set
+        if !state.is_tauri {
+            let identity = state.files.with_untracked(|files| {
+                files.get(file_index).and_then(|f| f.identity.clone())
+            });
+            if let Some(id) = identity {
+                crate::opfs::load_annotations_from_opfs(state, file_index, id);
+            }
+        }
         return;
     }
 
@@ -128,9 +137,14 @@ pub fn start_identity_computation(
     let identity = identity_layer1(&filename, file_size);
     state.files.update(|files| {
         if let Some(f) = files.get_mut(file_index) {
-            f.identity = Some(identity);
+            f.identity = Some(identity.clone());
         }
     });
+
+    // Try OPFS load with Layer 1 key (browser only)
+    if !state.is_tauri {
+        crate::opfs::load_annotations_from_opfs(state, file_index, identity);
+    }
 
     // Layer 2: compute spot hash async
     wasm_bindgen_futures::spawn_local(async move {
@@ -150,6 +164,16 @@ pub fn start_identity_computation(
                     }
                 }
             });
+
+            // Try OPFS load again with the better spot_hash key
+            if !state.is_tauri {
+                let identity = state.files.with_untracked(|files| {
+                    files.get(file_index).and_then(|f| f.identity.clone())
+                });
+                if let Some(id) = identity {
+                    crate::opfs::load_annotations_from_opfs(state, file_index, id);
+                }
+            }
         }
     });
 }
