@@ -41,6 +41,10 @@ pub(crate) fn AnalysisPanel() -> impl IntoView {
         let bits_per_sample = file.audio.metadata.bits_per_sample;
         let is_float = file.audio.metadata.is_float;
         let total = file.audio.source.total_samples() as usize;
+        if total == 0 {
+            is_computing.set(false);
+            return;
+        }
 
         let max_samples = (DEFAULT_ANALYSIS_WINDOW_SECS * sample_rate as f64) as usize;
         let is_long = total > max_samples;

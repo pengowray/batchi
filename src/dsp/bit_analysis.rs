@@ -93,6 +93,29 @@ pub fn analyze_bits(
 ) -> BitAnalysis {
     let n_bits = bits_per_sample as usize;
     let total = samples.len();
+    if total == 0 {
+        return BitAnalysis {
+            bits_per_sample,
+            is_float,
+            total_samples: 0,
+            duration_secs,
+            bit_stats: Vec::new(),
+            bit_cautions: Vec::new(),
+            effective_bits: 0,
+            effective_bits_f64: 0.0,
+            summary: "No samples".into(),
+            warnings: vec!["File contains no audio samples".into()],
+            positive_counts: Vec::new(),
+            negative_counts: Vec::new(),
+            positive_total: 0,
+            negative_total: 0,
+            zero_total: 0,
+            pair_counts: Vec::new(),
+            headroom_bits: 0,
+            noise_floor_db: -120.0,
+            value_coverage: None,
+        };
+    }
     let n_pairs = n_bits / 2;
 
     let mut counts = vec![0usize; n_bits];

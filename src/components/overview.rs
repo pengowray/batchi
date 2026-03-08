@@ -188,6 +188,7 @@ fn draw_overview_waveform(
 ) {
     let cw = canvas.width() as f64;
     let ch = canvas.height() as f64;
+    if samples.is_empty() { return; }
 
     // Draw full file at zoom = 1 column per pixel
     let total_duration = samples.len() as f64 / sample_rate as f64;

@@ -886,6 +886,7 @@ pub fn Spectrogram() -> impl IntoView {
                 }
             }
 
+            if visible_time <= 0.0 { return; }
             let px_per_sec = display_w as f64 / visible_time;
 
             // Draw static position marker when not playing
