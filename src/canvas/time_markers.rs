@@ -26,19 +26,26 @@ pub struct ClockTimeConfig {
 ///
 /// The format is chosen based on the absolute time value, not just the tick
 /// interval, so we never produce unreadable labels like "50050ms".
-fn format_time_label(seconds: f64, interval: f64) -> String {
+///
+/// `use_ms` controls whether sub-second values use "500ms" (true) or "0.5s"
+/// (false). Should be true only when the max visible time is ≤ 100 ms.
+fn format_time_label(seconds: f64, interval: f64, use_ms: bool) -> String {
     let abs = seconds.abs();
 
-    // Sub-second values: use milliseconds
+    // Sub-second values
     if abs < 1.0 {
-        let ms = seconds * 1000.0;
-        if interval < 0.001 {
-            return format!("{:.1}ms", ms);
-        } else if interval < 0.01 {
-            return format!("{:.1}ms", ms);
-        } else {
-            return format!("{:.0}ms", ms);
+        if use_ms {
+            let ms = seconds * 1000.0;
+            if interval < 0.001 {
+                return format!("{:.1}ms", ms);
+            } else if interval < 0.01 {
+                return format!("{:.1}ms", ms);
+            } else {
+                return format!("{:.0}ms", ms);
+            }
         }
+        // Prefer seconds notation: "0.5s" over "500ms"
+        return format_seconds(seconds, interval);
     }
 
     // 1s to 60s: show as seconds with precision matching the interval
@@ -231,6 +238,10 @@ pub fn draw_time_markers(
 
     let end_time = (scroll_offset + visible_time).min(duration);
 
+    // Only use ms format when the max visible time is ≤ 100 ms; otherwise
+    // prefer seconds ("0.5s" instead of "500ms").
+    let use_ms = end_time <= 0.1;
+
     // Key marker system: when sub-second ticks are deep into the file,
     // use primary/secondary label hierarchy
     let key_interval = key_interval_for(interval);
@@ -268,11 +279,14 @@ pub fn draw_time_markers(
     let key_tick_h = 16.0;
     ctx.set_text_baseline("bottom");
 
+    let mut key_drawn = false;
+
     let mut t = first_tick;
     while t <= end_time + interval * 0.01 {
         let x = (t - scroll_offset) * px_per_sec;
         if x >= 0.0 && x <= canvas_width {
             let is_key = !use_relative || is_key_tick(t, key_interval);
+            if is_key { key_drawn = true; }
             let current_tick_h = if use_relative && is_key { key_tick_h } else { tick_h };
 
             // Bottom tick
@@ -299,7 +313,7 @@ pub fn draw_time_markers(
                 let nearest_key = (t / key_interval).round() * key_interval;
                 format_relative_label(t - nearest_key, interval)
             } else {
-                format_time_label(t, interval)
+                format_time_label(t, interval, use_ms)
             };
 
             if label.is_empty() {
@@ -334,6 +348,39 @@ pub fn draw_time_markers(
             }
         }
         t += interval;
+    }
+
+    // ── Guarantee at least one key marker is always visible ──
+    // When using relative labels and no key tick fell in the visible range,
+    // draw the nearest preceding key tick's label pinned to the left edge.
+    if use_relative && !key_drawn && !use_clock {
+        let preceding_key = (scroll_offset / key_interval).floor() * key_interval;
+        if preceding_key >= 0.0 {
+            let label = format_time_label(preceding_key, key_interval.max(interval), use_ms);
+            ctx.set_font("bold 10px sans-serif");
+            if let Ok(metrics) = ctx.measure_text(&label) {
+                let tw = metrics.width();
+                let lx = 3.0;
+                if lx + tw < canvas_width - 2.0 {
+                    ctx.set_fill_style_str("rgba(0,0,0,0.75)");
+                    ctx.fill_rect(
+                        lx - 1.0,
+                        canvas_height - key_tick_h - 12.0,
+                        tw + 2.0,
+                        12.0,
+                    );
+                    ctx.set_fill_style_str("rgba(255,255,255,0.9)");
+                    let _ = ctx.fill_text(&label, lx, canvas_height - key_tick_h - 1.0);
+                }
+            }
+            // Draw the key tick line at left edge
+            ctx.set_stroke_style_str("rgba(255,255,255,0.5)");
+            ctx.set_line_width(1.0);
+            ctx.begin_path();
+            ctx.move_to(0.0, canvas_height - key_tick_h);
+            ctx.line_to(0.0, canvas_height);
+            ctx.stroke();
+        }
     }
 
     ctx.set_text_baseline("alphabetic"); // reset
