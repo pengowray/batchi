@@ -191,6 +191,8 @@ pub fn Spectrogram() -> impl IntoView {
     let pinch_state: RwSignal<Option<crate::components::pinch::PinchState>> = RwSignal::new(None);
     let axis_drag_raw_start = RwSignal::new(0.0f64);
     let last_tap_time = RwSignal::new(0.0f64);
+    // Time-axis tooltip: (x_px, tooltip_text) — None when not hovering the axis
+    let time_axis_tooltip: RwSignal<Option<(f64, String)>> = RwSignal::new(None);
     let last_tap_x = RwSignal::new(0.0f64);
 
     // Label hover animation: lerp label_hover_opacity toward target.
@@ -749,14 +751,23 @@ pub fn Spectrogram() -> impl IntoView {
             );
 
             // Time scale along the bottom edge
-            spectrogram_renderer::draw_time_markers(
-                &ctx,
-                scroll,
-                visible_time,
-                display_w as f64,
-                display_h as f64,
-                duration,
-            );
+            {
+                let clock_cfg = state.current_file()
+                    .and_then(|f| f.recording_start_epoch_ms())
+                    .map(|ms| crate::canvas::time_markers::ClockTimeConfig {
+                        recording_start_epoch_ms: ms,
+                    });
+                spectrogram_renderer::draw_time_markers(
+                    &ctx,
+                    scroll,
+                    visible_time,
+                    display_w as f64,
+                    display_h as f64,
+                    duration,
+                    clock_cfg,
+                    state.show_clock_time.get(),
+                );
+            }
 
             // Pulse detection overlay
             if pulse_overlay && !detected_pulses.is_empty() {
@@ -1163,6 +1174,26 @@ pub fn Spectrogram() -> impl IntoView {
     let on_mousedown = move |ev: MouseEvent| {
         if ev.button() != 0 { return; }
 
+        // Click on the time axis area (bottom 16px) toggles clock time display
+        if let Some(canvas_el) = canvas_ref.get() {
+            let canvas: &HtmlCanvasElement = canvas_el.as_ref();
+            let rect = canvas.get_bounding_client_rect();
+            let px_y = ev.client_y() as f64 - rect.top();
+            let px_x = ev.client_x() as f64 - rect.left();
+            let ch = rect.height();
+            if px_y > ch - 16.0 && px_x > LABEL_AREA_WIDTH {
+                // Only toggle if recording start time is available
+                let has_clock = state.current_file()
+                    .and_then(|f| f.recording_start_epoch_ms())
+                    .is_some();
+                if has_clock {
+                    state.show_clock_time.update(|v| *v = !*v);
+                    ev.prevent_default();
+                    return;
+                }
+            }
+        }
+
         // Check for spec handle drag first (FF or HET — takes priority over tool)
         if let Some(handle) = state.spec_hover_handle.get_untracked() {
             state.spec_drag_handle.set(Some(handle));
@@ -1213,6 +1244,26 @@ pub fn Spectrogram() -> impl IntoView {
             state.mouse_freq.set(Some(f));
             state.mouse_canvas_x.set(px_x);
             state.cursor_time.set(Some(t));
+
+            // Time-axis tooltip: show full datetime when hovering bottom 16px
+            if let Some(canvas_el) = canvas_ref.get() {
+                let canvas: &HtmlCanvasElement = canvas_el.as_ref();
+                let ch = canvas.get_bounding_client_rect().height();
+                if px_y > ch - 16.0 && px_x > LABEL_AREA_WIDTH {
+                    let tooltip = state.current_file()
+                        .and_then(|f| f.recording_start_info())
+                        .map(|(epoch, source)| {
+                            crate::canvas::time_markers::format_clock_time_full(epoch, t, source)
+                        });
+                    if let Some(text) = tooltip {
+                        time_axis_tooltip.set(Some((px_x, text)));
+                    } else {
+                        time_axis_tooltip.set(None);
+                    }
+                } else {
+                    time_axis_tooltip.set(None);
+                }
+            }
 
             // Update label hover target and in-label-area state
             let in_label_area = px_x < LABEL_AREA_WIDTH;
@@ -1374,6 +1425,7 @@ pub fn Spectrogram() -> impl IntoView {
         state.spec_hover_handle.set(None);
         state.axis_drag_start_freq.set(None);
         state.axis_drag_current_freq.set(None);
+        time_axis_tooltip.set(None);
     };
 
     let on_mouseup = move |ev: MouseEvent| {
@@ -1867,6 +1919,19 @@ pub fn Spectrogram() -> impl IntoView {
                 }
                 style:display=move || if state.is_playing.get() { "block" } else { "none" }
             />
+            // Time-axis hover tooltip (shows full date/time/timezone + source)
+            {move || {
+                time_axis_tooltip.get().map(|(x, text)| {
+                    view! {
+                        <div
+                            class="time-axis-tooltip"
+                            style:left=format!("{}px", x)
+                        >
+                            {text}
+                        </div>
+                    }
+                })
+            }}
         </div>
     }
 }

@@ -55,6 +55,45 @@ pub struct LoadedFile {
     pub identity: Option<FileIdentity>,
 }
 
+impl LoadedFile {
+    /// Get the recording start time as milliseconds since Unix epoch, if available.
+    ///
+    /// Sources (in priority order):
+    /// 1. GUANO "Timestamp" field (ISO 8601) — actual recording start
+    /// 2. `last_modified_ms` from the File API — file modification time as fallback,
+    ///    adjusted backwards by the file duration to approximate recording start
+    pub fn recording_start_epoch_ms(&self) -> Option<f64> {
+        self.recording_start_info().map(|(ms, _)| ms)
+    }
+
+    /// Get the recording start time and its source description.
+    ///
+    /// Returns `(epoch_ms, source_label)` where `source_label` describes the
+    /// origin: "GUANO Timestamp" or "File modified date (approx.)".
+    pub fn recording_start_info(&self) -> Option<(f64, &'static str)> {
+        // Try GUANO Timestamp first
+        if let Some(ref guano) = self.audio.metadata.guano {
+            if let Some((_, ts)) = guano.fields.iter().find(|(k, _)| k == "Timestamp") {
+                if let Some(epoch) = parse_iso8601_to_epoch_ms(ts) {
+                    return Some((epoch, "GUANO Timestamp"));
+                }
+            }
+        }
+        // Fallback: file last-modified minus duration ≈ recording start
+        self.last_modified_ms
+            .map(|lm| (lm - self.audio.duration_secs * 1000.0, "File modified date (approx.)"))
+    }
+}
+
+/// Parse a subset of ISO 8601 timestamps to epoch milliseconds.
+/// Handles formats like "2023-07-15T22:30:45", "2023-07-15T22:30:45Z",
+/// "2023-07-15T22:30:45.123+02:00", "2023-07-15T22:30:45-05:00".
+fn parse_iso8601_to_epoch_ms(s: &str) -> Option<f64> {
+    // Use js_sys::Date.parse() which handles ISO 8601 natively
+    let ms = js_sys::Date::parse(s);
+    if ms.is_nan() { None } else { Some(ms) }
+}
+
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Selection {
     pub time_start: f64,
@@ -752,6 +791,9 @@ pub struct AppState {
     /// True when user manually turned off HFR while bat book had a selection.
     /// While set, bat book selections update hfr_saved but don't enable HFR.
     pub bat_book_hfr_suppressed: RwSignal<bool>,
+
+    // Timeline display: show wall-clock time instead of file-relative time
+    pub show_clock_time: RwSignal<bool>,
 }
 
 fn detect_tauri() -> bool {
@@ -960,6 +1002,7 @@ impl AppState {
             bat_book_saved_hfr_ff_hi: RwSignal::new(None),
             bat_book_last_clicked_id: RwSignal::new(None),
             bat_book_hfr_suppressed: RwSignal::new(false),
+            show_clock_time: RwSignal::new(false),
         };
 
         // On mobile, start with sidebar collapsed

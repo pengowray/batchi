@@ -413,14 +413,22 @@ pub fn OverviewPanel() -> impl IntoView {
         }
 
         // Time markers along the bottom edge (full file duration)
-        crate::canvas::time_markers::draw_time_markers(
-            &ctx,
-            0.0,
-            file.audio.duration_secs,
-            w as f64,
-            h as f64,
-            file.audio.duration_secs,
-        );
+        {
+            let clock_cfg = file.recording_start_epoch_ms()
+                .map(|ms| crate::canvas::time_markers::ClockTimeConfig {
+                    recording_start_epoch_ms: ms,
+                });
+            crate::canvas::time_markers::draw_time_markers(
+                &ctx,
+                0.0,
+                file.audio.duration_secs,
+                w as f64,
+                h as f64,
+                file.audio.duration_secs,
+                clock_cfg,
+                state.show_clock_time.get(),
+            );
+        }
     });
 
     // ── Mouse handlers ────────────────────────────────────────────────────────

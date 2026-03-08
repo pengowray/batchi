@@ -209,6 +209,10 @@ pub fn Waveform() -> impl IntoView {
             // Time markers along the bottom edge
             {
                 let visible_time = (display_w as f64 / zoom) * file.spectrogram.time_resolution;
+                let clock_cfg = file.recording_start_epoch_ms()
+                    .map(|ms| crate::canvas::time_markers::ClockTimeConfig {
+                        recording_start_epoch_ms: ms,
+                    });
                 crate::canvas::time_markers::draw_time_markers(
                     &ctx,
                     scroll,
@@ -216,6 +220,8 @@ pub fn Waveform() -> impl IntoView {
                     display_w as f64,
                     display_h as f64,
                     file.audio.duration_secs,
+                    clock_cfg,
+                    state.show_clock_time.get(),
                 );
             }
 
