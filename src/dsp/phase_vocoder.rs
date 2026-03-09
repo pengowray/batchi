@@ -164,6 +164,22 @@ pub fn phase_vocoder_pitch_shift(samples: &[f32], factor: f64) -> Vec<f32> {
         }
     }
 
+    // Match output RMS to input RMS so PV volume is comparable to PitchShift
+    let in_rms = {
+        let sum_sq: f64 = samples.iter().map(|&s| (s as f64) * (s as f64)).sum();
+        (sum_sq / samples.len() as f64).sqrt()
+    };
+    let out_rms = {
+        let sum_sq: f64 = output[..original_len].iter().map(|&s| (s as f64) * (s as f64)).sum();
+        (sum_sq / original_len as f64).sqrt()
+    };
+    if out_rms > 1e-10 {
+        let gain = (in_rms / out_rms) as f32;
+        for s in output.iter_mut() {
+            *s *= gain;
+        }
+    }
+
     // Fade in over the first HOP samples to avoid onset click from incomplete
     // window overlap at the start of each chunk
     let fade_len = HOP.min(out_len);
