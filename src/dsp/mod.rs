@@ -4,6 +4,7 @@ pub mod filters;
 pub mod harmonics;
 pub mod heterodyne;
 pub mod notch;
+pub mod phase_vocoder;
 pub mod pitch_shift;
 pub mod spectral_sub;
 pub mod zc_divide;

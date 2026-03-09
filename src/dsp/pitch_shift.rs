@@ -68,7 +68,7 @@ pub fn pitch_shift_realtime(samples: &[f32], factor: f64) -> Vec<f32> {
 }
 
 /// Resample by stretching: output is longer, frequencies lower.
-fn resample_stretch(samples: &[f32], factor: f64) -> Vec<f32> {
+pub fn resample_stretch(samples: &[f32], factor: f64) -> Vec<f32> {
     let out_len = (samples.len() as f64 * factor) as usize;
     let mut output = Vec::with_capacity(out_len);
 
@@ -86,7 +86,7 @@ fn resample_stretch(samples: &[f32], factor: f64) -> Vec<f32> {
 }
 
 /// Resample by compressing: output is shorter, frequencies higher.
-fn resample_compress(samples: &[f32], factor: f64) -> Vec<f32> {
+pub fn resample_compress(samples: &[f32], factor: f64) -> Vec<f32> {
     let out_len = (samples.len() as f64 / factor) as usize;
     let mut output = Vec::with_capacity(out_len);
 

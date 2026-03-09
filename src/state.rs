@@ -110,6 +110,7 @@ pub enum PlaybackMode {
     Heterodyne,
     TimeExpansion,
     PitchShift,
+    PhaseVocoder,
     ZeroCrossing,
 }
 
@@ -520,6 +521,7 @@ pub struct AppState {
     pub playhead_time: RwSignal<f64>,
     pub loading_count: RwSignal<usize>,
     pub ps_factor: RwSignal<f64>,
+    pub pv_factor: RwSignal<f64>,
     pub zc_factor: RwSignal<f64>,
     pub het_interacting: RwSignal<bool>,
     pub is_dragging: RwSignal<bool>,
@@ -649,6 +651,7 @@ pub struct AppState {
     pub het_cutoff_auto: RwSignal<bool>,
     pub te_factor_auto: RwSignal<bool>,
     pub ps_factor_auto: RwSignal<bool>,
+    pub pv_factor_auto: RwSignal<bool>,
     pub auto_factor_mode: RwSignal<AutoFactorMode>,
 
     // Microphone (independent listen + record)
@@ -838,6 +841,7 @@ impl AppState {
             playhead_time: RwSignal::new(0.0),
             loading_count: RwSignal::new(0),
             ps_factor: RwSignal::new(10.0),
+            pv_factor: RwSignal::new(10.0),
             zc_factor: RwSignal::new(8.0),
             het_interacting: RwSignal::new(false),
             is_dragging: RwSignal::new(false),
@@ -917,6 +921,7 @@ impl AppState {
             het_cutoff_auto: RwSignal::new(true),
             te_factor_auto: RwSignal::new(true),
             ps_factor_auto: RwSignal::new(true),
+            pv_factor_auto: RwSignal::new(true),
             auto_factor_mode: RwSignal::new(AutoFactorMode::Target3k),
             mic_listening: RwSignal::new(false),
             mic_recording: RwSignal::new(false),

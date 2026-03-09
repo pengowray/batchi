@@ -50,6 +50,7 @@ pub(crate) struct PlaybackParams {
     pub het_cutoff: f64,
     pub te_factor: f64,
     pub ps_factor: f64,
+    pub pv_factor: f64,
     pub zc_factor: f64,
     pub gain_db: f64,
     pub gain_mode: GainMode,
@@ -361,7 +362,7 @@ async fn process_one_chunk(
     let chunk_end = (pos + CHUNK_SAMPLES).min(end_sample);
     let warmup_len = pos - warmup_start;
 
-    let trailing_end = if matches!(params.mode, PlaybackMode::PitchShift) {
+    let trailing_end = if matches!(params.mode, PlaybackMode::PitchShift | PlaybackMode::PhaseVocoder) {
         (chunk_end + FILTER_WARMUP).min(end_sample)
     } else {
         chunk_end
@@ -449,6 +450,7 @@ fn apply_filters(samples: &[f32], sample_rate: u32, params: &PlaybackParams) -> 
             PlaybackMode::Normal
                 | PlaybackMode::TimeExpansion
                 | PlaybackMode::PitchShift
+                | PlaybackMode::PhaseVocoder
                 | PlaybackMode::ZeroCrossing
         )
         && (params.sel_freq_low > 0.0
@@ -498,6 +500,7 @@ fn apply_dsp_mode(samples: &[f32], sample_rate: u32, params: &PlaybackParams) ->
             samples.to_vec()
         }
         PlaybackMode::PitchShift => pitch_shift_realtime(samples, params.ps_factor),
+        PlaybackMode::PhaseVocoder => crate::dsp::phase_vocoder::phase_vocoder_pitch_shift(samples, params.pv_factor),
         PlaybackMode::ZeroCrossing => {
             zc_divide(samples, sample_rate, params.zc_factor as u32, params.filter_enabled)
         }

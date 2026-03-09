@@ -167,6 +167,7 @@ pub fn App() -> impl IntoView {
             let _ = state.playback_mode.get();
             let _ = state.te_factor.get();
             let _ = state.ps_factor.get();
+            let _ = state.pv_factor.get();
             let _ = state.zc_factor.get();
             let _ = state.het_frequency.get();
             let _ = state.het_cutoff.get();

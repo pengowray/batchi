@@ -124,6 +124,14 @@ pub fn HfrButton() -> impl IntoView {
             };
             state.ps_factor.set(ps);
         }
+        if state.pv_factor_auto.get_untracked() {
+            let pv = if ratio >= 1.0 {
+                ratio.round().clamp(2.0, 20.0)
+            } else {
+                -(1.0 / ratio).round().clamp(2.0, 20.0)
+            };
+            state.pv_factor.set(pv);
+        }
     });
 
     // ── Effect C: ZC mode display settings save/restore ──
@@ -238,6 +246,7 @@ pub fn HfrButton() -> impl IntoView {
                 PlaybackMode::Heterodyne   => "HET".to_string(),
                 PlaybackMode::TimeExpansion => "TE".to_string(),
                 PlaybackMode::PitchShift   => "PS".to_string(),
+                PlaybackMode::PhaseVocoder => "PV".to_string(),
                 PlaybackMode::ZeroCrossing => "ZC".to_string(),
                 PlaybackMode::Normal       => "1:1".to_string(),
             }
@@ -277,6 +286,16 @@ pub fn HfrButton() -> impl IntoView {
             state.ps_factor_auto.set(false);
             state.playback_mode.set(PlaybackMode::PitchShift);
             state.ps_factor.set(val);
+        }
+    };
+
+    let on_pv_change = move |ev: web_sys::Event| {
+        use wasm_bindgen::JsCast;
+        let input: web_sys::HtmlInputElement = ev.target().unwrap().unchecked_into();
+        if let Ok(val) = input.value().parse::<f64>() {
+            state.pv_factor_auto.set(false);
+            state.playback_mode.set(PlaybackMode::PhaseVocoder);
+            state.pv_factor.set(val);
         }
     };
 
@@ -325,6 +344,9 @@ pub fn HfrButton() -> impl IntoView {
                 <button class=move || layer_opt_class(state.hfr_enabled.get() && state.playback_mode.get() == PlaybackMode::PitchShift)
                     on:click=set_mode(state, PlaybackMode::PitchShift)
                 >"PS \u{2014} Pitch Shift"</button>
+                <button class=move || layer_opt_class(state.hfr_enabled.get() && state.playback_mode.get() == PlaybackMode::PhaseVocoder)
+                    on:click=set_mode(state, PlaybackMode::PhaseVocoder)
+                >"PV \u{2014} Phase Vocoder"</button>
                 <button class=move || layer_opt_class(state.hfr_enabled.get() && state.playback_mode.get() == PlaybackMode::ZeroCrossing)
                     on:click=set_mode(state, PlaybackMode::ZeroCrossing)
                 >"ZC \u{2014} Zero Crossing"</button>
@@ -419,6 +441,25 @@ pub fn HfrButton() -> impl IntoView {
                                     >"A"</button>
                                 </div>
                             }.into_any(),
+                            PlaybackMode::PhaseVocoder => view! {
+                                <div class="layer-panel-slider-row">
+                                    <label>"Factor"</label>
+                                    <input type="range" min="-20" max="20" step="1"
+                                        prop:value=move || (state.pv_factor.get() as i32).to_string()
+                                        on:input=on_pv_change
+                                    />
+                                    <span>{move || {
+                                        let f = state.pv_factor.get() as i32;
+                                        if f > 1 { format!("\u{00f7}{}", f) }
+                                        else if f < -1 { format!("\u{00d7}{}", f.abs()) }
+                                        else { "1:1".to_string() }
+                                    }}</span>
+                                    <button class=move || if state.pv_factor_auto.get() { "auto-toggle on" } else { "auto-toggle" }
+                                        on:click=move |_| state.pv_factor_auto.update(|v| *v = !*v)
+                                        title="Toggle auto PV factor"
+                                    >"A"</button>
+                                </div>
+                            }.into_any(),
                             PlaybackMode::ZeroCrossing => view! {
                                 <div class="layer-panel-slider-row">
                                     <label>"Division"</label>
@@ -435,7 +476,8 @@ pub fn HfrButton() -> impl IntoView {
                         // Auto factor mode switch
                         {move || {
                             let any_auto = state.te_factor_auto.get()
-                                || state.ps_factor_auto.get();
+                                || state.ps_factor_auto.get()
+                                || state.pv_factor_auto.get();
                             any_auto.then(|| view! {
                                 <div class="layer-panel-title" style="margin-top: 4px;">"Auto mode"</div>
                                 <div style="display: flex; gap: 2px; padding: 0 6px 4px;">

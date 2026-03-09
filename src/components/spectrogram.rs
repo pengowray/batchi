@@ -290,6 +290,7 @@ pub fn Spectrogram() -> impl IntoView {
         let het_cutoff = state.het_cutoff.get();
         let te_factor = state.te_factor.get();
         let ps_factor = state.ps_factor.get();
+        let pv_factor = state.pv_factor.get();
         let playback_mode = state.playback_mode.get();
         let min_display_freq = state.min_display_freq.get();
         let max_display_freq = state.max_display_freq.get();
@@ -715,6 +716,8 @@ pub fn Spectrogram() -> impl IntoView {
                     PlaybackMode::TimeExpansion if te_factor < -1.0 => FreqShiftMode::Multiply(te_factor.abs()),
                     PlaybackMode::PitchShift if ps_factor > 1.0 => FreqShiftMode::Divide(ps_factor),
                     PlaybackMode::PitchShift if ps_factor < -1.0 => FreqShiftMode::Multiply(ps_factor.abs()),
+                    PlaybackMode::PhaseVocoder if pv_factor > 1.0 => FreqShiftMode::Divide(pv_factor),
+                    PlaybackMode::PhaseVocoder if pv_factor < -1.0 => FreqShiftMode::Multiply(pv_factor.abs()),
                     PlaybackMode::ZeroCrossing => FreqShiftMode::Divide(state.zc_factor.get()),
                     _ => FreqShiftMode::None,
                 }

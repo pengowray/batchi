@@ -230,6 +230,7 @@ fn snapshot_params(state: &AppState, selection: Option<Selection>, sample_rate: 
         het_cutoff: state.het_cutoff.get_untracked(),
         te_factor: state.te_factor.get_untracked(),
         ps_factor: state.ps_factor.get_untracked(),
+        pv_factor: state.pv_factor.get_untracked(),
         zc_factor: state.zc_factor.get_untracked(),
         gain_db: state.gain_db.get_untracked(),
         gain_mode: state.gain_mode.get_untracked(),
