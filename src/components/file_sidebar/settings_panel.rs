@@ -500,6 +500,7 @@ pub(crate) fn SelectionPanel() -> impl IntoView {
                 notes: None,
                 parent_id: None,
                 sort_order: None,
+                tags: Vec::new(),
             };
             state.annotation_store.update(|store| {
                 store.ensure_len(idx + 1);
@@ -736,20 +737,26 @@ fn render_tree_nodes(nodes: Vec<AnnotationNode>, state: AppState) -> impl IntoVi
             AnnotationKind::Group(g) => g.collapsed.unwrap_or(false),
             _ => false,
         };
+        let existing_tags = node.annotation.tags.clone();
         let depth = node.depth;
         let children = node.children;
 
         let id_click = id.clone();
         let id_delete = id.clone();
         let id_edit = id.clone();
+        let id_tags = id.clone();
         let id_drag = id.clone();
         let id_dragover = id.clone();
         let id_dragover2 = id.clone();
 
         let editing = RwSignal::new(false);
         let edit_value = RwSignal::new(existing_label.unwrap_or_default());
+        let tags_value = RwSignal::new(existing_tags.join(", "));
 
         let indent_px = depth * 16;
+
+        // Tags displayed as pills (non-editing mode)
+        let tags_display = existing_tags.clone();
 
         view! {
             <div
@@ -816,49 +823,108 @@ fn render_tree_nodes(nodes: Vec<AnnotationNode>, state: AppState) -> impl IntoVi
                     if editing.get() {
                         let id_save = id_edit.clone();
                         let id_save2 = id_edit.clone();
+                        let id_tags_save = id_tags.clone();
+                        let id_tags_save2 = id_tags.clone();
                         let input_ref = NodeRef::<leptos::html::Input>::new();
                         Effect::new(move |_| {
                             if let Some(el) = input_ref.get() {
                                 let _ = el.focus();
                             }
                         });
+                        let save_all = move |id_l: &str, id_t: &str| {
+                            let val = edit_value.get_untracked();
+                            let label = if val.trim().is_empty() { None } else { Some(val) };
+                            update_annotation_label(state, id_l, label);
+                            let tags_str = tags_value.get_untracked();
+                            let tags: Vec<String> = tags_str.split(',')
+                                .map(|s| s.trim().to_string())
+                                .filter(|s| !s.is_empty())
+                                .collect();
+                            update_annotation_tags(state, id_t, tags);
+                        };
+                        let id_l_enter = id_save.clone();
+                        let id_t_enter = id_tags_save.clone();
+                        let id_l_blur = id_save2.clone();
+                        let id_t_blur = id_tags_save2.clone();
+                        let id_l_focusout = id_save.clone();
+                        let id_t_focusout = id_tags_save.clone();
                         view! {
-                            <input
-                                class="annotation-label-input"
-                                type="text"
-                                prop:value=move || edit_value.get()
-                                placeholder="Label..."
-                                node_ref=input_ref
-                                on:input=move |ev| {
-                                    edit_value.set(leptos::prelude::event_target_value(&ev));
-                                }
-                                on:keydown=move |ev| {
-                                    if ev.key() == "Enter" {
-                                        let val = edit_value.get_untracked();
-                                        let label = if val.trim().is_empty() { None } else { Some(val) };
-                                        update_annotation_label(state, &id_save, label);
-                                        editing.set(false);
-                                    } else if ev.key() == "Escape" {
+                            <div class="annotation-edit-fields"
+                                on:click=move |e| { e.stop_propagation(); }
+                                on:focusout=move |ev: web_sys::FocusEvent| {
+                                    // Save when focus leaves the editing area entirely
+                                    let target = ev.current_target().unwrap();
+                                    let related = ev.related_target();
+                                    let container: web_sys::HtmlElement = target.unchecked_into();
+                                    let still_inside = related.map(|r| {
+                                        let node: web_sys::Node = r.unchecked_into();
+                                        container.contains(Some(&node))
+                                    }).unwrap_or(false);
+                                    if !still_inside {
+                                        save_all(&id_l_focusout, &id_t_focusout);
                                         editing.set(false);
                                     }
                                 }
-                                on:blur=move |_| {
-                                    let val = edit_value.get_untracked();
-                                    let label = if val.trim().is_empty() { None } else { Some(val) };
-                                    update_annotation_label(state, &id_save2, label);
-                                    editing.set(false);
-                                }
-                                on:click=move |e| { e.stop_propagation(); }
-                            />
+                            >
+                                <input
+                                    class="annotation-label-input"
+                                    type="text"
+                                    prop:value=move || edit_value.get()
+                                    placeholder="Label..."
+                                    node_ref=input_ref
+                                    on:input=move |ev| {
+                                        edit_value.set(leptos::prelude::event_target_value(&ev));
+                                    }
+                                    on:keydown=move |ev| {
+                                        if ev.key() == "Enter" {
+                                            save_all(&id_l_enter, &id_t_enter);
+                                            editing.set(false);
+                                        } else if ev.key() == "Escape" {
+                                            editing.set(false);
+                                        }
+                                    }
+                                />
+                                <input
+                                    class="annotation-label-input annotation-tags-input"
+                                    type="text"
+                                    prop:value=move || tags_value.get()
+                                    placeholder="Tags (comma separated)..."
+                                    on:input=move |ev| {
+                                        tags_value.set(leptos::prelude::event_target_value(&ev));
+                                    }
+                                    on:keydown=move |ev| {
+                                        if ev.key() == "Enter" {
+                                            save_all(&id_l_blur, &id_t_blur);
+                                            editing.set(false);
+                                        } else if ev.key() == "Escape" {
+                                            editing.set(false);
+                                        }
+                                    }
+                                />
+                            </div>
                         }.into_any()
                     } else {
+                        let tags_pills = tags_display.clone();
                         view! {
-                            <span class="annotation-label">{display.clone()}</span>
+                            <span class="annotation-label">
+                                {display.clone()}
+                                {if !tags_pills.is_empty() {
+                                    view! {
+                                        <span class="annotation-tags">
+                                            {tags_pills.into_iter().map(|tag| {
+                                                view! { <span class="annotation-tag">{tag}</span> }
+                                            }).collect_view()}
+                                        </span>
+                                    }.into_any()
+                                } else {
+                                    view! { <span></span> }.into_any()
+                                }}
+                            </span>
                         }.into_any()
                     }
                 }}
                 <button class="annotation-edit"
-                    title="Edit label"
+                    title="Edit label & tags"
                     on:click=move |e| {
                         e.stop_propagation();
                         editing.set(true);
@@ -982,6 +1048,22 @@ fn update_annotation_label(state: AppState, annotation_id: &str, label: Option<S
     state.annotations_dirty.set(true);
 }
 
+fn update_annotation_tags(state: AppState, annotation_id: &str, tags: Vec<String>) {
+    let idx = match state.current_file_index.get_untracked() {
+        Some(i) => i,
+        None => return,
+    };
+    state.annotation_store.update(|store| {
+        if let Some(Some(ref mut set)) = store.sets.get_mut(idx) {
+            if let Some(a) = set.annotations.iter_mut().find(|a| a.id == annotation_id) {
+                a.tags = tags;
+                a.modified_at = now_iso8601();
+            }
+        }
+    });
+    state.annotations_dirty.set(true);
+}
+
 fn toggle_group_collapsed(state: AppState, annotation_id: &str) {
     let idx = match state.current_file_index.get_untracked() {
         Some(i) => i,
@@ -1037,6 +1119,7 @@ fn group_selected(state: AppState) {
                 notes: None,
                 parent_id: parent,
                 sort_order: order,
+                tags: Vec::new(),
             };
             set.annotations.push(group);
 

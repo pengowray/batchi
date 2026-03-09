@@ -152,6 +152,9 @@ pub struct Annotation {
     /// Sort order within parent. Lower values sort first.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub sort_order: Option<f64>,
+    /// User-defined tags (e.g. species, call type).
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub tags: Vec<String>,
 }
 
 /// Basic audio file metadata stored in the sidecar for reference.
