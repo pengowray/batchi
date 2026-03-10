@@ -301,18 +301,25 @@ pub fn Spectrogram() -> impl IntoView {
         state.tile_ready_signal.update(|n| *n = n.wrapping_add(1));
     });
 
-    // Effect 2c: clear magnitude tiles when display transform state or transform params change
-    Effect::new(move || {
-        let _xform = state.display_transform.get();
-        let _mode = state.playback_mode.get();
-        let _het = state.het_frequency.get();
-        let _het_cut = state.het_cutoff.get();
-        let _ps = state.ps_factor.get();
-        let _pv = state.pv_factor.get();
-        let _zc = state.zc_factor.get();
-        crate::canvas::tile_cache::clear_all_tiles();
-        state.tile_ready_signal.update(|n| *n = n.wrapping_add(1));
-    });
+    // Effect 2c: clear magnitude tiles when display transform toggles or its params change while active
+    {
+        let prev_xform = RwSignal::new(false);
+        Effect::new(move || {
+            let xform_on = state.display_transform.get();
+            let _mode = state.playback_mode.get();
+            let _het = state.het_frequency.get();
+            let _het_cut = state.het_cutoff.get();
+            let _ps = state.ps_factor.get();
+            let _pv = state.pv_factor.get();
+            let _zc = state.zc_factor.get();
+            // Clear tiles when transform is active (param changed), or was just toggled off
+            if xform_on || prev_xform.get_untracked() {
+                crate::canvas::tile_cache::clear_all_tiles();
+                state.tile_ready_signal.update(|n| *n = n.wrapping_add(1));
+            }
+            prev_xform.set(xform_on);
+        });
+    }
 
     // Effect 2d: clear reassignment tile cache when toggle changes
     Effect::new(move || {
