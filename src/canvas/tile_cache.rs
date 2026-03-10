@@ -20,7 +20,7 @@ use leptos::prelude::*;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 use crate::canvas::spectrogram_renderer::{self, PreRendered, FlowAlgo};
-use crate::state::{AppState, LoadedFile};
+use crate::state::{AppState, LoadedFile, PlaybackMode};
 use crate::audio::streaming_source;
 
 /// Number of spectrogram columns per tile (constant across all LODs).
@@ -438,6 +438,14 @@ pub fn schedule_tile_lod(state: AppState, file_idx: usize, lod: u8, tile_idx: us
         streaming_source::prefetch_streaming(audio.source.as_ref(), sample_start as u64, sample_len).await;
 
         let samples = audio.source.read_region(cv, sample_start as u64, sample_len);
+
+        // Apply DSP transform (heterodyne, pitch shift, etc.) when display_transform is active
+        let samples = if state.display_transform.get_untracked() {
+            apply_display_transform(&samples, audio.sample_rate, state)
+        } else {
+            samples
+        };
+
         let cols = compute_stft_columns(&samples, audio.sample_rate, actual_fft, config_hop, 0, TILE_COLS);
         IN_FLIGHT.with(|s| s.borrow_mut().remove(&key));
 
@@ -1393,4 +1401,33 @@ pub async fn yield_to_browser() {
         );
     });
     let _ = wasm_bindgen_futures::JsFuture::from(promise).await;
+}
+
+/// Apply the current playback DSP mode transform to samples for display.
+/// Used when display_transform is true (Transform "Same" mode).
+fn apply_display_transform(samples: &[f32], sample_rate: u32, state: AppState) -> Vec<f32> {
+    let mode = state.playback_mode.get_untracked();
+    match mode {
+        PlaybackMode::Normal | PlaybackMode::TimeExpansion => {
+            // No sample-level transform needed
+            samples.to_vec()
+        }
+        PlaybackMode::Heterodyne => {
+            let lo = state.het_frequency.get_untracked();
+            let cutoff = state.het_cutoff.get_untracked();
+            crate::dsp::heterodyne::heterodyne_mix(samples, sample_rate, lo, cutoff)
+        }
+        PlaybackMode::PitchShift => {
+            let factor = state.ps_factor.get_untracked();
+            crate::dsp::pitch_shift::pitch_shift_realtime(samples, factor)
+        }
+        PlaybackMode::PhaseVocoder => {
+            let factor = state.pv_factor.get_untracked();
+            crate::dsp::phase_vocoder::phase_vocoder_pitch_shift(samples, factor)
+        }
+        PlaybackMode::ZeroCrossing => {
+            let factor = state.zc_factor.get_untracked() as u32;
+            crate::dsp::zc_divide::zc_divide(samples, sample_rate, factor, false)
+        }
+    }
 }

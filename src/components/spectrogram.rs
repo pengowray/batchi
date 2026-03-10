@@ -301,7 +301,20 @@ pub fn Spectrogram() -> impl IntoView {
         state.tile_ready_signal.update(|n| *n = n.wrapping_add(1));
     });
 
-    // Effect 2c: clear reassignment tile cache when toggle changes
+    // Effect 2c: clear magnitude tiles when display transform state or transform params change
+    Effect::new(move || {
+        let _xform = state.display_transform.get();
+        let _mode = state.playback_mode.get();
+        let _het = state.het_frequency.get();
+        let _het_cut = state.het_cutoff.get();
+        let _ps = state.ps_factor.get();
+        let _pv = state.pv_factor.get();
+        let _zc = state.zc_factor.get();
+        crate::canvas::tile_cache::clear_all_tiles();
+        state.tile_ready_signal.update(|n| *n = n.wrapping_add(1));
+    });
+
+    // Effect 2d: clear reassignment tile cache when toggle changes
     Effect::new(move || {
         let _reassign = state.reassign_enabled.get();
         crate::canvas::tile_cache::clear_reassign_cache();

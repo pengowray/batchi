@@ -19,6 +19,9 @@ fn DspFilterRow(
     playback_active: Signal<bool>,
     /// Whether 'custom' is available (greyed out if false)
     custom_available: bool,
+    /// Whether 'auto' is available (greyed out if false)
+    #[prop(default = true)]
+    auto_available: bool,
 ) -> impl IntoView {
     let modes = DisplayFilterMode::ALL;
 
@@ -28,7 +31,8 @@ fn DspFilterRow(
             <div class="dsp-filter-seg">
                 {modes.iter().copied().map(|mode| {
                     let is_custom = mode == DisplayFilterMode::Custom;
-                    let disabled = is_custom && !custom_available;
+                    let is_auto = mode == DisplayFilterMode::Auto;
+                    let disabled = (is_custom && !custom_available) || (is_auto && !auto_available);
                     view! {
                         <button
                             class=move || {
@@ -153,9 +157,9 @@ pub fn DisplayFilterButton() -> impl IntoView {
             </div>
 
             <DspFilterRow label="EQ" signal=state.display_filter_eq playback_active=eq_active custom_available=false />
-            <DspFilterRow label="Notch" signal=state.display_filter_notch playback_active=notch_active custom_available=false />
+            <DspFilterRow label="Notch" signal=state.display_filter_notch playback_active=notch_active custom_available=false auto_available=false />
             <DspFilterRow label="NR" signal=state.display_filter_nr playback_active=nr_active custom_available=true />
-            <DspFilterRow label="Xform" signal=state.display_filter_transform playback_active=transform_active custom_available=false />
+            <DspFilterRow label="Xform" signal=state.display_filter_transform playback_active=transform_active custom_available=false auto_available=false />
             <DspFilterRow label="Gain" signal=state.display_filter_gain playback_active=gain_active custom_available=true />
 
             // Custom NR section
