@@ -227,12 +227,15 @@ pub fn DisplayFilterButton() -> impl IntoView {
                     <span class="dsp-custom-value">{move || {
                         let dsp_on = state.display_filter_enabled.get();
                         let gain_mode = state.display_filter_gain.get();
+                        let boost = state.display_gain_boost.get();
                         if dsp_on && gain_mode == DisplayFilterMode::Off {
                             "off".to_string()
-                        } else if state.display_auto_gain.get() {
-                            "auto".to_string()
+                        } else if dsp_on && gain_mode == DisplayFilterMode::Auto {
+                            if boost.abs() < 0.5 { "auto".to_string() }
+                            else { format!("a{:+.0}", boost) }
                         } else if dsp_on && gain_mode == DisplayFilterMode::Same {
-                            "same".to_string()
+                            if boost.abs() < 0.5 { "same".to_string() }
+                            else { format!("={:+.0}", boost) }
                         } else {
                             format!("{:+.0} dB", state.spect_gain_db.get())
                         }

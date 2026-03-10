@@ -503,11 +503,14 @@ pub fn Spectrogram() -> impl IntoView {
             fixed_ref_db
         };
 
+        // Extra dB boost from Auto/Same gain modes (computed in app.rs Effect)
+        let display_boost = state.display_gain_boost.get();
+
         let display_settings = SpectDisplaySettings {
             floor_db: spect_floor,
             range_db: spect_range,
             gamma: spect_gamma,
-            gain_db: spect_gain - ref_db,
+            gain_db: spect_gain - ref_db + display_boost,
         };
 
         // During recording, clip the canvas so partial tiles don't show black padding.

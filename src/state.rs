@@ -828,6 +828,8 @@ pub struct AppState {
     pub display_filter_nr: RwSignal<DisplayFilterMode>,
     pub display_filter_transform: RwSignal<DisplayFilterMode>,
     pub display_filter_gain: RwSignal<DisplayFilterMode>,
+    /// Extra dB boost applied to spectrogram display from Auto/Same gain modes.
+    pub display_gain_boost: RwSignal<f32>,
     // Custom NR settings (display-only)
     pub display_nr_strength: RwSignal<f64>,
     // Auto-learned noise floor for display (computed from first ~500ms of file)
@@ -1060,6 +1062,7 @@ impl AppState {
             display_filter_nr: RwSignal::new(DisplayFilterMode::Auto),
             display_filter_transform: RwSignal::new(DisplayFilterMode::Off),
             display_filter_gain: RwSignal::new(DisplayFilterMode::Auto),
+            display_gain_boost: RwSignal::new(0.0),
             display_nr_strength: RwSignal::new(0.8),
             display_auto_noise_floor: RwSignal::new(None),
 

@@ -254,17 +254,38 @@ pub fn App() -> impl IntoView {
         };
         state.display_transform.set(xform_on);
 
-        // Gain
-        let gain_auto = match state.display_filter_gain.get() {
-            DisplayFilterMode::Off => false,
-            DisplayFilterMode::Auto => true,
-            DisplayFilterMode::Same => matches!(state.gain_mode.get(), GainMode::AutoPeak | GainMode::Adaptive),
-            DisplayFilterMode::Custom => false, // manual slider control
+        // Gain — compute display_gain_boost (dB) and display_auto_gain
+        let gain_filter = state.display_filter_gain.get();
+        let (gain_auto, boost) = match gain_filter {
+            DisplayFilterMode::Off => (false, 0.0),
+            DisplayFilterMode::Auto => {
+                // Peak-normalize: boost quiet files so peak → −3 dBFS
+                let auto_db = state.compute_auto_gain() as f32;
+                (true, auto_db)
+            }
+            DisplayFilterMode::Same => {
+                // Mirror whatever the playback gain pipeline does
+                let manual = state.gain_db.get() as f32;
+                match state.gain_mode.get() {
+                    GainMode::Off => (false, 0.0),
+                    GainMode::Manual => (false, manual),
+                    GainMode::AutoPeak => {
+                        let auto_db = state.compute_auto_gain() as f32;
+                        (true, auto_db + manual)
+                    }
+                    GainMode::Adaptive => {
+                        let auto_db = state.compute_auto_gain() as f32;
+                        (true, auto_db + manual)
+                    }
+                }
+            }
+            DisplayFilterMode::Custom => (false, 0.0), // manual slider control
         };
         state.display_auto_gain.set(gain_auto);
+        state.display_gain_boost.set(boost);
 
         // When Gain is Off, zero out the display gain offset
-        if state.display_filter_gain.get() == DisplayFilterMode::Off {
+        if gain_filter == DisplayFilterMode::Off {
             state.spect_gain_db.set(0.0);
         }
     });
