@@ -1422,13 +1422,15 @@ pub fn draw_freq_markers(
     shift_mode: FreqShiftMode,
     ms: &FreqMarkerState,
     het_cutoff: f64,
+    labels_on_right: bool,
 ) {
     let cutoff = het_cutoff;
     let color_bar_w = 6.0;
-    let color_bar_x = 0.0; // flush left
-    let label_x = color_bar_w + 3.0; // text starts after color bar
-    let tick_len = 22.0; // short tick under label (~half old label_area_w)
-    let right_tick_len = 15.0;
+    let (color_bar_x, label_x, tick_len, right_tick_len) = if labels_on_right {
+        (canvas_width - color_bar_w, canvas_width - color_bar_w - 3.0, 15.0, 22.0)
+    } else {
+        (0.0, color_bar_w + 3.0, 22.0, 15.0)
+    };
 
     // Collect all division freqs within visible range
     let mut divisions: Vec<f64> = Vec::new();
@@ -1539,7 +1541,6 @@ pub fn draw_freq_markers(
         let khz_fade = ms.label_hover_opacity * ms.label_hover_opacity;
         if matches!(shift_mode, FreqShiftMode::None) && ms.label_hover_opacity > 0.001 {
             // Split rendering: number at full alpha, " kHz" suffix fading
-            // Dark background behind label
             let full_label_for_measure = if khz_fade > 0.01 {
                 format!("{} kHz", base_label)
             } else {
@@ -1548,28 +1549,31 @@ pub fn draw_freq_markers(
             let bg_metrics = ctx.measure_text(&full_label_for_measure).unwrap();
             let bg_w = bg_metrics.width() + 4.0;
             let bg_h = 14.0;
+            let text_x = if labels_on_right { label_x - bg_metrics.width() } else { label_x };
+            let bg_x = text_x - 2.0;
             ctx.set_fill_style_str("rgba(0,0,0,0.6)");
-            ctx.fill_rect(label_x - 2.0, y - 2.0 - bg_h, bg_w, bg_h);
+            ctx.fill_rect(bg_x, y - 2.0 - bg_h, bg_w, bg_h);
 
             ctx.set_fill_style_str(&format!("rgba(255,255,255,{:.2})", label_alpha));
-            let _ = ctx.fill_text(&base_label, label_x, y - 2.0);
+            let _ = ctx.fill_text(&base_label, text_x, y - 2.0);
             let khz_alpha = label_alpha * khz_fade;
             if khz_alpha > 0.002 {
                 let metrics = ctx.measure_text(&base_label).unwrap();
                 let num_w = metrics.width();
                 ctx.set_fill_style_str(&format!("rgba(255,255,255,{:.2})", khz_alpha));
-                let _ = ctx.fill_text(" kHz", label_x + num_w, y - 2.0);
+                let _ = ctx.fill_text(" kHz", text_x + num_w, y - 2.0);
             }
         } else {
-            // Dark background behind label
             let bg_metrics = ctx.measure_text(&label).unwrap();
             let bg_w = bg_metrics.width() + 4.0;
             let bg_h = 14.0;
+            let text_x = if labels_on_right { label_x - bg_metrics.width() } else { label_x };
+            let bg_x = text_x - 2.0;
             ctx.set_fill_style_str("rgba(0,0,0,0.6)");
-            ctx.fill_rect(label_x - 2.0, y - 2.0 - bg_h, bg_w, bg_h);
+            ctx.fill_rect(bg_x, y - 2.0 - bg_h, bg_w, bg_h);
 
             ctx.set_fill_style_str(&format!("rgba(255,255,255,{:.2})", label_alpha));
-            let _ = ctx.fill_text(&label, label_x, y - 2.0);
+            let _ = ctx.fill_text(&label, text_x, y - 2.0);
         }
 
         // --- Short left tick line (lightly colored, under the label) ---
@@ -1614,7 +1618,13 @@ pub fn draw_freq_markers(
         ctx.set_fill_style_str("rgba(255,255,255,0.45)");
         ctx.set_font("10px sans-serif");
         ctx.set_text_baseline("top");
-        let _ = ctx.fill_text(&ny_label, label_x, ny_y);
+        let ny_text_x = if labels_on_right {
+            let m = ctx.measure_text(&ny_label).unwrap();
+            label_x - m.width()
+        } else {
+            label_x
+        };
+        let _ = ctx.fill_text(&ny_label, ny_text_x, ny_y);
         ctx.set_stroke_style_str("rgba(255,255,255,0.3)");
         ctx.set_line_width(1.0);
         ctx.begin_path();

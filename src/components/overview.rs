@@ -428,6 +428,7 @@ pub fn OverviewPanel() -> impl IntoView {
                 file.audio.duration_secs,
                 clock_cfg,
                 state.show_clock_time.get(),
+                1.0,
             );
         }
     });

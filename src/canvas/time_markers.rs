@@ -112,12 +112,18 @@ pub fn draw_time_markers(
     duration: f64,
     clock: Option<ClockTimeConfig>,
     show_clock_time: bool,
+    time_scale: f64,
 ) {
     if visible_time <= 0.0 || canvas_width <= 0.0 {
         return;
     }
 
-    let px_per_sec = canvas_width / visible_time;
+    // Scale times for display (e.g. TE mode: labels show expanded time)
+    let scaled_visible = visible_time * time_scale;
+    let scaled_scroll = scroll_offset * time_scale;
+    let scaled_duration = duration * time_scale;
+
+    let px_per_sec = canvas_width / scaled_visible;
 
     // Pick the smallest nice interval that keeps labels ≥100 px apart
     let min_interval = 100.0 / px_per_sec;
@@ -127,7 +133,7 @@ pub fn draw_time_markers(
         .find(|&i| i >= min_interval)
         .unwrap_or(*TICK_INTERVALS.last().unwrap());
 
-    let end_time = (scroll_offset + visible_time).min(duration);
+    let end_time = (scaled_scroll + scaled_visible).min(scaled_duration);
 
     // Only use ms format when the max visible time is ≤ 100 ms; otherwise
     // prefer seconds ("0.5s" instead of "500ms").
@@ -136,7 +142,7 @@ pub fn draw_time_markers(
     // Key marker system: when sub-second ticks are deep into the file,
     // use primary/secondary label hierarchy
     let key_interval = key_interval_for(interval);
-    let first_tick = (scroll_offset / interval).ceil() * interval;
+    let first_tick = (scaled_scroll / interval).ceil() * interval;
     let use_relative = interval < 1.0 && first_tick > 10.0;
     let use_clock = show_clock_time && clock.is_some();
 
@@ -144,7 +150,7 @@ pub fn draw_time_markers(
     let minor_interval = interval / 5.0;
     let minor_px = minor_interval * px_per_sec;
     if minor_px >= 4.0 {
-        let first_minor = (scroll_offset / minor_interval).ceil() * minor_interval;
+        let first_minor = (scaled_scroll / minor_interval).ceil() * minor_interval;
         ctx.set_stroke_style_str("rgba(255,255,255,0.15)");
         ctx.set_line_width(1.0);
         let mut t = first_minor;
@@ -154,7 +160,7 @@ pub fn draw_time_markers(
                 t += minor_interval;
                 continue;
             }
-            let x = (t - scroll_offset) * px_per_sec;
+            let x = (t - scaled_scroll) * px_per_sec;
             if x >= 0.0 && x <= canvas_width {
                 ctx.begin_path();
                 ctx.move_to(x, canvas_height - 6.0);
@@ -174,7 +180,7 @@ pub fn draw_time_markers(
 
     let mut t = first_tick;
     while t <= end_time + interval * 0.01 {
-        let x = (t - scroll_offset) * px_per_sec;
+        let x = (t - scaled_scroll) * px_per_sec;
         if x >= 0.0 && x <= canvas_width {
             let is_key = !use_relative || is_key_tick(t, key_interval);
             if is_key { key_drawn = true; }
@@ -245,7 +251,7 @@ pub fn draw_time_markers(
     // When using relative labels and no key tick fell in the visible range,
     // draw the nearest preceding key tick's label pinned to the left edge.
     if use_relative && !key_drawn && !use_clock {
-        let preceding_key = (scroll_offset / key_interval).floor() * key_interval;
+        let preceding_key = (scaled_scroll / key_interval).floor() * key_interval;
         if preceding_key >= 0.0 {
             let label = format_time::format_time_label(preceding_key, key_interval.max(interval), use_ms);
             ctx.set_font("bold 10px sans-serif");

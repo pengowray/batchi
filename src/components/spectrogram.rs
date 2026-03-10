@@ -309,6 +309,7 @@ pub fn Spectrogram() -> impl IntoView {
             let _mode = state.playback_mode.get();
             let _het = state.het_frequency.get();
             let _het_cut = state.het_cutoff.get();
+            let _te = state.te_factor.get();
             let _ps = state.ps_factor.get();
             let _pv = state.pv_factor.get();
             let _zc = state.zc_factor.get();
@@ -806,15 +807,17 @@ pub fn Spectrogram() -> impl IntoView {
                 ff_handles_active: spec_hover.is_some() || spec_drag.is_some(),
             };
 
+            let xform_on = state.display_transform.get_untracked();
             spectrogram_renderer::draw_freq_markers(
                 &ctx,
                 min_freq,
                 max_freq,
                 display_h as f64,
                 display_w as f64,
-                shift_mode,
+                if xform_on { FreqShiftMode::None } else { shift_mode },
                 &marker_state,
                 het_cutoff,
+                xform_on,
             );
 
             // Time scale along the bottom edge
@@ -824,6 +827,11 @@ pub fn Spectrogram() -> impl IntoView {
                     .map(|ms| crate::canvas::time_markers::ClockTimeConfig {
                         recording_start_epoch_ms: ms,
                     });
+                let time_scale = if xform_on && playback_mode == PlaybackMode::TimeExpansion && te_factor.abs() > 1.0 {
+                    te_factor.abs()
+                } else {
+                    1.0
+                };
                 spectrogram_renderer::draw_time_markers(
                     &ctx,
                     scroll,
@@ -833,6 +841,7 @@ pub fn Spectrogram() -> impl IntoView {
                     duration,
                     clock_cfg,
                     state.show_clock_time.get(),
+                    time_scale,
                 );
             }
 
@@ -862,8 +871,8 @@ pub fn Spectrogram() -> impl IntoView {
                 );
             }
 
-            // FF overlay (dim outside focus range)
-            if ff_hi > ff_lo {
+            // FF overlay (dim outside focus range) — skip in xform view
+            if ff_hi > ff_lo && !xform_on {
                 spectrogram_renderer::draw_ff_overlay(
                     &ctx,
                     ff_lo, ff_hi,
@@ -873,8 +882,8 @@ pub fn Spectrogram() -> impl IntoView {
                 );
             }
 
-            // HET overlay (cyan lines on top, no dimming)
-            if show_het {
+            // HET overlay (cyan lines on top, no dimming) — skip in xform view
+            if show_het && !xform_on {
                 let het_interactive = !het_freq_auto || !het_cutoff_auto;
                 spectrogram_renderer::draw_het_overlay(
                     &ctx,

@@ -309,6 +309,7 @@ pub fn ZcDotChart() -> impl IntoView {
             shift_mode,
             &marker_state,
             0.0, // no HET in ZC view
+            false,
         );
     });
 

@@ -812,6 +812,9 @@ pub struct AppState {
     /// When true, spectrogram tiles are computed from DSP-transformed audio
     /// (same transform as playback mode: pitch shift, heterodyne, etc.)
     pub display_transform: RwSignal<bool>,
+    /// Saved frequency range before xform auto-zoom (restored when xform toggles off)
+    pub xform_saved_min_freq: RwSignal<Option<Option<f64>>>,
+    pub xform_saved_max_freq: RwSignal<Option<Option<f64>>>,
     // ZC saved display settings (restored when entering ZC; defaults: eq=true, noise=true)
     pub zc_saved_display_auto_gain: RwSignal<bool>,
     pub zc_saved_display_eq: RwSignal<bool>,
@@ -1049,6 +1052,8 @@ impl AppState {
             display_eq: RwSignal::new(false),
             display_noise_filter: RwSignal::new(false),
             display_transform: RwSignal::new(false),
+            xform_saved_min_freq: RwSignal::new(None),
+            xform_saved_max_freq: RwSignal::new(None),
             zc_saved_display_auto_gain: RwSignal::new(false),
             zc_saved_display_eq: RwSignal::new(true),
             zc_saved_display_noise_filter: RwSignal::new(true),

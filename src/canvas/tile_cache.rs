@@ -1408,9 +1408,16 @@ pub async fn yield_to_browser() {
 fn apply_display_transform(samples: &[f32], sample_rate: u32, state: AppState) -> Vec<f32> {
     let mode = state.playback_mode.get_untracked();
     match mode {
-        PlaybackMode::Normal | PlaybackMode::TimeExpansion => {
-            // No sample-level transform needed
+        PlaybackMode::Normal => {
             samples.to_vec()
+        }
+        PlaybackMode::TimeExpansion => {
+            let factor = state.te_factor.get_untracked();
+            if factor.abs() > 1.0 {
+                crate::dsp::pitch_shift::pitch_shift_realtime(samples, factor)
+            } else {
+                samples.to_vec()
+            }
         }
         PlaybackMode::Heterodyne => {
             let lo = state.het_frequency.get_untracked();
