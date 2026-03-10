@@ -1,7 +1,7 @@
 use leptos::prelude::*;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
-use crate::state::{AppState, FileSettings, LayerPanel, MainView, MicMode, PlayStartMode, SpectrogramDisplay};
+use crate::state::{AppState, DisplayFilterMode, FileSettings, GainMode, LayerPanel, MainView, MicMode, PlayStartMode, SpectrogramDisplay};
 use crate::audio::playback;
 use crate::audio::microphone;
 use crate::components::file_sidebar::FileSidebar;
@@ -21,6 +21,7 @@ use crate::components::file_sidebar::{fetch_demo_index, load_single_demo};
 use crate::components::bat_book_tab::BatBookTab;
 use crate::components::bat_book_strip::BatBookStrip;
 use crate::components::bat_book_ref_panel::BatBookRefPanel;
+use crate::components::display_filter_button::DisplayFilterButton;
 
 #[component]
 pub fn App() -> impl IntoView {
@@ -210,6 +211,104 @@ pub fn App() -> impl IntoView {
         let is_flow = state.main_view.get() == MainView::Flow;
         state.flow_enabled.set(is_flow);
     });
+
+    // Resolve display filter modes → effective display_* booleans.
+    // When the DSP panel is enabled, the per-stage modes drive the existing
+    // display_auto_gain / display_eq / display_noise_filter signals.
+    Effect::new(move |_| {
+        let enabled = state.display_filter_enabled.get();
+        if !enabled {
+            return; // leave existing display_* signals alone when DSP panel is off
+        }
+
+        // EQ
+        let eq_on = match state.display_filter_eq.get() {
+            DisplayFilterMode::Off => false,
+            DisplayFilterMode::Auto => true,
+            DisplayFilterMode::Same => state.filter_enabled.get(),
+            DisplayFilterMode::Custom => false, // not yet implemented
+        };
+        state.display_eq.set(eq_on);
+
+        // Noise (notch + spectral subtraction)
+        let nr_on = match state.display_filter_nr.get() {
+            DisplayFilterMode::Off => false,
+            DisplayFilterMode::Auto | DisplayFilterMode::Custom => true,
+            DisplayFilterMode::Same => state.noise_reduce_enabled.get(),
+        };
+        // Also consider notch
+        let notch_on = match state.display_filter_notch.get() {
+            DisplayFilterMode::Off => false,
+            DisplayFilterMode::Auto => true,
+            DisplayFilterMode::Same => state.notch_enabled.get(),
+            DisplayFilterMode::Custom => false,
+        };
+        state.display_noise_filter.set(nr_on || notch_on);
+
+        // Gain
+        let gain_auto = match state.display_filter_gain.get() {
+            DisplayFilterMode::Off => false,
+            DisplayFilterMode::Auto => true,
+            DisplayFilterMode::Same => matches!(state.gain_mode.get(), GainMode::AutoPeak | GainMode::Adaptive),
+            DisplayFilterMode::Custom => true,
+        };
+        state.display_auto_gain.set(gain_auto);
+    });
+
+    // Auto-learn display noise floor when NR is Auto/Custom and a file is loaded.
+    // Re-triggers when file changes or NR mode changes to Auto/Custom.
+    {
+        let learning: RwSignal<bool> = RwSignal::new(false);
+        Effect::new(move |_| {
+            let nr_mode = state.display_filter_nr.get();
+            let enabled = state.display_filter_enabled.get();
+            let file_idx = state.current_file_index.get();
+            // Only auto-learn when DSP is enabled and NR is Auto or Custom
+            if !enabled || !matches!(nr_mode, DisplayFilterMode::Auto | DisplayFilterMode::Custom) {
+                return;
+            }
+            // Already have a floor for this file? Skip.
+            if state.display_auto_noise_floor.get_untracked().is_some() {
+                return;
+            }
+            if learning.get_untracked() {
+                return;
+            }
+            let files = state.files.get_untracked();
+            let Some(idx) = file_idx else { return; };
+            let Some(file) = files.get(idx).cloned() else { return; };
+
+            learning.set(true);
+            let total = file.audio.source.total_samples() as usize;
+            let samples = std::sync::Arc::new(
+                file.audio.source.read_region(crate::audio::source::ChannelView::MonoMix, 0, total)
+            );
+            let sample_rate = file.audio.sample_rate;
+
+            wasm_bindgen_futures::spawn_local(async move {
+                crate::canvas::tile_cache::yield_to_browser().await;
+                let floor = crate::dsp::spectral_sub::learn_noise_floor_async(
+                    &samples, sample_rate, 0.5, // 500ms from file start
+                ).await;
+                if let Some(f) = floor {
+                    state.display_auto_noise_floor.set(Some(f));
+                }
+                learning.set(false);
+            });
+        });
+    }
+
+    // Clear display auto noise floor when file changes.
+    {
+        let prev_file: std::cell::Cell<Option<usize>> = std::cell::Cell::new(None);
+        Effect::new(move |_| {
+            let idx = state.current_file_index.get();
+            if idx != prev_file.get() {
+                prev_file.set(idx);
+                state.display_auto_noise_floor.set(None);
+            }
+        });
+    }
 
     // Save/restore per-file settings (gain, noise filter) when switching files.
     // Files in the same sequence group share settings.
@@ -588,7 +687,7 @@ fn MainArea() -> impl IntoView {
                                     })
                                 }}
                                 <BookmarkPopup />
-                                <MainViewButton />
+                                <ViewAndDspButtons />
                                 <FreqRangeButton />
                                 <BatBookTab />
                             </div>
@@ -681,62 +780,73 @@ fn MainViewButton() -> impl IntoView {
     };
 
     view! {
+        <ComboButton
+            left_label="View"
+            left_value=Signal::derive(|| String::new())
+            left_click=left_click
+            left_class=left_class
+            right_value=right_value
+            right_class=right_class
+            is_open=is_open
+            toggle_menu=toggle_menu
+            left_title="Toggle view (Spectrogram / Waveform)"
+            right_title="View mode menu"
+            panel_style="min-width: 140px;"
+        >
+            <div class="layer-panel-title">"View Mode"</div>
+            {MainView::ALL.iter().map(|&mode| {
+                view! {
+                    <button
+                        class=move || layer_opt_class(state.main_view.get() == mode)
+                        on:click=set_view(mode)
+                    >
+                        {mode.label()}
+                    </button>
+                }
+            }).collect_view()}
+            // Flow algorithm options (when Flow is active)
+            {move || (state.main_view.get() == MainView::Flow).then(|| {
+                view! {
+                    <hr />
+                    <div class="layer-panel-title">"Algorithm"</div>
+                    <button
+                        class=move || layer_opt_class(state.spectrogram_display.get() == SpectrogramDisplay::FlowOptical)
+                        on:click=move |_| state.spectrogram_display.set(SpectrogramDisplay::FlowOptical)
+                    >"Optical"</button>
+                    <button
+                        class=move || layer_opt_class(state.spectrogram_display.get() == SpectrogramDisplay::PhaseCoherence)
+                        on:click=move |_| state.spectrogram_display.set(SpectrogramDisplay::PhaseCoherence)
+                    >"Phase Coherence"</button>
+                    <button
+                        class=move || layer_opt_class(state.spectrogram_display.get() == SpectrogramDisplay::FlowCentroid)
+                        on:click=move |_| state.spectrogram_display.set(SpectrogramDisplay::FlowCentroid)
+                    >"Centroid"</button>
+                    <button
+                        class=move || layer_opt_class(state.spectrogram_display.get() == SpectrogramDisplay::FlowGradient)
+                        on:click=move |_| state.spectrogram_display.set(SpectrogramDisplay::FlowGradient)
+                    >"Gradient"</button>
+                    <button
+                        class=move || layer_opt_class(state.spectrogram_display.get() == SpectrogramDisplay::Phase)
+                        on:click=move |_| state.spectrogram_display.set(SpectrogramDisplay::Phase)
+                    >"Phase"</button>
+                }
+            })}
+        </ComboButton>
+    }
+}
+
+/// Wrapper that places View and DSP buttons side-by-side in the top-left overlay area.
+#[component]
+fn ViewAndDspButtons() -> impl IntoView {
+    let state = expect_context::<AppState>();
+    view! {
         <div
-            style=move || format!("position: absolute; top: 10px; left: 56px; pointer-events: none; opacity: {}; transition: opacity 0.1s;",
+            class="view-dsp-buttons"
+            style=move || format!("position: absolute; top: 10px; left: 56px; display: flex; gap: 6px; pointer-events: none; opacity: {}; transition: opacity 0.1s;",
                 if state.mouse_in_label_area.get() { "0" } else { "1" })
         >
-            <ComboButton
-                left_label="View"
-                left_value=Signal::derive(|| String::new())
-                left_click=left_click
-                left_class=left_class
-                right_value=right_value
-                right_class=right_class
-                is_open=is_open
-                toggle_menu=toggle_menu
-                left_title="Toggle view (Spectrogram / Waveform)"
-                right_title="View mode menu"
-                panel_style="min-width: 140px;"
-            >
-                <div class="layer-panel-title">"View Mode"</div>
-                {MainView::ALL.iter().map(|&mode| {
-                    view! {
-                        <button
-                            class=move || layer_opt_class(state.main_view.get() == mode)
-                            on:click=set_view(mode)
-                        >
-                            {mode.label()}
-                        </button>
-                    }
-                }).collect_view()}
-                // Flow algorithm options (when Flow is active)
-                {move || (state.main_view.get() == MainView::Flow).then(|| {
-                    view! {
-                        <hr />
-                        <div class="layer-panel-title">"Algorithm"</div>
-                        <button
-                            class=move || layer_opt_class(state.spectrogram_display.get() == SpectrogramDisplay::FlowOptical)
-                            on:click=move |_| state.spectrogram_display.set(SpectrogramDisplay::FlowOptical)
-                        >"Optical"</button>
-                        <button
-                            class=move || layer_opt_class(state.spectrogram_display.get() == SpectrogramDisplay::PhaseCoherence)
-                            on:click=move |_| state.spectrogram_display.set(SpectrogramDisplay::PhaseCoherence)
-                        >"Phase Coherence"</button>
-                        <button
-                            class=move || layer_opt_class(state.spectrogram_display.get() == SpectrogramDisplay::FlowCentroid)
-                            on:click=move |_| state.spectrogram_display.set(SpectrogramDisplay::FlowCentroid)
-                        >"Centroid"</button>
-                        <button
-                            class=move || layer_opt_class(state.spectrogram_display.get() == SpectrogramDisplay::FlowGradient)
-                            on:click=move |_| state.spectrogram_display.set(SpectrogramDisplay::FlowGradient)
-                        >"Gradient"</button>
-                        <button
-                            class=move || layer_opt_class(state.spectrogram_display.get() == SpectrogramDisplay::Phase)
-                            on:click=move |_| state.spectrogram_display.set(SpectrogramDisplay::Phase)
-                        >"Phase"</button>
-                    }
-                })}
-            </ComboButton>
+            <MainViewButton />
+            <DisplayFilterButton />
         </div>
     }
 }

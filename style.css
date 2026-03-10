@@ -3176,3 +3176,137 @@ body.sidebar-resizing {
     border-top: 1px solid #333;
     margin-top: 6px;
 }
+
+/* ── DSP Display Filter Panel ──────────────────────────────────────────────── */
+
+.dsp-filter-row {
+    display: grid;
+    grid-template-columns: 42px 1fr 16px;
+    gap: 4px 6px;
+    align-items: center;
+    padding: 2px 6px;
+}
+
+.dsp-filter-header {
+    padding-bottom: 0;
+    margin-bottom: -2px;
+}
+
+.dsp-filter-header .dsp-filter-seg span {
+    font-size: 8px;
+    text-transform: uppercase;
+    color: #555;
+    text-align: center;
+    flex: 1;
+}
+
+.dsp-filter-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    color: #999;
+    letter-spacing: 0.5px;
+}
+
+.dsp-filter-seg {
+    display: flex;
+    gap: 1px;
+}
+
+.dsp-filter-seg button {
+    flex: 1;
+    font-size: 9px;
+    padding: 3px 4px;
+    background: rgba(40, 40, 40, 0.9);
+    color: #777;
+    border: 1px solid rgba(70, 70, 70, 0.5);
+    border-radius: 3px;
+    cursor: pointer;
+    text-align: center;
+    font-family: inherit;
+    line-height: 1;
+    transition: background 0.1s, color 0.1s;
+}
+
+.dsp-filter-seg button:hover {
+    background: rgba(60, 60, 60, 0.9);
+    color: #ccc;
+}
+
+.dsp-filter-seg button.sel {
+    background: rgba(40, 80, 60, 0.9);
+    color: #6da;
+    border-color: rgba(100, 200, 160, 0.4);
+    font-weight: 700;
+}
+
+.dsp-filter-seg button.disabled {
+    opacity: 0.25;
+    pointer-events: none;
+    cursor: default;
+}
+
+.dsp-filter-indicator {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    justify-self: center;
+}
+
+.dsp-filter-indicator.active {
+    background: #6da;
+    box-shadow: 0 0 4px rgba(102, 221, 170, 0.6);
+}
+
+.dsp-filter-indicator.inactive {
+    background: #333;
+}
+
+.dsp-filter-indicator-header {
+    font-size: 8px;
+    text-align: center;
+    line-height: 1;
+}
+
+.dsp-custom-section {
+    padding: 6px 8px 4px;
+    border-top: 1px solid rgba(80, 80, 80, 0.3);
+    margin-top: 4px;
+}
+
+.dsp-custom-title {
+    font-size: 9px;
+    text-transform: uppercase;
+    color: #666;
+    margin-bottom: 4px;
+    letter-spacing: 0.5px;
+}
+
+.dsp-custom-slider-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.dsp-custom-slider-row .setting-range {
+    flex: 1;
+}
+
+.dsp-custom-value {
+    font-size: 10px;
+    color: #aaa;
+    min-width: 40px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.view-dsp-buttons {
+    pointer-events: none;
+}
+
+.dsp-slider-label {
+    font-size: 9px;
+    color: #888;
+    min-width: 42px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}

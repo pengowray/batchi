@@ -2,7 +2,6 @@ use leptos::prelude::*;
 use wasm_bindgen::JsCast;
 use crate::audio::source::ChannelView;
 use crate::state::{AppState, FftMode, FlowColorScheme, MainView, SpectrogramDisplay};
-use crate::components::slider_row::SliderRow;
 use crate::dsp::zero_crossing::zero_crossing_frequency;
 use crate::annotations::{Annotation, AnnotationKind, AnnotationSet, Group, Region, generate_uuid, now_iso8601, build_annotation_tree, AnnotationNode, collect_descendants, renumber_children};
 
@@ -12,107 +11,9 @@ pub(crate) fn SpectrogramSettingsPanel() -> impl IntoView {
 
     view! {
         <div class="sidebar-panel">
-            // Gain/Range/Contrast — always shown (applies to all tile modes)
+            // Intensity sliders moved to DSP panel (floating combo button)
             <div class="setting-group">
-                <div class="setting-group-title">"Intensity"</div>
-                <SliderRow
-                    label="Gain"
-                    signal=state.spect_gain_db
-                    min=-40.0
-                    max=40.0
-                    step=1.0
-                    default=0.0
-                    format_value=Callback::new(move |v: f32| {
-                        if state.display_auto_gain.get() {
-                            "auto".to_string()
-                        } else {
-                            format!("{:+.0} dB", v)
-                        }
-                    })
-                    on_change=Callback::new(move |_: f32| {
-                        state.display_auto_gain.set(false);
-                    })
-                />
-                <SliderRow
-                    label="Range"
-                    signal=state.spect_range_db
-                    min=20.0
-                    max=120.0
-                    step=5.0
-                    default=120.0
-                    format_value=Callback::new(|v: f32| format!("{:.0} dB", v))
-                    on_change=Callback::new(move |v: f32| {
-                        state.spect_floor_db.set(-v);
-                    })
-                />
-                <SliderRow
-                    label="Contrast"
-                    signal=state.spect_gamma
-                    min=0.2
-                    max=3.0
-                    step=0.05
-                    default=1.0
-                    format_value=Callback::new(|g: f32| {
-                        if g == 1.0 { "linear".to_string() }
-                        else { format!("{:.2}", g) }
-                    })
-                />
-                <div class="setting-row">
-                    <label class="setting-label" style="display:flex;align-items:center;gap:4px;cursor:pointer">
-                        <input
-                            type="checkbox"
-                            prop:checked=move || state.display_auto_gain.get()
-                            on:change=move |ev: web_sys::Event| {
-                                let target = ev.target().unwrap();
-                                let input: web_sys::HtmlInputElement = target.unchecked_into();
-                                state.display_auto_gain.set(input.checked());
-                            }
-                        />
-                        "Auto gain"
-                    </label>
-                </div>
-                <div class="setting-row">
-                    <label class="setting-label" style="display:flex;align-items:center;gap:4px;cursor:pointer">
-                        <input
-                            type="checkbox"
-                            prop:checked=move || state.display_eq.get()
-                            on:change=move |ev: web_sys::Event| {
-                                let target = ev.target().unwrap();
-                                let input: web_sys::HtmlInputElement = target.unchecked_into();
-                                state.display_eq.set(input.checked());
-                            }
-                        />
-                        "Show EQ"
-                    </label>
-                </div>
-                <div class="setting-row">
-                    <label class="setting-label" style="display:flex;align-items:center;gap:4px;cursor:pointer">
-                        <input
-                            type="checkbox"
-                            prop:checked=move || state.display_noise_filter.get()
-                            on:change=move |ev: web_sys::Event| {
-                                let target = ev.target().unwrap();
-                                let input: web_sys::HtmlInputElement = target.unchecked_into();
-                                state.display_noise_filter.set(input.checked());
-                            }
-                        />
-                        "Show noise filter"
-                    </label>
-                </div>
-                <div class="setting-row">
-                    <button
-                        class="setting-button"
-                        on:click=move |_| {
-                            state.spect_gain_db.set(0.0);
-                            state.spect_floor_db.set(-120.0);
-                            state.spect_range_db.set(120.0);
-                            state.spect_gamma.set(1.0);
-                            state.display_auto_gain.set(false);
-                            state.display_eq.set(false);
-                            state.display_noise_filter.set(false);
-                        }
-                    >"Reset"</button>
-                </div>
+                <div class="setting-group-title">"Spectrogram"</div>
                 <div class="setting-row">
                     <span class="setting-label">"FFT size"</span>
                     <select

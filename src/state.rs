@@ -333,6 +333,47 @@ impl FftMode {
     }
 }
 
+/// Display filter mode: controls how each processing stage affects the spectrogram.
+#[derive(Clone, Copy, Debug, PartialEq, Default)]
+pub enum DisplayFilterMode {
+    /// Stage is disabled for display.
+    #[default]
+    Off,
+    /// Automatic/smart defaults for display.
+    Auto,
+    /// Use same settings as playback.
+    Same,
+    /// Custom display-only settings (NR strength, Gain brightness).
+    Custom,
+}
+
+impl DisplayFilterMode {
+    pub const ALL: [DisplayFilterMode; 4] = [
+        DisplayFilterMode::Off,
+        DisplayFilterMode::Auto,
+        DisplayFilterMode::Same,
+        DisplayFilterMode::Custom,
+    ];
+
+    pub fn short_label(self) -> &'static str {
+        match self {
+            Self::Off => "off",
+            Self::Auto => "aut",
+            Self::Same => "sam",
+            Self::Custom => "cst",
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Off => "Off",
+            Self::Auto => "Auto",
+            Self::Same => "Same",
+            Self::Custom => "Custom",
+        }
+    }
+}
+
 /// Auto-gain strategy.
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
 pub enum GainMode {
@@ -376,6 +417,7 @@ pub enum LayerPanel {
     RecordMode,
     Channel,
     Gain,
+    DisplayFilter,
 }
 
 /// A navigation history entry (for overview back/forward buttons).
@@ -776,6 +818,20 @@ pub struct AppState {
     pub normal_saved_display_eq: RwSignal<bool>,
     pub normal_saved_display_noise_filter: RwSignal<bool>,
 
+    // Display DSP filter panel (per-stage control of spectrogram processing)
+    pub display_filter_enabled: RwSignal<bool>,
+    pub display_filter_eq: RwSignal<DisplayFilterMode>,
+    pub display_filter_notch: RwSignal<DisplayFilterMode>,
+    pub display_filter_nr: RwSignal<DisplayFilterMode>,
+    pub display_filter_transform: RwSignal<DisplayFilterMode>,
+    pub display_filter_gain: RwSignal<DisplayFilterMode>,
+    // Custom NR settings (display-only)
+    pub display_nr_strength: RwSignal<f64>,
+    // Custom Gain settings (display-only brightness offset)
+    pub display_custom_gain_db: RwSignal<f32>,
+    // Auto-learned noise floor for display (computed from first ~500ms of file)
+    pub display_auto_noise_floor: RwSignal<Option<crate::dsp::spectral_sub::NoiseFloor>>,
+
     // Bat Book
     pub bat_book_open: RwSignal<bool>,
     pub bat_book_region: RwSignal<crate::bat_book::types::BatBookRegion>,
@@ -995,6 +1051,16 @@ impl AppState {
             normal_saved_display_auto_gain: RwSignal::new(false),
             normal_saved_display_eq: RwSignal::new(false),
             normal_saved_display_noise_filter: RwSignal::new(false),
+
+            display_filter_enabled: RwSignal::new(false),
+            display_filter_eq: RwSignal::new(DisplayFilterMode::Off),
+            display_filter_notch: RwSignal::new(DisplayFilterMode::Off),
+            display_filter_nr: RwSignal::new(DisplayFilterMode::Auto),
+            display_filter_transform: RwSignal::new(DisplayFilterMode::Off),
+            display_filter_gain: RwSignal::new(DisplayFilterMode::Auto),
+            display_nr_strength: RwSignal::new(0.8),
+            display_custom_gain_db: RwSignal::new(0.0),
+            display_auto_noise_floor: RwSignal::new(None),
 
             bat_book_open: RwSignal::new(false),
             bat_book_region: RwSignal::new(crate::bat_book::types::BatBookRegion::Global),

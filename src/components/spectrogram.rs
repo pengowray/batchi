@@ -6,7 +6,7 @@ use std::cell::Cell;
 use std::rc::Rc;
 use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement, MouseEvent};
 use crate::canvas::spectrogram_renderer::{self, Colormap, ColormapMode, FreqMarkerState, FreqShiftMode, FlowAlgo, PreRendered, SpectDisplaySettings};
-use crate::state::{AppState, CanvasTool, ColormapPreference, SpectrogramHandle, MainView, PlaybackMode, Selection, SpectrogramDisplay};
+use crate::state::{AppState, CanvasTool, ColormapPreference, DisplayFilterMode, SpectrogramHandle, MainView, PlaybackMode, Selection, SpectrogramDisplay};
 
 /// Compute per-row dB adjustments for display EQ and noise filtering.
 /// Returns None if no adjustments are needed (both checkboxes off).
@@ -80,10 +80,28 @@ fn compute_freq_adjustments(state: &AppState, file_max_freq: f64, tile_height: u
             }
         }
 
-        // Spectral subtraction
-        if state.noise_reduce_enabled.get_untracked() {
-            if let Some(nf) = state.noise_reduce_floor.get_untracked() {
-                let strength = state.noise_reduce_strength.get_untracked();
+        // Spectral subtraction: use display auto noise floor when DSP NR is Auto,
+        // custom strength when Custom, or playback noise floor when Same/fallback.
+        {
+            let dsp_enabled = state.display_filter_enabled.get_untracked();
+            let nr_mode = state.display_filter_nr.get_untracked();
+
+            let (nf_opt, strength) = if dsp_enabled && matches!(nr_mode, DisplayFilterMode::Auto) {
+                // Auto: use display-specific auto-learned floor
+                (state.display_auto_noise_floor.get_untracked(), 0.8)
+            } else if dsp_enabled && matches!(nr_mode, DisplayFilterMode::Custom) {
+                // Custom: prefer display auto floor with custom strength
+                let floor = state.display_auto_noise_floor.get_untracked()
+                    .or_else(|| state.noise_reduce_floor.get_untracked());
+                (floor, state.display_nr_strength.get_untracked())
+            } else if state.noise_reduce_enabled.get_untracked() {
+                // Same/fallback: use playback noise floor
+                (state.noise_reduce_floor.get_untracked(), state.noise_reduce_strength.get_untracked())
+            } else {
+                (None, 0.0)
+            };
+
+            if let Some(nf) = nf_opt {
                 let nf_bins = nf.bin_magnitudes.len();
                 let nf_max_freq = nf.sample_rate as f64 / 2.0;
                 for row in 0..tile_height {
@@ -344,6 +362,15 @@ pub fn Spectrogram() -> impl IntoView {
         let _nr_enabled = state.noise_reduce_enabled.get();
         let _nr_strength = state.noise_reduce_strength.get();
         let _nr_floor_v = state.noise_reduce_floor.get();
+        // Display DSP filter subscriptions
+        let _dsp_enabled = state.display_filter_enabled.get();
+        let _dsp_nr = state.display_filter_nr.get();
+        let _dsp_eq = state.display_filter_eq.get();
+        let _dsp_notch = state.display_filter_notch.get();
+        let _dsp_gain = state.display_filter_gain.get();
+        let _dsp_nr_strength = state.display_nr_strength.get();
+        let _dsp_gain_db = state.display_custom_gain_db.get();
+        let _dsp_auto_floor = state.display_auto_noise_floor.get();
         let annotation_store = state.annotation_store.get();
         let selected_annotation = state.selected_annotation_id.get();
         let _pre = pre_rendered.track();

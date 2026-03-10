@@ -163,6 +163,8 @@ pub fn HfrButton() -> impl IntoView {
                 state.display_eq.set(state.zc_saved_display_eq.get_untracked());
                 state.display_noise_filter.set(state.zc_saved_display_noise_filter.get_untracked());
             }
+            // Note: display_filter_enabled and per-stage modes persist across ZC transitions
+            // (they are not reset — the resolution Effect re-applies them automatically).
         });
     }
 
