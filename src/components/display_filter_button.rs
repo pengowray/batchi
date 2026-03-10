@@ -33,6 +33,7 @@ fn DspFilterRow(
                     let is_custom = mode == DisplayFilterMode::Custom;
                     let is_auto = mode == DisplayFilterMode::Auto;
                     let disabled = (is_custom && !custom_available) || (is_auto && !auto_available);
+                    let is_same = mode == DisplayFilterMode::Same;
                     view! {
                         <button
                             class=move || {
@@ -52,6 +53,11 @@ fn DspFilterRow(
                             }
                         >
                             {mode.short_label()}
+                            {is_same.then(|| view! {
+                                <span class=move || {
+                                    if playback_active.get() { "sam-dot active" } else { "sam-dot inactive" }
+                                }></span>
+                            })}
                         </button>
                     }
                 }).collect_view()}
