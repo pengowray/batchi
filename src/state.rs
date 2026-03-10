@@ -830,8 +830,6 @@ pub struct AppState {
     pub display_filter_gain: RwSignal<DisplayFilterMode>,
     // Custom NR settings (display-only)
     pub display_nr_strength: RwSignal<f64>,
-    // Custom Gain settings (display-only brightness offset)
-    pub display_custom_gain_db: RwSignal<f32>,
     // Auto-learned noise floor for display (computed from first ~500ms of file)
     pub display_auto_noise_floor: RwSignal<Option<crate::dsp::spectral_sub::NoiseFloor>>,
 
@@ -1063,7 +1061,6 @@ impl AppState {
             display_filter_transform: RwSignal::new(DisplayFilterMode::Off),
             display_filter_gain: RwSignal::new(DisplayFilterMode::Auto),
             display_nr_strength: RwSignal::new(0.8),
-            display_custom_gain_db: RwSignal::new(0.0),
             display_auto_noise_floor: RwSignal::new(None),
 
             bat_book_open: RwSignal::new(false),

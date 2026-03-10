@@ -136,9 +136,6 @@ pub fn DisplayFilterButton() -> impl IntoView {
     let show_nr_custom = Signal::derive(move || {
         enabled.get() && state.display_filter_nr.get() == DisplayFilterMode::Custom
     });
-    let show_gain_custom = Signal::derive(move || {
-        enabled.get() && state.display_filter_gain.get() == DisplayFilterMode::Custom
-    });
 
     view! {
         <ComboButton
@@ -198,36 +195,6 @@ pub fn DisplayFilterButton() -> impl IntoView {
                                 on:dblclick=move |_| strength.set(0.8)
                             />
                             <span class="dsp-custom-value">{move || format!("{:.2}", strength.get())}</span>
-                        </div>
-                    </div>
-                }
-            })}
-
-            // Custom Gain section
-            {move || show_gain_custom.get().then(|| {
-                let gain = state.display_custom_gain_db;
-                view! {
-                    <div class="dsp-custom-section">
-                        <div class="dsp-custom-title">"Display Gain"</div>
-                        <div class="dsp-custom-slider-row">
-                            <input
-                                type="range"
-                                class="setting-range"
-                                min="-40" max="40" step="1"
-                                prop:value=move || gain.get().to_string()
-                                on:input=move |ev: web_sys::Event| {
-                                    let target = ev.target().unwrap();
-                                    let input: web_sys::HtmlInputElement = target.unchecked_into();
-                                    if let Ok(v) = input.value().parse::<f32>() {
-                                        gain.set(v);
-                                    }
-                                }
-                                on:dblclick=move |_| gain.set(0.0)
-                            />
-                            <span class="dsp-custom-value">{move || {
-                                let v = gain.get();
-                                if v >= 0.0 { format!("+{:.0} dB", v) } else { format!("{:.0} dB", v) }
-                            }}</span>
                         </div>
                     </div>
                 }
@@ -333,7 +300,6 @@ pub fn DisplayFilterButton() -> impl IntoView {
                             state.display_filter_transform.set(DisplayFilterMode::Off);
                             state.display_filter_gain.set(DisplayFilterMode::Auto);
                             state.display_nr_strength.set(0.8);
-                            state.display_custom_gain_db.set(0.0);
                         }
                     >"Reset"</button>
                 </div>
