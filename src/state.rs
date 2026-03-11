@@ -1091,7 +1091,7 @@ impl AppState {
             display_filter_nr: RwSignal::new(DisplayFilterMode::Auto),
             display_filter_transform: RwSignal::new(DisplayFilterMode::Off),
             display_filter_gain: RwSignal::new(DisplayFilterMode::Auto),
-            display_filter_decimate: RwSignal::new(DisplayFilterMode::Off),
+            display_filter_decimate: RwSignal::new(DisplayFilterMode::Auto),
             display_decimate_rate: RwSignal::new(48000),
             display_decimate_effective: RwSignal::new(0),
             display_gain_boost: RwSignal::new(0.0),

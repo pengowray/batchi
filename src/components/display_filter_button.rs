@@ -334,7 +334,7 @@ pub fn DisplayFilterButton() -> impl IntoView {
                             state.display_filter_nr.set(DisplayFilterMode::Auto);
                             state.display_filter_transform.set(DisplayFilterMode::Off);
                             state.display_filter_gain.set(DisplayFilterMode::Auto);
-                            state.display_filter_decimate.set(DisplayFilterMode::Off);
+                            state.display_filter_decimate.set(DisplayFilterMode::Auto);
                             state.display_decimate_rate.set(48000);
                             state.display_nr_strength.set(0.8);
                         }

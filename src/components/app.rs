@@ -295,7 +295,10 @@ pub fn App() -> impl IntoView {
         // Decimation — resolve effective target rate (0 = no decimation)
         let decim_rate = match state.display_filter_decimate.get() {
             DisplayFilterMode::Off => 0,
-            DisplayFilterMode::Auto => 44100, // auto = 44.1kHz
+            DisplayFilterMode::Auto => {
+                // Only decimate when xform display is active
+                if xform_on { 44100 } else { 0 }
+            }
             DisplayFilterMode::Same => 0, // no playback decimation yet
             DisplayFilterMode::Custom => state.display_decimate_rate.get(),
         };
