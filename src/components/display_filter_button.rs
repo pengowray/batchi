@@ -117,8 +117,9 @@ pub fn DisplayFilterButton() -> impl IntoView {
             state.display_filter_nr.get(),
             state.display_filter_transform.get(),
             state.display_filter_gain.get(),
+            state.display_filter_decimate.get(),
         ].iter().filter(|m| **m != DisplayFilterMode::Off).count();
-        format!("{}/5", count)
+        format!("{}/6", count)
     });
 
     let toggle_menu = Callback::new(move |()| {
@@ -131,10 +132,14 @@ pub fn DisplayFilterButton() -> impl IntoView {
     let nr_active = Signal::derive(move || state.noise_reduce_enabled.get());
     let transform_active = Signal::derive(move || state.playback_mode.get() != PlaybackMode::Normal);
     let gain_active = Signal::derive(move || state.gain_mode.get() != GainMode::Off);
+    let decim_active = Signal::derive(move || false); // No playback-side decimation yet
 
     // Whether custom NR or Gain sections should show
     let show_nr_custom = Signal::derive(move || {
         enabled.get() && state.display_filter_nr.get() == DisplayFilterMode::Custom
+    });
+    let show_decim_custom = Signal::derive(move || {
+        enabled.get() && state.display_filter_decimate.get() == DisplayFilterMode::Custom
     });
 
     view! {
@@ -172,6 +177,7 @@ pub fn DisplayFilterButton() -> impl IntoView {
             <DspFilterRow label="NR" signal=state.display_filter_nr playback_active=nr_active custom_available=true />
             <DspFilterRow label="Xform" signal=state.display_filter_transform playback_active=transform_active custom_available=false auto_available=false />
             <DspFilterRow label="Gain" signal=state.display_filter_gain playback_active=gain_active custom_available=true />
+            <DspFilterRow label="Decim" signal=state.display_filter_decimate playback_active=decim_active custom_available=true />
 
             // Custom NR section
             {move || show_nr_custom.get().then(|| {
@@ -195,6 +201,32 @@ pub fn DisplayFilterButton() -> impl IntoView {
                                 on:dblclick=move |_| strength.set(0.8)
                             />
                             <span class="dsp-custom-value">{move || format!("{:.2}", strength.get())}</span>
+                        </div>
+                    </div>
+                }
+            })}
+
+            // Custom Decimate rate section
+            {move || show_decim_custom.get().then(|| {
+                let rate = state.display_decimate_rate;
+                let rates: [(u32, &str); 4] = [
+                    (44100, "44.1k"),
+                    (48000, "48k"),
+                    (96000, "96k"),
+                    (192000, "192k"),
+                ];
+                view! {
+                    <div class="dsp-custom-section">
+                        <div class="dsp-custom-title">"Decimate Rate"</div>
+                        <div class="dsp-filter-seg" style="justify-content: center; gap: 2px; padding: 2px 4px;">
+                            {rates.into_iter().map(|(r, label)| {
+                                view! {
+                                    <button
+                                        class=move || if rate.get() == r { "sel" } else { "" }
+                                        on:click=move |_| rate.set(r)
+                                    >{label}</button>
+                                }
+                            }).collect_view()}
                         </div>
                     </div>
                 }
@@ -302,6 +334,8 @@ pub fn DisplayFilterButton() -> impl IntoView {
                             state.display_filter_nr.set(DisplayFilterMode::Auto);
                             state.display_filter_transform.set(DisplayFilterMode::Off);
                             state.display_filter_gain.set(DisplayFilterMode::Auto);
+                            state.display_filter_decimate.set(DisplayFilterMode::Off);
+                            state.display_decimate_rate.set(48000);
                             state.display_nr_strength.set(0.8);
                         }
                     >"Reset"</button>

@@ -290,74 +290,18 @@ pub fn App() -> impl IntoView {
         if gain_filter == DisplayFilterMode::Off {
             state.spect_gain_db.set(0.0);
         }
+
+        // Decimation — resolve effective target rate (0 = no decimation)
+        let decim_rate = match state.display_filter_decimate.get() {
+            DisplayFilterMode::Off => 0,
+            DisplayFilterMode::Auto => 44100, // auto = 44.1kHz
+            DisplayFilterMode::Same => 0, // no playback decimation yet
+            DisplayFilterMode::Custom => state.display_decimate_rate.get(),
+        };
+        state.display_decimate_effective.set(decim_rate);
     });
 
-    // Auto-zoom frequency range when xform view toggles on/off or params change.
-    {
-        let prev_xform = RwSignal::new(false);
-        Effect::new(move |_| {
-            let xform_on = state.display_transform.get();
-            // Subscribe to mode and factor signals so we re-zoom when they change
-            let mode = state.playback_mode.get();
-            let _te = state.te_factor.get();
-            let _ps = state.ps_factor.get();
-            let _pv = state.pv_factor.get();
-            let _zc = state.zc_factor.get();
-            let _het_cut = state.het_cutoff.get();
-            let was_on = prev_xform.get_untracked();
-            prev_xform.set(xform_on);
-
-            if xform_on && !was_on {
-                // Save current freq range before auto-zoom
-                state.xform_saved_min_freq.set(Some(state.min_display_freq.get_untracked()));
-                state.xform_saved_max_freq.set(Some(state.max_display_freq.get_untracked()));
-            }
-
-            if xform_on {
-                // Compute output max frequency
-                let files = state.files.get_untracked();
-                let file_max = state.current_file_index.get_untracked()
-                    .and_then(|i| files.get(i))
-                    .map(|f| f.spectrogram.max_freq)
-                    .unwrap_or(96_000.0);
-                let output_max = match mode {
-                    PlaybackMode::Normal => file_max,
-                    PlaybackMode::Heterodyne => {
-                        let cutoff = state.het_cutoff.get_untracked();
-                        (cutoff * 2.0).min(file_max)
-                    }
-                    PlaybackMode::TimeExpansion => {
-                        let f = state.te_factor.get_untracked();
-                        if f.abs() > 1.0 { file_max / f.abs() } else { file_max }
-                    }
-                    PlaybackMode::PitchShift => {
-                        let f = state.ps_factor.get_untracked();
-                        if f.abs() > 1.0 { file_max / f.abs() } else { file_max }
-                    }
-                    PlaybackMode::PhaseVocoder => {
-                        let f = state.pv_factor.get_untracked();
-                        if f.abs() > 1.0 { file_max / f.abs() } else { file_max }
-                    }
-                    PlaybackMode::ZeroCrossing => {
-                        let f = state.zc_factor.get_untracked();
-                        if f > 1.0 { file_max / f } else { file_max }
-                    }
-                };
-                state.min_display_freq.set(Some(0.0));
-                state.max_display_freq.set(Some(output_max));
-            } else if !xform_on && was_on {
-                // Restore saved freq range
-                if let Some(saved_min) = state.xform_saved_min_freq.get_untracked() {
-                    state.min_display_freq.set(saved_min);
-                }
-                if let Some(saved_max) = state.xform_saved_max_freq.get_untracked() {
-                    state.max_display_freq.set(saved_max);
-                }
-                state.xform_saved_min_freq.set(None);
-                state.xform_saved_max_freq.set(None);
-            }
-        });
-    }
+    // (Auto-zoom Effect removed — decimation now controls the frequency axis via sample rate)
 
     // Auto-learn display noise floor when NR is Auto/Custom and a file is loaded.
     // Re-triggers when file changes or NR mode changes to Auto/Custom.

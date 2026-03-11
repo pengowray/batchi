@@ -812,9 +812,6 @@ pub struct AppState {
     /// When true, spectrogram tiles are computed from DSP-transformed audio
     /// (same transform as playback mode: pitch shift, heterodyne, etc.)
     pub display_transform: RwSignal<bool>,
-    /// Saved frequency range before xform auto-zoom (restored when xform toggles off)
-    pub xform_saved_min_freq: RwSignal<Option<Option<f64>>>,
-    pub xform_saved_max_freq: RwSignal<Option<Option<f64>>>,
     // ZC saved display settings (restored when entering ZC; defaults: eq=true, noise=true)
     pub zc_saved_display_auto_gain: RwSignal<bool>,
     pub zc_saved_display_eq: RwSignal<bool>,
@@ -833,6 +830,12 @@ pub struct AppState {
     pub display_filter_gain: RwSignal<DisplayFilterMode>,
     /// Extra dB boost applied to spectrogram display from Auto/Same gain modes.
     pub display_gain_boost: RwSignal<f32>,
+    // Decimation (downsample after DSP transform)
+    pub display_filter_decimate: RwSignal<DisplayFilterMode>,
+    /// Target decimation sample rate in Hz (used for Custom mode; Auto computes from transform).
+    pub display_decimate_rate: RwSignal<u32>,
+    /// Effective decimation target rate resolved from display_filter_decimate mode (0 = no decimation).
+    pub display_decimate_effective: RwSignal<u32>,
     // Custom NR settings (display-only)
     pub display_nr_strength: RwSignal<f64>,
     // Auto-learned noise floor for display (computed from first ~500ms of file)
@@ -1052,8 +1055,7 @@ impl AppState {
             display_eq: RwSignal::new(false),
             display_noise_filter: RwSignal::new(false),
             display_transform: RwSignal::new(false),
-            xform_saved_min_freq: RwSignal::new(None),
-            xform_saved_max_freq: RwSignal::new(None),
+
             zc_saved_display_auto_gain: RwSignal::new(false),
             zc_saved_display_eq: RwSignal::new(true),
             zc_saved_display_noise_filter: RwSignal::new(true),
@@ -1067,6 +1069,9 @@ impl AppState {
             display_filter_nr: RwSignal::new(DisplayFilterMode::Auto),
             display_filter_transform: RwSignal::new(DisplayFilterMode::Off),
             display_filter_gain: RwSignal::new(DisplayFilterMode::Auto),
+            display_filter_decimate: RwSignal::new(DisplayFilterMode::Off),
+            display_decimate_rate: RwSignal::new(48000),
+            display_decimate_effective: RwSignal::new(0),
             display_gain_boost: RwSignal::new(0.0),
             display_nr_strength: RwSignal::new(0.8),
             display_auto_noise_floor: RwSignal::new(None),

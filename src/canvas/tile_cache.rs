@@ -446,7 +446,17 @@ pub fn schedule_tile_lod(state: AppState, file_idx: usize, lod: u8, tile_idx: us
             samples
         };
 
-        let cols = compute_stft_columns(&samples, audio.sample_rate, actual_fft, config_hop, 0, TILE_COLS);
+        // Apply decimation if active
+        let decim_target = state.display_decimate_effective.get_untracked();
+        let (samples, effective_rate) = if decim_target > 0 && decim_target < audio.sample_rate {
+            let decimated = crate::dsp::filters::decimate(&samples, audio.sample_rate, decim_target);
+            let rate = crate::dsp::filters::decimated_rate(audio.sample_rate, decim_target);
+            (decimated, rate)
+        } else {
+            (samples, audio.sample_rate)
+        };
+
+        let cols = compute_stft_columns(&samples, effective_rate, actual_fft, config_hop, 0, TILE_COLS);
         IN_FLIGHT.with(|s| s.borrow_mut().remove(&key));
 
         if cols.is_empty() {

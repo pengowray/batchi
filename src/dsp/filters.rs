@@ -256,6 +256,44 @@ pub fn lowpass_filter(samples: &[f32], cutoff_hz: f64, sample_rate: u32) -> Vec<
     output
 }
 
+/// Decimate (downsample) audio from `source_rate` to `target_rate`.
+///
+/// Applies a 4-pass cascaded lowpass anti-aliasing filter at `target_rate / 2` Hz,
+/// then takes every M-th sample where M = source_rate / target_rate.
+///
+/// Returns the original samples unchanged if `target_rate >= source_rate`.
+/// Rounds to the nearest integer decimation factor.
+pub fn decimate(samples: &[f32], source_rate: u32, target_rate: u32) -> Vec<f32> {
+    if target_rate >= source_rate || target_rate == 0 || samples.is_empty() {
+        return samples.to_vec();
+    }
+
+    let factor = source_rate as f64 / target_rate as f64;
+    let m = factor.round() as usize;
+    if m <= 1 {
+        return samples.to_vec();
+    }
+
+    // Anti-aliasing: lowpass at Nyquist of the target rate
+    let nyquist = target_rate as f64 / 2.0;
+    let filtered = cascaded_lowpass(samples, nyquist, source_rate, 4);
+
+    // Take every M-th sample
+    filtered.iter().step_by(m).copied().collect()
+}
+
+/// Compute the effective sample rate after decimation (integer-ratio rounded).
+pub fn decimated_rate(source_rate: u32, target_rate: u32) -> u32 {
+    if target_rate >= source_rate || target_rate == 0 {
+        return source_rate;
+    }
+    let m = (source_rate as f64 / target_rate as f64).round() as u32;
+    if m <= 1 {
+        return source_rate;
+    }
+    source_rate / m
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
