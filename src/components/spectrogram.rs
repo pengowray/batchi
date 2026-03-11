@@ -410,6 +410,7 @@ pub fn Spectrogram() -> impl IntoView {
         let _dsp_nr_strength = state.display_nr_strength.get();
         let _dsp_auto_floor = state.display_auto_noise_floor.get();
         let _dsp_transform = state.display_transform.get();
+        let _dsp_decimate = state.display_decimate_effective.get();
         let annotation_store = state.annotation_store.get();
         let selected_annotation = state.selected_annotation_id.get();
         let _pre = pre_rendered.track();
@@ -444,14 +445,26 @@ pub fn Spectrogram() -> impl IntoView {
             .map(|f| f.spectrogram.time_resolution)
             .unwrap_or(1.0);
         let scroll_col = scroll / time_res;
-        let file_max_freq = idx
+        let original_max_freq = idx
             .and_then(|i| files.get(i))
             .map(|f| f.spectrogram.max_freq)
             .unwrap_or(96_000.0);
-        let max_freq = max_display_freq.unwrap_or(file_max_freq);
+        // When decimation is active, tiles are computed at the decimated rate
+        let decim_effective = state.display_decimate_effective.get_untracked();
+        let original_sample_rate = idx
+            .and_then(|i| files.get(i))
+            .map(|f| f.spectrogram.sample_rate)
+            .unwrap_or(192_000);
+        let file_max_freq = if decim_effective > 0 && decim_effective < original_sample_rate {
+            let effective_rate = crate::dsp::filters::decimated_rate(original_sample_rate, decim_effective);
+            effective_rate as f64 / 2.0
+        } else {
+            original_max_freq
+        };
+        let max_freq = max_display_freq.unwrap_or(file_max_freq).min(file_max_freq);
         let min_freq = min_display_freq.unwrap_or(0.0);
         let freq_crop_lo = min_freq / file_max_freq;
-        let freq_crop_hi = max_freq / file_max_freq;
+        let freq_crop_hi = (max_freq / file_max_freq).min(1.0);
 
         // --- Normal spectrogram mode ---
 
@@ -606,12 +619,20 @@ pub fn Spectrogram() -> impl IntoView {
             } else {
                 spectrogram_renderer::TileSource::Normal
             };
+            // Skip preview fallback when xform/decimation is active (preview shows original untransformed data)
+            let xform_on = state.display_transform.get_untracked();
+            let decim_on = state.display_decimate_effective.get_untracked() > 0;
+            let preview_ref = if xform_on || decim_on {
+                None
+            } else {
+                file.and_then(|f| f.preview.as_ref())
+            };
             let drawn = spectrogram_renderer::blit_tiles_viewport(
                 &ctx, canvas, file_idx_val, total_cols,
                 scroll_col, zoom, freq_crop_lo, freq_crop_hi, colormap,
                 &display_settings,
                 freq_adjustments.as_deref(),
-                file.and_then(|f| f.preview.as_ref()),
+                preview_ref,
                 scroll, visible_time, duration,
                 tile_source,
             );
@@ -812,10 +833,15 @@ pub fn Spectrogram() -> impl IntoView {
             };
 
             let xform_on = state.display_transform.get_untracked();
-            // When xform is on, adjust marker state for right-side labels
-            let marker_state = if xform_on {
+            let decim_on = state.display_decimate_effective.get_untracked() > 0;
+            // When xform/decim is on, adjust marker state: right-side labels, hide focus handles
+            let marker_state = if xform_on || decim_on {
                 FreqMarkerState {
                     mouse_in_label_area: mouse_freq.is_some() && mouse_cx > (display_w as f64 - LABEL_AREA_WIDTH),
+                    ff_lo: 0.0,
+                    ff_hi: 0.0,
+                    ff_drag_active: false,
+                    ff_handles_active: false,
                     ..marker_state
                 }
             } else {
