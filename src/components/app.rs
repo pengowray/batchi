@@ -21,7 +21,7 @@ use crate::components::file_sidebar::{fetch_demo_index, load_single_demo};
 use crate::components::bat_book_tab::BatBookTab;
 use crate::components::bat_book_strip::BatBookStrip;
 use crate::components::bat_book_ref_panel::BatBookRefPanel;
-use crate::components::display_filter_button::DisplayFilterButton;
+use crate::components::display_filter_button::DspFilterRow;
 
 #[component]
 pub fn App() -> impl IntoView {
@@ -729,7 +729,7 @@ fn MainArea() -> impl IntoView {
                         <div class="main-view">
                             // Show the selected main view
                             {move || match state.main_view.get() {
-                                MainView::Spectrogram | MainView::Flow => view! { <Spectrogram /> }.into_any(),
+                                MainView::Spectrogram | MainView::XformedSpec | MainView::Flow => view! { <Spectrogram /> }.into_any(),
                                 MainView::Waveform => view! {
                                     <div class="main-waveform-full">
                                         <Waveform />
@@ -829,7 +829,7 @@ fn layer_opt_class(active: bool) -> &'static str {
 }
 
 /// Floating split-button (top-left of main overlays): click cycles Spec/Wave,
-/// down-arrow opens a dropdown with all view modes.
+/// down-arrow opens a dropdown with all view modes + DSP settings.
 #[component]
 fn MainViewButton() -> impl IntoView {
     use crate::components::combo_button::ComboButton;
@@ -846,7 +846,7 @@ fn MainViewButton() -> impl IntoView {
     let left_click = Callback::new(move |_: web_sys::MouseEvent| {
         state.main_view.update(|v| {
             *v = match *v {
-                MainView::Spectrogram => MainView::Waveform,
+                MainView::Spectrogram | MainView::XformedSpec => MainView::Waveform,
                 _ => MainView::Spectrogram,
             };
         });
@@ -861,10 +861,74 @@ fn MainViewButton() -> impl IntoView {
 
     let set_view = move |mode: MainView| {
         move |_: web_sys::MouseEvent| {
+            let prev = state.main_view.get_untracked();
             state.main_view.set(mode);
+            // Auto-enable/disable DSP filters when switching to/from XformedSpec
+            if mode == MainView::XformedSpec && prev != MainView::XformedSpec {
+                state.display_filter_enabled.set(true);
+                state.display_filter_eq.set(DisplayFilterMode::Same);
+                state.display_filter_notch.set(DisplayFilterMode::Same);
+                state.display_filter_nr.set(DisplayFilterMode::Same);
+                state.display_filter_transform.set(DisplayFilterMode::Same);
+                state.display_filter_gain.set(DisplayFilterMode::Same);
+                state.display_filter_decimate.set(DisplayFilterMode::Same);
+            } else if mode != MainView::XformedSpec && prev == MainView::XformedSpec {
+                state.display_filter_enabled.set(false);
+            }
             state.layer_panel_open.set(None);
         }
     };
+
+    // Playback active indicators (for DSP rows)
+    let eq_active = Signal::derive(move || state.filter_enabled.get());
+    let notch_active = Signal::derive(move || state.notch_enabled.get());
+    let nr_active = Signal::derive(move || state.noise_reduce_enabled.get());
+    let transform_active = Signal::derive(move || state.playback_mode.get() != PlaybackMode::Normal);
+    let gain_active = Signal::derive(move || state.gain_mode.get() != GainMode::Off);
+    let decim_active = Signal::derive(move || false);
+
+    let browser_is_resampling = Signal::derive(move || {
+        let bsr = state.browser_sample_rate.get();
+        if bsr == 0 { return false; }
+        let files = state.files.get();
+        let idx = state.current_file_index.get();
+        let file_rate = idx.and_then(|i| files.get(i)).map(|f| f.audio.sample_rate).unwrap_or(0);
+        if file_rate == 0 { return false; }
+        let decim = state.display_decimate_effective.get();
+        let effective = if decim > 0 && decim < file_rate {
+            crate::dsp::filters::decimated_rate(file_rate, decim)
+        } else {
+            file_rate
+        };
+        effective != bsr
+    });
+
+    let resam_tooltip = Signal::derive(move || {
+        let bsr = state.browser_sample_rate.get();
+        if bsr == 0 { return String::new(); }
+        let files = state.files.get();
+        let idx = state.current_file_index.get();
+        let file_rate = idx.and_then(|i| files.get(i)).map(|f| f.audio.sample_rate).unwrap_or(0);
+        if file_rate == 0 { return String::new(); }
+        let decim = state.display_decimate_effective.get();
+        let effective = if decim > 0 && decim < file_rate {
+            crate::dsp::filters::decimated_rate(file_rate, decim)
+        } else {
+            file_rate
+        };
+        if effective != bsr {
+            format!("Browser resampling {}Hz to {}Hz output", effective, bsr)
+        } else {
+            format!("Output matches browser rate ({}Hz)", bsr)
+        }
+    });
+
+    let show_nr_custom = Signal::derive(move || {
+        state.main_view.get() == MainView::XformedSpec && state.display_filter_nr.get() == DisplayFilterMode::Custom
+    });
+    let show_decim_custom = Signal::derive(move || {
+        state.main_view.get() == MainView::XformedSpec && state.display_filter_decimate.get() == DisplayFilterMode::Custom
+    });
 
     view! {
         <ComboButton
@@ -878,7 +942,7 @@ fn MainViewButton() -> impl IntoView {
             toggle_menu=toggle_menu
             left_title="Toggle view (Spectrogram / Waveform)"
             right_title="View mode menu"
-            panel_style="min-width: 140px;"
+            panel_style="min-width: 240px;"
         >
             <div class="layer-panel-title">"View Mode"</div>
             {MainView::ALL.iter().map(|&mode| {
@@ -891,8 +955,88 @@ fn MainViewButton() -> impl IntoView {
                     </button>
                 }
             }).collect_view()}
-            // FFT size selector (when Spectrogram is active)
-            {move || (state.main_view.get() == MainView::Spectrogram).then(|| {
+
+            // DSP filter rows (only when XformedSpec is active)
+            {move || (state.main_view.get() == MainView::XformedSpec).then(|| {
+                view! {
+                    <hr />
+                    <div class="layer-panel-title">"Display Processing"</div>
+                    <div class="dsp-filter-row dsp-filter-header">
+                        <span class="dsp-filter-label"></span>
+                        <div class="dsp-filter-seg">
+                            <span>"off"</span>
+                            <span>"aut"</span>
+                            <span>"sam"</span>
+                            <span>"cst"</span>
+                        </div>
+                        <div class="dsp-filter-indicator-header" title="Playback active">
+                            {"\u{1F50A}"}
+                        </div>
+                    </div>
+                    <DspFilterRow label="EQ" signal=state.display_filter_eq playback_active=eq_active custom_available=false />
+                    <DspFilterRow label="Notch" signal=state.display_filter_notch playback_active=notch_active custom_available=false auto_available=false />
+                    <DspFilterRow label="NR" signal=state.display_filter_nr playback_active=nr_active custom_available=false />
+                    <DspFilterRow label="Xform" signal=state.display_filter_transform playback_active=transform_active custom_available=false auto_available=false />
+                    <DspFilterRow label="Gain" signal=state.display_filter_gain playback_active=gain_active custom_available=true />
+                    <DspFilterRow label="Resam" signal=state.display_filter_decimate playback_active=decim_active custom_available=true browser_resampling=browser_is_resampling sam_tooltip=resam_tooltip />
+                }
+            })}
+
+            // Custom NR section
+            {move || show_nr_custom.get().then(|| {
+                let strength = state.display_nr_strength;
+                view! {
+                    <div class="dsp-custom-section">
+                        <div class="dsp-custom-title">"NR Strength"</div>
+                        <div class="dsp-custom-slider-row">
+                            <input
+                                type="range"
+                                class="setting-range"
+                                min="0" max="2" step="0.05"
+                                prop:value=move || strength.get().to_string()
+                                on:input=move |ev: web_sys::Event| {
+                                    let target = ev.target().unwrap();
+                                    let input: web_sys::HtmlInputElement = target.unchecked_into();
+                                    if let Ok(v) = input.value().parse::<f64>() {
+                                        strength.set(v);
+                                    }
+                                }
+                                on:dblclick=move |_| strength.set(0.8)
+                            />
+                            <span class="dsp-custom-value">{move || format!("{:.2}", strength.get())}</span>
+                        </div>
+                    </div>
+                }
+            })}
+
+            // Custom Decimate rate section
+            {move || show_decim_custom.get().then(|| {
+                let rate = state.display_decimate_rate;
+                let rates: [(u32, &str); 4] = [
+                    (44100, "44.1k"),
+                    (48000, "48k"),
+                    (96000, "96k"),
+                    (192000, "192k"),
+                ];
+                view! {
+                    <div class="dsp-custom-section">
+                        <div class="dsp-custom-title">"Decimate Rate"</div>
+                        <div class="dsp-filter-seg" style="justify-content: center; gap: 2px; padding: 2px 4px;">
+                            {rates.into_iter().map(|(r, label)| {
+                                view! {
+                                    <button
+                                        class=move || if rate.get() == r { "sel" } else { "" }
+                                        on:click=move |_| rate.set(r)
+                                    >{label}</button>
+                                }
+                            }).collect_view()}
+                        </div>
+                    </div>
+                }
+            })}
+
+            // FFT size selector (when any spectrogram view is active)
+            {move || matches!(state.main_view.get(), MainView::Spectrogram | MainView::XformedSpec).then(|| {
                 view! {
                     <hr />
                     <div class="layer-panel-title">"FFT Size"</div>
@@ -948,6 +1092,128 @@ fn MainViewButton() -> impl IntoView {
                     </select>
                 }
             })}
+
+            // Intensity sliders (for Spectrogram or XformedSpec)
+            {move || matches!(state.main_view.get(), MainView::Spectrogram | MainView::XformedSpec).then(|| {
+                let is_xform = state.main_view.get_untracked() == MainView::XformedSpec;
+                let gain_sig = if is_xform { state.xform_spect_gain_db } else { state.spect_gain_db };
+                let range_sig = if is_xform { state.xform_spect_range_db } else { state.spect_range_db };
+                let floor_sig = if is_xform { state.xform_spect_floor_db } else { state.spect_floor_db };
+                let gamma_sig = if is_xform { state.xform_spect_gamma } else { state.spect_gamma };
+                view! {
+                    <hr />
+                    <div class="dsp-custom-section">
+                        <div class="dsp-custom-title">"Intensity"</div>
+                        <div class="dsp-custom-slider-row">
+                            <span class="dsp-slider-label">"Gain"</span>
+                            <input
+                                type="range"
+                                class="setting-range"
+                                min="-40" max="40" step="1"
+                                prop:value=move || gain_sig.get().to_string()
+                                on:input=move |ev: web_sys::Event| {
+                                    let target = ev.target().unwrap();
+                                    let input: web_sys::HtmlInputElement = target.unchecked_into();
+                                    if let Ok(v) = input.value().parse::<f32>() {
+                                        gain_sig.set(v);
+                                        if is_xform {
+                                            state.display_filter_gain.set(DisplayFilterMode::Custom);
+                                        }
+                                        state.display_auto_gain.set(false);
+                                    }
+                                }
+                                on:dblclick=move |_| gain_sig.set(0.0)
+                            />
+                            <span class="dsp-custom-value">{move || {
+                                if is_xform {
+                                    let gain_mode = state.display_filter_gain.get();
+                                    let boost = state.display_gain_boost.get();
+                                    if gain_mode == DisplayFilterMode::Off {
+                                        "off".to_string()
+                                    } else if gain_mode == DisplayFilterMode::Auto {
+                                        if boost.abs() < 0.5 { "auto".to_string() }
+                                        else { format!("a{:+.0}", boost) }
+                                    } else if gain_mode == DisplayFilterMode::Same {
+                                        if boost.abs() < 0.5 { "same".to_string() }
+                                        else { format!("={:+.0}", boost) }
+                                    } else {
+                                        format!("{:+.0} dB", gain_sig.get())
+                                    }
+                                } else {
+                                    format!("{:+.0} dB", gain_sig.get())
+                                }
+                            }}</span>
+                        </div>
+                        <div class="dsp-custom-slider-row">
+                            <span class="dsp-slider-label">"Range"</span>
+                            <input
+                                type="range"
+                                class="setting-range"
+                                min="20" max="120" step="5"
+                                prop:value=move || range_sig.get().to_string()
+                                on:input=move |ev: web_sys::Event| {
+                                    let target = ev.target().unwrap();
+                                    let input: web_sys::HtmlInputElement = target.unchecked_into();
+                                    if let Ok(v) = input.value().parse::<f32>() {
+                                        range_sig.set(v);
+                                        floor_sig.set(-v);
+                                    }
+                                }
+                                on:dblclick=move |_| {
+                                    range_sig.set(120.0);
+                                    floor_sig.set(-120.0);
+                                }
+                            />
+                            <span class="dsp-custom-value">{move || format!("{:.0} dB", range_sig.get())}</span>
+                        </div>
+                        <div class="dsp-custom-slider-row">
+                            <span class="dsp-slider-label">"Contrast"</span>
+                            <input
+                                type="range"
+                                class="setting-range"
+                                min="0.2" max="3.0" step="0.05"
+                                prop:value=move || gamma_sig.get().to_string()
+                                on:input=move |ev: web_sys::Event| {
+                                    let target = ev.target().unwrap();
+                                    let input: web_sys::HtmlInputElement = target.unchecked_into();
+                                    if let Ok(v) = input.value().parse::<f32>() {
+                                        gamma_sig.set(v);
+                                    }
+                                }
+                                on:dblclick=move |_| gamma_sig.set(1.0)
+                            />
+                            <span class="dsp-custom-value">{move || {
+                                let g = gamma_sig.get();
+                                if g == 1.0 { "linear".to_string() } else { format!("{:.2}", g) }
+                            }}</span>
+                        </div>
+                        <div style="text-align: right; padding-top: 4px;">
+                            <button
+                                class="layer-panel-opt"
+                                style="display: inline; width: auto; padding: 2px 8px; font-size: 9px;"
+                                on:click=move |_| {
+                                    gain_sig.set(0.0);
+                                    floor_sig.set(-120.0);
+                                    range_sig.set(120.0);
+                                    gamma_sig.set(1.0);
+                                    state.display_auto_gain.set(false);
+                                    if is_xform {
+                                        state.display_filter_eq.set(DisplayFilterMode::Same);
+                                        state.display_filter_notch.set(DisplayFilterMode::Same);
+                                        state.display_filter_nr.set(DisplayFilterMode::Same);
+                                        state.display_filter_transform.set(DisplayFilterMode::Same);
+                                        state.display_filter_gain.set(DisplayFilterMode::Same);
+                                        state.display_filter_decimate.set(DisplayFilterMode::Same);
+                                        state.display_decimate_rate.set(48000);
+                                        state.display_nr_strength.set(0.8);
+                                    }
+                                }
+                            >"Reset"</button>
+                        </div>
+                    </div>
+                }
+            })}
+
             // Flow algorithm options (when Flow is active)
             {move || (state.main_view.get() == MainView::Flow).then(|| {
                 view! {
@@ -979,7 +1245,7 @@ fn MainViewButton() -> impl IntoView {
     }
 }
 
-/// Wrapper that places View and DSP buttons side-by-side in the top-left overlay area.
+/// Places the View button in the top-left overlay area.
 #[component]
 fn ViewAndDspButtons() -> impl IntoView {
     let state = expect_context::<AppState>();
@@ -990,7 +1256,6 @@ fn ViewAndDspButtons() -> impl IntoView {
                 if state.mouse_in_label_area.get() { "0" } else { "1" })
         >
             <MainViewButton />
-            <DisplayFilterButton />
         </div>
     }
 }

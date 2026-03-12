@@ -380,11 +380,12 @@ pub fn Spectrogram() -> impl IntoView {
         let detected_pulses = state.detected_pulses.get();
         let pulse_overlay = state.pulse_overlay_enabled.get();
         let selected_pulse = state.selected_pulse_index.get();
-        let _main_view = state.main_view.get();
-        let spect_floor = state.spect_floor_db.get();
-        let spect_range = state.spect_range_db.get();
-        let spect_gamma = state.spect_gamma.get();
-        let spect_gain = state.spect_gain_db.get();
+        let main_view = state.main_view.get();
+        let (spect_floor, spect_range, spect_gamma, spect_gain) = if main_view == MainView::XformedSpec {
+            (state.xform_spect_floor_db.get(), state.xform_spect_range_db.get(), state.xform_spect_gamma.get(), state.xform_spect_gain_db.get())
+        } else {
+            (state.spect_floor_db.get(), state.spect_range_db.get(), state.spect_gamma.get(), state.spect_gain_db.get())
+        };
         let debug_tiles = state.debug_tiles.get();
         let reassign_on = state.reassign_enabled.get();
         // Display-affecting checkbox subscriptions

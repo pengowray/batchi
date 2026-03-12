@@ -257,6 +257,7 @@ pub enum OverviewView {
 pub enum MainView {
     #[default]
     Spectrogram,
+    XformedSpec,
     Waveform,
     ZcChart,
     Flow,
@@ -267,6 +268,7 @@ impl MainView {
     pub fn label(self) -> &'static str {
         match self {
             Self::Spectrogram => "Spectrogram",
+            Self::XformedSpec => "Transformed Spec",
             Self::Waveform => "Waveform",
             Self::ZcChart => "ZC Chart",
             Self::Flow => "Flow",
@@ -277,6 +279,7 @@ impl MainView {
     pub fn short_label(self) -> &'static str {
         match self {
             Self::Spectrogram => "Spec",
+            Self::XformedSpec => "Xform",
             Self::Waveform => "Wave",
             Self::ZcChart => "ZC",
             Self::Flow => "Flow",
@@ -284,8 +287,14 @@ impl MainView {
         }
     }
 
+    /// Whether this view mode uses the spectrogram renderer.
+    pub fn is_spectrogram(self) -> bool {
+        matches!(self, Self::Spectrogram | Self::XformedSpec | Self::Flow | Self::Chromagram)
+    }
+
     pub const ALL: &'static [MainView] = &[
         Self::Spectrogram,
+        Self::XformedSpec,
         Self::Waveform,
         Self::ZcChart,
         Self::Flow,
@@ -417,7 +426,6 @@ pub enum LayerPanel {
     RecordMode,
     Channel,
     Gain,
-    DisplayFilter,
 }
 
 /// A navigation history entry (for overview back/forward buttons).
@@ -843,6 +851,12 @@ pub struct AppState {
     pub normal_saved_display_eq: RwSignal<bool>,
     pub normal_saved_display_noise_filter: RwSignal<bool>,
 
+    // Independent gain signals for Xformed Spec view
+    pub xform_spect_gain_db: RwSignal<f32>,
+    pub xform_spect_floor_db: RwSignal<f32>,
+    pub xform_spect_range_db: RwSignal<f32>,
+    pub xform_spect_gamma: RwSignal<f32>,
+
     // Display DSP filter panel (per-stage control of spectrogram processing)
     pub display_filter_enabled: RwSignal<bool>,
     pub display_filter_eq: RwSignal<DisplayFilterMode>,
@@ -1083,6 +1097,11 @@ impl AppState {
             normal_saved_display_auto_gain: RwSignal::new(false),
             normal_saved_display_eq: RwSignal::new(false),
             normal_saved_display_noise_filter: RwSignal::new(false),
+
+            xform_spect_gain_db: RwSignal::new(0.0),
+            xform_spect_floor_db: RwSignal::new(-120.0),
+            xform_spect_range_db: RwSignal::new(120.0),
+            xform_spect_gamma: RwSignal::new(1.0),
 
             display_filter_enabled: RwSignal::new(false),
             display_filter_eq: RwSignal::new(DisplayFilterMode::Off),
