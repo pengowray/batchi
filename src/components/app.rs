@@ -864,22 +864,29 @@ fn MainViewButton() -> impl IntoView {
         toggle_panel(&state, LayerPanel::MainView);
     });
 
+    // Track previous view to detect transitions to/from XformedSpec
+    let prev_view: RwSignal<MainView> = RwSignal::new(state.main_view.get_untracked());
+    Effect::new(move |_| {
+        let current = state.main_view.get();
+        let prev = prev_view.get_untracked();
+        if current == prev { return; }
+        if current == MainView::XformedSpec && prev != MainView::XformedSpec {
+            state.display_filter_enabled.set(true);
+            state.display_filter_eq.set(DisplayFilterMode::Same);
+            state.display_filter_notch.set(DisplayFilterMode::Same);
+            state.display_filter_nr.set(DisplayFilterMode::Same);
+            state.display_filter_transform.set(DisplayFilterMode::Same);
+            state.display_filter_gain.set(DisplayFilterMode::Same);
+            state.display_filter_decimate.set(DisplayFilterMode::Same);
+        } else if current != MainView::XformedSpec && prev == MainView::XformedSpec {
+            state.display_filter_enabled.set(false);
+        }
+        prev_view.set(current);
+    });
+
     let set_view = move |mode: MainView| {
         move |_: web_sys::MouseEvent| {
-            let prev = state.main_view.get_untracked();
             state.main_view.set(mode);
-            // Auto-enable/disable DSP filters when switching to/from XformedSpec
-            if mode == MainView::XformedSpec && prev != MainView::XformedSpec {
-                state.display_filter_enabled.set(true);
-                state.display_filter_eq.set(DisplayFilterMode::Same);
-                state.display_filter_notch.set(DisplayFilterMode::Same);
-                state.display_filter_nr.set(DisplayFilterMode::Same);
-                state.display_filter_transform.set(DisplayFilterMode::Same);
-                state.display_filter_gain.set(DisplayFilterMode::Same);
-                state.display_filter_decimate.set(DisplayFilterMode::Same);
-            } else if mode != MainView::XformedSpec && prev == MainView::XformedSpec {
-                state.display_filter_enabled.set(false);
-            }
             state.layer_panel_open.set(None);
         }
     };

@@ -481,6 +481,7 @@ pub fn Spectrogram() -> impl IntoView {
             }
         };
         let xform_or_decim = state.display_transform.get_untracked()
+            || main_view == MainView::XformedSpec
             || decim_effective > 0;
         let colormap = if flow_on {
             ColormapMode::Uniform(Colormap::Greyscale)
@@ -833,7 +834,8 @@ pub fn Spectrogram() -> impl IntoView {
                 ff_handles_active: spec_hover.is_some() || spec_drag.is_some(),
             };
 
-            let xform_on = state.display_transform.get_untracked();
+            let xform_on = state.display_transform.get_untracked()
+                || main_view == MainView::XformedSpec;
             // When xform/decim is on, adjust marker state: right-side labels, hide focus handles
             let marker_state = if xform_on || decim_effective > 0 {
                 FreqMarkerState {
@@ -966,21 +968,23 @@ pub fn Spectrogram() -> impl IntoView {
                 }
             }
 
-            // Draw saved annotation selections
-            if let Some(file_idx_val) = idx {
-                if let Some(Some(set)) = annotation_store.sets.get(file_idx_val) {
-                    spectrogram_renderer::draw_annotations(
-                        &ctx,
-                        set,
-                        &selected_annotation_ids,
-                        min_freq,
-                        max_freq,
-                        scroll,
-                        time_res,
-                        zoom,
-                        display_w as f64,
-                        display_h as f64,
-                    );
+            // Draw saved annotation selections (skip in xform view)
+            if !xform_on {
+                if let Some(file_idx_val) = idx {
+                    if let Some(Some(set)) = annotation_store.sets.get(file_idx_val) {
+                        spectrogram_renderer::draw_annotations(
+                            &ctx,
+                            set,
+                            &selected_annotation_ids,
+                            min_freq,
+                            max_freq,
+                            scroll,
+                            time_res,
+                            zoom,
+                            display_w as f64,
+                            display_h as f64,
+                        );
+                    }
                 }
             }
 
