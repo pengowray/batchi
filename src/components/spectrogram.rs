@@ -5,6 +5,8 @@ use wasm_bindgen::closure::Closure;
 use js_sys;
 use std::cell::Cell;
 use std::rc::Rc;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement, MouseEvent};
 use crate::canvas::spectrogram_renderer::{self, Colormap, ColormapMode, FreqMarkerState, FreqShiftMode, FlowAlgo, PreRendered, SpectDisplaySettings};
 use crate::state::{AppState, CanvasTool, DisplayFilterMode, SpectrogramHandle, MainView, PlaybackMode, Selection, SpectrogramDisplay};
@@ -236,12 +238,23 @@ pub fn Spectrogram() -> impl IntoView {
     // animation cycle starts (e.g. target changes mid-flight).
     let label_hover_target = RwSignal::new(0.0f64);
     let anim_gen: Rc<Cell<u32>> = Rc::new(Cell::new(0));
+
+    // Disposal guard: async callbacks (rAF, setTimeout) check this before
+    // accessing any reactive state, preventing panics after component unmount.
+    let disposed = Arc::new(AtomicBool::new(false));
+    {
+        let d = disposed.clone();
+        on_cleanup(move || d.store(true, Ordering::Relaxed));
+    }
+
     // Label hover animation: lerp label_hover_opacity toward target via rAF.
     // IMPORTANT: The Effect must NOT call .set() on label_hover_opacity directly,
     // since it subscribes to it via .get() — that would cause "closure invoked
     // recursively". Instead, ALL writes go through rAF callbacks (which run
     // outside the Effect scope) and convergence snapping also uses rAF.
-    Effect::new(move || {
+    Effect::new({
+        let disposed = disposed.clone();
+        move || {
         let target = label_hover_target.get();
         let current = state.label_hover_opacity.get();
         if (current - target).abs() < 0.01 {
@@ -251,8 +264,9 @@ pub fn Spectrogram() -> impl IntoView {
                 let generation = anim_gen.get().wrapping_add(1);
                 anim_gen.set(generation);
                 let ag = anim_gen.clone();
+                let disposed_rc = disposed.clone();
                 let cb = Closure::once(move || {
-                    if ag.get() != generation { return; }
+                    if disposed_rc.load(Ordering::Relaxed) || ag.get() != generation { return; }
                     let Some(tgt) = label_hover_target.try_get_untracked() else { return; };
                     state.label_hover_opacity.set(tgt);
                 });
@@ -266,8 +280,9 @@ pub fn Spectrogram() -> impl IntoView {
         let generation = anim_gen.get().wrapping_add(1);
         anim_gen.set(generation);
         let ag = anim_gen.clone();
+        let disposed_rc = disposed.clone();
         let cb = Closure::once(move || {
-            if ag.get() != generation { return; }
+            if disposed_rc.load(Ordering::Relaxed) || ag.get() != generation { return; }
             let Some(cur) = state.label_hover_opacity.try_get_untracked() else { return; };
             let Some(tgt) = label_hover_target.try_get_untracked() else { return; };
             let speed = if tgt > cur { 0.35 } else { 0.20 };
@@ -279,7 +294,7 @@ pub fn Spectrogram() -> impl IntoView {
             cb.as_ref().unchecked_ref(),
         );
         cb.forget();
-    });
+    }});
 
     // Effect 1: pre-render small files (when columns are in memory and not in flow mode)
     Effect::new(move || {
@@ -352,7 +367,9 @@ pub fn Spectrogram() -> impl IntoView {
     });
 
     // Effect 3: redraw when pre-rendered data, scroll, zoom, selection, playhead, overlays, hover, or new tile change
-    Effect::new(move || {
+    Effect::new({
+        let disposed = disposed.clone();
+        move || {
         let _tile_ready = state.tile_ready_signal.get(); // trigger redraw when tiles arrive
         let scroll = state.scroll_offset.get();
         let zoom = state.zoom_level.get();
@@ -753,7 +770,9 @@ pub fn Spectrogram() -> impl IntoView {
                 let missing = tile_cache::count_missing_visible(file_idx_val, ideal_lod, first_tile, last_tile);
                 if missing > 0 {
                     let state_recovery = state;
+                    let disposed_rc = disposed.clone();
                     let recovery_cb = Closure::once(move || {
+                        if disposed_rc.load(Ordering::Relaxed) { return; }
                         state_recovery.tile_ready_signal.update(|n| *n = n.wrapping_add(1));
                     });
                     let _ = web_sys::window().unwrap()
@@ -1074,7 +1093,7 @@ pub fn Spectrogram() -> impl IntoView {
                 }
             }
         }
-    });
+    }});
 
     // Effect 4: auto-scroll to follow playhead during playback
     // Supports temporary suspension: when the user manually scrolls, following
@@ -1150,7 +1169,9 @@ pub fn Spectrogram() -> impl IntoView {
     {
         let prefetch_handle: Rc<Cell<Option<i32>>> = Rc::new(Cell::new(None));
 
-        Effect::new(move || {
+        Effect::new({
+            let disposed = disposed.clone();
+            move || {
             // Subscribe to coarse-grained signals (NOT playhead_time)
             let _scroll = state.scroll_offset.get();
             let _zoom = state.zoom_level.get();
@@ -1169,7 +1190,9 @@ pub fn Spectrogram() -> impl IntoView {
             }
 
             let handle_rc = prefetch_handle.clone();
+            let disposed_rc = disposed.clone();
             let cb = Closure::once(move || {
+                if disposed_rc.load(Ordering::Relaxed) { return; }
                 use crate::canvas::tile_cache;
 
                 handle_rc.set(None);
@@ -1247,7 +1270,10 @@ pub fn Spectrogram() -> impl IntoView {
                 .unwrap_or(0);
             cb.forget();
             prefetch_handle.set(Some(h));
-        });
+        }});
+
+        // Note: pending prefetch timeout (200ms) is not explicitly cancelled on
+        // disposal — the callback checks the `disposed` flag and exits early.
     }
 
     // Effect 6: background preload — progressively pre-compute tiles for the whole file
@@ -1300,6 +1326,12 @@ pub fn Spectrogram() -> impl IntoView {
         let generation = state.bg_preload_gen.get_untracked();
 
         tile_cache::start_background_preload(state, file_idx, lod, center_tile, max_tiles, generation);
+    });
+
+    // Stop background preload on component disposal
+    on_cleanup(move || {
+        state.bg_preload_gen.update(|g| *g = g.wrapping_add(1));
+        crate::canvas::tile_cache::stop_background_preload();
     });
 
     // Helper to get (px_x, px_y, time, freq) from mouse event
