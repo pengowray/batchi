@@ -358,63 +358,63 @@ pub fn BottomToolbar() -> impl IntoView {
             })}
 
             // ── Channel selector (stereo+ only) ──
-            {move || {
+            <Show when=move || {
                 let files = state.files.get();
                 let idx = state.current_file_index.get();
-                let num_ch = idx.and_then(|i| files.get(i)).map(|f| f.audio.channels).unwrap_or(1);
-                (num_ch > 1).then(|| {
-                    let cv = state.channel_view.get();
-                    let ch_is_open = state.layer_panel_open.get() == Some(LayerPanel::Channel);
-                    let label = match cv {
-                        ChannelView::MonoMix => "L+R",
-                        ChannelView::Channel(0) => "L",
-                        ChannelView::Channel(1) => "R",
-                        ChannelView::Difference => "L-R",
-                        ChannelView::Channel(n) => match n { 2 => "Ch3", 3 => "Ch4", _ => "Ch?" },
-                    };
-                    view! {
-                        <div style="position:relative">
-                            <button
-                                class=move || if ch_is_open { "layer-btn open" } else { "layer-btn" }
-                                on:click=move |_| toggle_panel(&state, LayerPanel::Channel)
-                                title="Channel view"
-                            >
-                                <span class="layer-btn-category">"Ch"</span>
-                                <span class="layer-btn-value">{label}</span>
-                            </button>
-                            {ch_is_open.then(|| {
-                                let set_ch = move |cv: ChannelView| {
+                idx.and_then(|i| files.get(i)).map(|f| f.audio.channels).unwrap_or(1) > 1
+            }>
+                <div style="position:relative">
+                    <button
+                        class=move || if state.layer_panel_open.get() == Some(LayerPanel::Channel) { "layer-btn open" } else { "layer-btn" }
+                        on:click=move |_| toggle_panel(&state, LayerPanel::Channel)
+                        title="Channel view"
+                    >
+                        <span class="layer-btn-category">"Ch"</span>
+                        <span class="layer-btn-value">{move || match state.channel_view.get() {
+                            ChannelView::MonoMix => "L+R",
+                            ChannelView::Channel(0) => "L",
+                            ChannelView::Channel(1) => "R",
+                            ChannelView::Difference => "L-R",
+                            ChannelView::Channel(2) => "Ch3",
+                            ChannelView::Channel(3) => "Ch4",
+                            ChannelView::Channel(_) => "Ch?",
+                        }}</span>
+                    </button>
+                    <Show when=move || state.layer_panel_open.get() == Some(LayerPanel::Channel)>
+                        {
+                            let set_ch = move |cv: ChannelView| {
+                                move |_: web_sys::MouseEvent| {
                                     state.channel_view.set(cv);
                                     crate::canvas::tile_cache::clear_all_caches();
                                     state.tile_ready_signal.update(|n| *n = n.wrapping_add(1));
                                     state.layer_panel_open.set(None);
-                                };
-                                view! {
-                                    <div class="layer-panel" style="bottom: calc(100% + 4px); left: 0; min-width:100px;">
-                                        <div class="layer-panel-title">"Channel"</div>
-                                        <button
-                                            class=move || layer_opt_class(state.channel_view.get() == ChannelView::MonoMix)
-                                            on:click=move |_| set_ch(ChannelView::MonoMix)
-                                        >"Mix (L+R)"</button>
-                                        <button
-                                            class=move || layer_opt_class(state.channel_view.get() == ChannelView::Channel(0))
-                                            on:click=move |_| set_ch(ChannelView::Channel(0))
-                                        >"Left"</button>
-                                        <button
-                                            class=move || layer_opt_class(state.channel_view.get() == ChannelView::Channel(1))
-                                            on:click=move |_| set_ch(ChannelView::Channel(1))
-                                        >"Right"</button>
-                                        <button
-                                            class=move || layer_opt_class(state.channel_view.get() == ChannelView::Difference)
-                                            on:click=move |_| set_ch(ChannelView::Difference)
-                                        >"Diff (L-R)"</button>
-                                    </div>
                                 }
-                            })}
-                        </div>
-                    }
-                })
-            }}
+                            };
+                            view! {
+                                <div class="layer-panel" style="bottom: calc(100% + 4px); left: 0; min-width:100px;">
+                                    <div class="layer-panel-title">"Channel"</div>
+                                    <button
+                                        class=move || layer_opt_class(state.channel_view.get() == ChannelView::MonoMix)
+                                        on:click=set_ch(ChannelView::MonoMix)
+                                    >"Mix (L+R)"</button>
+                                    <button
+                                        class=move || layer_opt_class(state.channel_view.get() == ChannelView::Channel(0))
+                                        on:click=set_ch(ChannelView::Channel(0))
+                                    >"Left"</button>
+                                    <button
+                                        class=move || layer_opt_class(state.channel_view.get() == ChannelView::Channel(1))
+                                        on:click=set_ch(ChannelView::Channel(1))
+                                    >"Right"</button>
+                                    <button
+                                        class=move || layer_opt_class(state.channel_view.get() == ChannelView::Difference)
+                                        on:click=set_ch(ChannelView::Difference)
+                                    >"Diff (L-R)"</button>
+                                </div>
+                            }
+                        }
+                    </Show>
+                </div>
+            </Show>
 
             <div class="bottom-toolbar-sep"></div>
 
@@ -523,7 +523,7 @@ fn ToolButtonInline() -> impl IntoView {
                     CanvasTool::Selection => "Select",
                 }}</span>
             </button>
-            {move || is_open().then(|| view! {
+            <Show when=move || is_open()>
                 <div class="layer-panel" style="bottom: calc(100% + 4px); right: 0;">
                     <div class="layer-panel-title">"Tool"</div>
                     <button
@@ -541,7 +541,7 @@ fn ToolButtonInline() -> impl IntoView {
                         }
                     >"Selection"</button>
                 </div>
-            })}
+            </Show>
         </div>
     }
 }

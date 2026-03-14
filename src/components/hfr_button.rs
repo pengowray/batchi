@@ -329,12 +329,12 @@ pub fn HfrButton() -> impl IntoView {
                 })}
 
                 // ── Adjustment ──
-                {move || (state.playback_mode.get() != PlaybackMode::Normal).then(|| {
-                    let mode = state.playback_mode.get();
-                    view! {
-                        <hr />
-                        <div class="layer-panel-title">"Adjustment"</div>
-                        {match mode {
+                <Show when=move || state.playback_mode.get() != PlaybackMode::Normal>
+                    <hr />
+                    <div class="layer-panel-title">"Adjustment"</div>
+                    {move || {
+                        let mode = state.playback_mode.get();
+                        match mode {
                             PlaybackMode::Heterodyne => view! {
                                 <div class="layer-panel-slider-row het-text-row"
                                     on:mouseenter=move |_| {
@@ -461,33 +461,32 @@ pub fn HfrButton() -> impl IntoView {
                                 </div>
                             }.into_any(),
                             PlaybackMode::Normal => view! { <span></span> }.into_any(),
-                        }}
+                        }
+                    }}
 
-                        // Auto factor mode switch
-                        {move || {
-                            let any_auto = state.te_factor_auto.get()
-                                || state.ps_factor_auto.get()
-                                || state.pv_factor_auto.get();
-                            any_auto.then(|| view! {
-                                <div class="layer-panel-title" style="margin-top: 4px;">"Auto mode"</div>
-                                <div style="display: flex; gap: 2px; padding: 0 6px 4px;">
-                                    <button class=move || layer_opt_class(state.auto_factor_mode.get() == AutoFactorMode::Target3k)
-                                        on:click=move |_| state.auto_factor_mode.set(AutoFactorMode::Target3k)
-                                        title="Factor = FF center / 3 kHz"
-                                    >"3k"</button>
-                                    <button class=move || layer_opt_class(state.auto_factor_mode.get() == AutoFactorMode::MinAudible)
-                                        on:click=move |_| state.auto_factor_mode.set(AutoFactorMode::MinAudible)
-                                        title="Factor = FF high / 20 kHz"
-                                    >"Min aud"</button>
-                                    <button class=move || layer_opt_class(state.auto_factor_mode.get() == AutoFactorMode::Fixed10x)
-                                        on:click=move |_| state.auto_factor_mode.set(AutoFactorMode::Fixed10x)
-                                        title="Factor = 10x"
-                                    >"10x"</button>
-                                </div>
-                            })
-                        }}
-                    }
-                })}
+                    // Auto factor mode switch
+                    <Show when=move || {
+                        state.te_factor_auto.get()
+                            || state.ps_factor_auto.get()
+                            || state.pv_factor_auto.get()
+                    }>
+                        <div class="layer-panel-title" style="margin-top: 4px;">"Auto mode"</div>
+                        <div style="display: flex; gap: 2px; padding: 0 6px 4px;">
+                            <button class=move || layer_opt_class(state.auto_factor_mode.get() == AutoFactorMode::Target3k)
+                                on:click=move |_| state.auto_factor_mode.set(AutoFactorMode::Target3k)
+                                title="Factor = FF center / 3 kHz"
+                            >"3k"</button>
+                            <button class=move || layer_opt_class(state.auto_factor_mode.get() == AutoFactorMode::MinAudible)
+                                on:click=move |_| state.auto_factor_mode.set(AutoFactorMode::MinAudible)
+                                title="Factor = FF high / 20 kHz"
+                            >"Min aud"</button>
+                            <button class=move || layer_opt_class(state.auto_factor_mode.get() == AutoFactorMode::Fixed10x)
+                                on:click=move |_| state.auto_factor_mode.set(AutoFactorMode::Fixed10x)
+                                title="Factor = 10x"
+                            >"10x"</button>
+                        </div>
+                    </Show>
+                </Show>
 
                 // ── Bandpass ──
                 <hr />
@@ -503,11 +502,12 @@ pub fn HfrButton() -> impl IntoView {
                         on:click=move |_| state.bandpass_mode.set(BandpassMode::On)
                     >"ON"</button>
                 </div>
-                {move || {
+                <Show when=move || {
                     let bp = state.bandpass_mode.get();
-                    let show = bp == BandpassMode::On
-                        || (bp == BandpassMode::Auto && state.ff_freq_hi.get() > state.ff_freq_lo.get());
-                    show.then(|| {
+                    bp == BandpassMode::On
+                        || (bp == BandpassMode::Auto && state.ff_freq_hi.get() > state.ff_freq_lo.get())
+                }>
+                    {
                         let make_db_handler = |signal: RwSignal<f64>| {
                             move |ev: web_sys::Event| {
                                 use wasm_bindgen::JsCast;
@@ -585,7 +585,7 @@ pub fn HfrButton() -> impl IntoView {
                                 />
                                 <span>{move || format!("{:.0}", state.filter_db_above.get())}</span>
                             </div>
-                            {move || (state.filter_band_mode.get() >= 4).then(|| view! {
+                            <Show when=move || { state.filter_band_mode.get() >= 4 }>
                                 <div class="layer-panel-slider-row"
                                     on:mouseenter=move |_| state.filter_hovering_band.set(Some(2))
                                     on:mouseleave=move |_| state.filter_hovering_band.set(None)
@@ -597,7 +597,7 @@ pub fn HfrButton() -> impl IntoView {
                                     />
                                     <span>{move || format!("{:.0}", state.filter_db_harmonics.get())}</span>
                                 </div>
-                            })}
+                            </Show>
                             <div class="layer-panel-slider-row"
                                 on:mouseenter=move |_| state.filter_hovering_band.set(Some(1))
                                 on:mouseleave=move |_| state.filter_hovering_band.set(None)
@@ -621,8 +621,8 @@ pub fn HfrButton() -> impl IntoView {
                                 <span>{move || format!("{:.0}", state.filter_db_below.get())}</span>
                             </div>
                         }
-                    })
-                }}
+                    }
+                </Show>
             </ComboButton>
     }
 }

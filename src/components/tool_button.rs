@@ -34,7 +34,7 @@ pub fn ToolButton() -> impl IntoView {
                         CanvasTool::Selection => "Select",
                     }}</span>
                 </button>
-                {move || is_open().then(|| view! {
+                <Show when=move || is_open()>
                     <div class="layer-panel" style="bottom: 34px; right: 0;">
                         <div class="layer-panel-title">"Tool"</div>
                         <button
@@ -52,7 +52,7 @@ pub fn ToolButton() -> impl IntoView {
                             }
                         >"Selection"</button>
                     </div>
-                })}
+                </Show>
             </div>
         </div>
     }

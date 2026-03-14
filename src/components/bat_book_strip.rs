@@ -58,27 +58,25 @@ pub fn BatBookStrip() -> impl IntoView {
                     >
                         "\u{2699}"
                     </button>
-                    {move || region_menu_open.get().then(|| {
-                        view! {
-                            <div class="bat-book-region-menu">
-                                {BatBookRegion::ALL.iter().map(|&r| {
-                                    let is_active = move || state.bat_book_region.get() == r;
-                                    view! {
-                                        <button
-                                            class=move || if is_active() { "bat-book-region-opt active" } else { "bat-book-region-opt" }
-                                            on:click=move |ev: web_sys::MouseEvent| {
-                                                ev.stop_propagation();
-                                                state.bat_book_region.set(r);
-                                                region_menu_open.set(false);
-                                            }
-                                        >
-                                            {r.label()}
-                                        </button>
-                                    }
-                                }).collect_view()}
-                            </div>
-                        }
-                    })}
+                    <Show when=move || region_menu_open.get()>
+                        <div class="bat-book-region-menu">
+                            {BatBookRegion::ALL.iter().map(|&r| {
+                                let is_active = move || state.bat_book_region.get() == r;
+                                view! {
+                                    <button
+                                        class=move || if is_active() { "bat-book-region-opt active" } else { "bat-book-region-opt" }
+                                        on:click=move |ev: web_sys::MouseEvent| {
+                                            ev.stop_propagation();
+                                            state.bat_book_region.set(r);
+                                            region_menu_open.set(false);
+                                        }
+                                    >
+                                        {r.label()}
+                                    </button>
+                                }
+                            }).collect_view()}
+                        </div>
+                    </Show>
                 </div>
                 <div style="flex:1"></div>
                 <button

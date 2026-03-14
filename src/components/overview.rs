@@ -257,7 +257,7 @@ fn OverviewLayersButton() -> impl IntoView {
                     on:click=move |_| toggle_panel(&state, LayerPanel::OverviewLayers)
                     title="Overview options"
                 >"Overview"</button>
-                {move || is_open().then(|| view! {
+                <Show when=move || is_open()>
                     <div class="layer-panel" style="bottom: 28px; left: 0;">
                         <div class="layer-panel-title">"Overview"</div>
                         <button class=move || layer_opt_class(state.overview_view.get() == OverviewView::Spectrogram)
@@ -278,7 +278,7 @@ fn OverviewLayersButton() -> impl IntoView {
                             on:click=move |_| state.overview_freq_mode.set(OverviewFreqMode::MatchMain)
                         >"Match main view"</button>
                     </div>
-                })}
+                </Show>
             </div>
         </div>
     }
