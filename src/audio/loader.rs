@@ -361,6 +361,69 @@ pub fn is_mp3(bytes: &[u8]) -> bool {
     false
 }
 
+pub fn is_ogg(bytes: &[u8]) -> bool {
+    bytes.len() >= 4 && &bytes[0..4] == b"OggS"
+}
+
+pub struct OggHeader {
+    pub sample_rate: u32,
+    pub channels: u16,
+    pub estimated_total_frames: u64,
+}
+
+/// Parse OGG/Vorbis metadata from the given bytes (typically first 64KB of file).
+/// Uses symphonia to probe the format and extract codec parameters.
+/// `file_size` is needed to estimate duration when n_frames is unavailable.
+pub fn parse_ogg_header(header_bytes: &[u8], file_size: u64) -> Result<OggHeader, String> {
+    use symphonia::core::codecs::CODEC_TYPE_NULL;
+    use symphonia::core::formats::FormatOptions;
+    use symphonia::core::io::MediaSourceStream;
+    use symphonia::core::meta::MetadataOptions;
+    use symphonia::core::probe::Hint;
+
+    let cursor = Cursor::new(header_bytes.to_vec());
+    let mss = MediaSourceStream::new(Box::new(cursor), Default::default());
+
+    let mut hint = Hint::new();
+    hint.with_extension("ogg");
+
+    let probed = symphonia::default::get_probe()
+        .format(&hint, mss, &FormatOptions::default(), &MetadataOptions::default())
+        .map_err(|e| format!("OGG probe error: {e}"))?;
+
+    let format = probed.format;
+    let track = format
+        .tracks()
+        .iter()
+        .find(|t| t.codec_params.codec != CODEC_TYPE_NULL)
+        .ok_or("No audio track found in OGG")?;
+
+    let sample_rate = track
+        .codec_params
+        .sample_rate
+        .ok_or("OGG missing sample rate")?;
+    let channels = track
+        .codec_params
+        .channels
+        .ok_or("OGG missing channel info")?
+        .count() as u16;
+
+    let estimated_total_frames = if let Some(n_frames) = track.codec_params.n_frames {
+        n_frames
+    } else {
+        // Rough estimate: Vorbis typically ~128-192 kbps.
+        // Use 160 kbps as default estimate.
+        let bitrate = 160_000u64;
+        file_size * 8 * sample_rate as u64 / bitrate
+    };
+
+    Ok(OggHeader {
+        sample_rate,
+        channels,
+        estimated_total_frames,
+    })
+}
+
 /// Rebuild a minimal RIFF/WAVE with only the `fmt` and `data` chunks.
 /// Hound 3.5 doesn't handle RIFF word-alignment padding on odd-length chunks
 /// (e.g. a 651-byte `bext` chunk), so we strip extraneous chunks and produce
