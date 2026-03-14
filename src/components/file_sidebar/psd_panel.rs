@@ -199,7 +199,14 @@ pub(crate) fn PsdPanel() -> impl IntoView {
             return;
         }
 
-        run_psd(false);
+        // Defer to break synchronous cascade: if run_psd runs inside the
+        // Effect while a checkbox on:change handler is still on the stack,
+        // is_computing.set(true) rebuilds the DOM, dropping event-handler
+        // closures that are still live → "closure invoked recursively or
+        // after being dropped".  spawn_local defers to a microtask.
+        spawn_local(async move {
+            run_psd(false);
+        });
     });
 
     // Annotate all peaks
