@@ -407,6 +407,11 @@ fn normalize_riff(bytes: &[u8]) -> Option<Vec<u8>> {
 }
 
 fn load_wav(bytes: &[u8]) -> Result<AudioData, String> {
+    // Parse original header for data_offset/data_size before normalization
+    let (orig_data_offset, orig_data_size) = parse_wav_header_with_file_size(bytes, Some(bytes.len() as u64))
+        .map(|h| (Some(h.data_offset), Some(h.data_size)))
+        .unwrap_or((None, None));
+
     let normalized;
     let wav_bytes = match normalize_riff(bytes) {
         Some(clean) => { normalized = clean; &normalized[..] }
@@ -454,6 +459,8 @@ fn load_wav(bytes: &[u8]) -> Result<AudioData, String> {
             bits_per_sample,
             is_float,
             guano,
+            data_offset: orig_data_offset,
+            data_size: orig_data_size,
         },
     })
 }
@@ -488,6 +495,8 @@ fn load_flac(bytes: &[u8]) -> Result<AudioData, String> {
             bits_per_sample: bits as u16,
             is_float: false,
             guano: None,
+            data_offset: None,
+            data_size: None,
         },
     })
 }
@@ -527,6 +536,8 @@ fn load_ogg(bytes: &[u8]) -> Result<AudioData, String> {
             bits_per_sample: 16,
             is_float: false,
             guano: None,
+            data_offset: None,
+            data_size: None,
         },
     })
 }
@@ -619,6 +630,8 @@ fn load_mp3(bytes: &[u8]) -> Result<AudioData, String> {
             bits_per_sample: 16,
             is_float: false,
             guano: None,
+            data_offset: None,
+            data_size: None,
         },
     })
 }

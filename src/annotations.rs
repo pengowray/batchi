@@ -2,6 +2,12 @@ use serde::{Serialize, Deserialize};
 
 /// Multi-layered file identity for matching annotations to audio files across sessions.
 /// Layers are computed progressively — Layer 1 is instant, higher layers are lazy.
+///
+/// Hash algorithms:
+/// - Layer 2 (spot): BLAKE3 multi-point — 16 x 1MB chunks across audio data region
+/// - Layer 3 (content): BLAKE3 of entire file with header bytes zeroed
+/// - Layer 4 (full): BLAKE3 root hash of entire file (= bao root hash)
+/// - Layer 4-alt: SHA-256 of entire file (optional, for compatibility)
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct FileIdentity {
     /// Layer 1: filename (basename only).
@@ -9,19 +15,39 @@ pub struct FileIdentity {
     /// Layer 1: file size in bytes.
     pub file_size: u64,
 
-    /// Layer 2: Spot-check hash. SHA-256 of (first 4KB + middle 4KB + last 4KB).
-    /// Fast even for multi-GB files. None until computed.
+    /// Layer 2: BLAKE3 multi-point spot hash (16 x 1MB chunks across audio data).
+    /// Fast even for multi-GB files (reads at most 16 MB). None until computed.
     #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub spot_hash: Option<String>,
+    pub spot_hash_b3: Option<String>,
 
-    /// Layer 3: Audio-data-only hash. SHA-256 of just PCM/audio bytes (no headers).
-    /// Survives metadata edits. Lazy — computed on demand.
+    /// Layer 3: Content hash — BLAKE3 of entire file with header bytes zeroed.
+    /// Survives metadata/header edits while preserving audio content identity.
     #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub audio_hash: Option<String>,
+    pub content_hash: Option<String>,
 
-    /// Layer 4: Full file SHA-256. Computed lazily on explicit request.
+    /// Layer 4: Full file BLAKE3 hash (= bao root hash). Computed on demand.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub full_blake3: Option<String>,
+
+    /// Layer 4-alt: Full file SHA-256. For compatibility and paranoid verification.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub full_sha256: Option<String>,
+
+    /// Legacy Layer 2 spot hash (SHA-256, 3x4KB). Read from old v2 sidecars.
+    /// Not written in new sidecars.
+    #[serde(skip_serializing_if = "Option::is_none", default, alias = "spot_hash")]
+    pub legacy_spot_hash: Option<String>,
+
+    /// Audio data region byte offset within the file (WAV: data chunk start).
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub data_offset: Option<u64>,
+    /// Audio data region byte length.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub data_size: Option<u64>,
+
+    /// File last-modified timestamp (ms since epoch, as string).
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub last_modified: Option<String>,
 
     /// Original file path (Tauri only). Used for sidecar file placement and re-finding.
     #[serde(skip_serializing_if = "Option::is_none", default)]
@@ -47,26 +73,31 @@ impl FileIdentity {
     /// Compare two identities and return the highest confidence match.
     pub fn match_confidence(&self, other: &FileIdentity) -> MatchConfidence {
         // Check from highest confidence downward
+        // Layer 4: full file hash (BLAKE3 or SHA-256)
+        if let (Some(a), Some(b)) = (&self.full_blake3, &other.full_blake3) {
+            if a == b { return MatchConfidence::Certain; }
+            return MatchConfidence::None;
+        }
         if let (Some(a), Some(b)) = (&self.full_sha256, &other.full_sha256) {
-            if a == b {
-                return MatchConfidence::Certain;
-            }
-            // Different full hashes = definitely different files
+            if a == b { return MatchConfidence::Certain; }
             return MatchConfidence::None;
         }
-        if let (Some(a), Some(b)) = (&self.audio_hash, &other.audio_hash) {
-            if a == b {
-                return MatchConfidence::High;
-            }
+        // Layer 3: content hash (header-zeroed BLAKE3)
+        if let (Some(a), Some(b)) = (&self.content_hash, &other.content_hash) {
+            if a == b { return MatchConfidence::High; }
             return MatchConfidence::None;
         }
-        if let (Some(a), Some(b)) = (&self.spot_hash, &other.spot_hash) {
-            if a == b {
-                return MatchConfidence::Likely;
-            }
+        // Layer 2: BLAKE3 spot hash
+        if let (Some(a), Some(b)) = (&self.spot_hash_b3, &other.spot_hash_b3) {
+            if a == b { return MatchConfidence::Likely; }
             return MatchConfidence::None;
         }
-        // Fall back to filename + size
+        // Legacy Layer 2: SHA-256 spot hash (for old sidecars)
+        if let (Some(a), Some(b)) = (&self.legacy_spot_hash, &other.legacy_spot_hash) {
+            if a == b { return MatchConfidence::Likely; }
+            return MatchConfidence::None;
+        }
+        // Layer 1: filename + size
         if self.filename == other.filename && self.file_size == other.file_size {
             return MatchConfidence::Weak;
         }
@@ -167,6 +198,12 @@ pub struct AudioFileMetadata {
     pub format: String,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub bits_per_sample: Option<u16>,
+    /// Byte offset of audio data within the file (WAV: data chunk start).
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub data_offset: Option<u64>,
+    /// Byte length of audio data region.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub data_size: Option<u64>,
 }
 
 /// Per-file annotation collection — serialized to .batm sidecar files (YAML).
@@ -206,7 +243,7 @@ impl AnnotationSet {
     /// Create a new empty AnnotationSet for a file.
     pub fn new(file_identity: FileIdentity) -> Self {
         Self {
-            version: 2,
+            version: 3,
             id: generate_uuid(),
             app_version: env!("CARGO_PKG_VERSION").to_string(),
             created_at: Some(now_iso8601()),
@@ -228,6 +265,8 @@ impl AnnotationSet {
             duration_secs: audio.duration_secs,
             format: audio.metadata.format.to_string(),
             bits_per_sample: Some(audio.metadata.bits_per_sample),
+            data_offset: audio.metadata.data_offset,
+            data_size: audio.metadata.data_size,
         });
         set
     }

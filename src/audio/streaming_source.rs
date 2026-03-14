@@ -120,12 +120,26 @@ impl ChunkCache {
 
 /// Handle to the underlying file — either a browser `web_sys::File` or a native
 /// path string (used via Tauri IPC `read_file_range` command).
+#[derive(Clone)]
 pub enum FileHandle {
     /// Browser / webview: uses `File.slice()` + `FileReader`.
     WebFile(web_sys::File),
     /// Tauri desktop/mobile: uses native `read_file_range` IPC command.
     TauriPath(String),
 }
+
+impl std::fmt::Debug for FileHandle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FileHandle::WebFile(file) => write!(f, "WebFile(\"{}\")", file.name()),
+            FileHandle::TauriPath(path) => write!(f, "TauriPath(\"{}\")", path),
+        }
+    }
+}
+
+// SAFETY: WASM is single-threaded; Send+Sync required for storage in RwSignal<Vec<LoadedFile>>.
+unsafe impl Send for FileHandle {}
+unsafe impl Sync for FileHandle {}
 
 /// Streaming audio source backed by a file handle (browser File or native path).
 ///

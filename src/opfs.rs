@@ -24,17 +24,23 @@ async fn get_opfs_dir() -> Result<FileSystemDirectoryHandle, String> {
     Ok(dir)
 }
 
-/// Build a storage key for a file. Uses spot_hash if available, else filename+size.
+/// Build a storage key for a file. Uses spot_hash_b3 if available, else legacy_spot_hash, else filename+size.
 pub fn opfs_key(identity: &crate::annotations::FileIdentity) -> String {
-    if let Some(ref hash) = identity.spot_hash {
+    if let Some(ref hash) = identity.spot_hash_b3 {
+        format!("b3_{}.batm", hash)
+    } else if let Some(ref hash) = identity.legacy_spot_hash {
         format!("{}.batm", hash)
     } else {
-        // Sanitize filename for filesystem use
-        let safe_name: String = identity.filename.chars()
-            .map(|c| if c.is_alphanumeric() || c == '.' || c == '-' || c == '_' { c } else { '_' })
-            .collect();
-        format!("{}_{}.batm", safe_name, identity.file_size)
+        opfs_fallback_key(&identity.filename, identity.file_size)
     }
+}
+
+/// Build the filename+size fallback key.
+fn opfs_fallback_key(filename: &str, file_size: u64) -> String {
+    let safe_name: String = filename.chars()
+        .map(|c| if c.is_alphanumeric() || c == '.' || c == '-' || c == '_' { c } else { '_' })
+        .collect();
+    format!("{}_{}.batm", safe_name, file_size)
 }
 
 /// Save annotation YAML to OPFS.
@@ -205,54 +211,48 @@ pub fn load_annotations_from_opfs(state: crate::state::AppState, file_idx: usize
     let key = opfs_key(&identity);
 
     wasm_bindgen_futures::spawn_local(async move {
-        match opfs_load(&key).await {
-            Ok(Some(yaml)) => {
-                match yaml_serde::from_str::<crate::annotations::AnnotationSet>(&yaml) {
-                    Ok(loaded) => {
-                        let already_has = state.annotation_store.get_untracked()
-                            .sets.get(file_idx)
-                            .and_then(|s| s.as_ref())
-                            .is_some();
-                        if !already_has {
-                            apply_loaded_sidecar(state, file_idx, loaded);
-                            log::debug!("OPFS loaded annotations for file {file_idx}: {key}");
-                        }
-                    }
-                    Err(e) => log::warn!("OPFS deserialize error for {key}: {e}"),
+        // Build fallback key chain: try primary key, then legacy spot_hash, then filename+size
+        let mut keys_to_try = vec![key.clone()];
+        // If we searched by b3 key, also try old SHA-256 spot_hash key
+        if identity.spot_hash_b3.is_some() {
+            if let Some(ref legacy) = identity.legacy_spot_hash {
+                let legacy_key = format!("{}.batm", legacy);
+                if legacy_key != key {
+                    keys_to_try.push(legacy_key);
                 }
             }
-            Ok(None) => {
-                // Also try the Layer 1 key (filename+size) as fallback
-                // if we searched by spot_hash and found nothing
-                if identity.spot_hash.is_some() {
-                    let fallback_key = {
-                        let safe_name: String = identity.filename.chars()
-                            .map(|c| if c.is_alphanumeric() || c == '.' || c == '-' || c == '_' { c } else { '_' })
-                            .collect();
-                        format!("{}_{}.batm", safe_name, identity.file_size)
-                    };
-                    if fallback_key != key {
-                        match opfs_load(&fallback_key).await {
-                            Ok(Some(yaml)) => {
-                                if let Ok(loaded) = yaml_serde::from_str::<crate::annotations::AnnotationSet>(&yaml) {
-                                    let already_has = state.annotation_store.get_untracked()
-                                        .sets.get(file_idx)
-                                        .and_then(|s| s.as_ref())
-                                        .is_some();
-                                    if !already_has {
-                                        apply_loaded_sidecar(state, file_idx, loaded);
-                                        log::debug!("OPFS loaded annotations (fallback key) for file {file_idx}: {fallback_key}");
-                                        // Re-save under the spot_hash key for faster future lookups
-                                        save_annotations_to_opfs(state, file_idx);
-                                    }
+        }
+        // Always try filename+size fallback
+        let fallback = opfs_fallback_key(&identity.filename, identity.file_size);
+        if !keys_to_try.contains(&fallback) {
+            keys_to_try.push(fallback);
+        }
+
+        for (i, try_key) in keys_to_try.iter().enumerate() {
+            match opfs_load(try_key).await {
+                Ok(Some(yaml)) => {
+                    match yaml_serde::from_str::<crate::annotations::AnnotationSet>(&yaml) {
+                        Ok(loaded) => {
+                            let already_has = state.annotation_store.get_untracked()
+                                .sets.get(file_idx)
+                                .and_then(|s| s.as_ref())
+                                .is_some();
+                            if !already_has {
+                                apply_loaded_sidecar(state, file_idx, loaded);
+                                log::debug!("OPFS loaded annotations for file {file_idx}: {try_key}");
+                                // If found via fallback key, re-save under primary key
+                                if i > 0 {
+                                    save_annotations_to_opfs(state, file_idx);
                                 }
                             }
-                            _ => {}
                         }
+                        Err(e) => log::warn!("OPFS deserialize error for {try_key}: {e}"),
                     }
+                    return; // Found it, stop trying
                 }
+                Ok(None) => {} // Not found, try next key
+                Err(e) => log::warn!("OPFS load error for {try_key}: {e}"),
             }
-            Err(e) => log::warn!("OPFS load error for {key}: {e}"),
         }
     });
 }

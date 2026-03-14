@@ -53,6 +53,8 @@ pub struct LoadedFile {
     pub last_modified_ms: Option<f64>,
     /// Multi-layered file identity for annotation matching. Computed progressively after load.
     pub identity: Option<FileIdentity>,
+    /// File handle for on-demand range reading (Layer 3/4 hash computation).
+    pub file_handle: Option<crate::audio::streaming_source::FileHandle>,
 }
 
 impl LoadedFile {
@@ -821,6 +823,12 @@ pub struct AppState {
     pub selected_pulse_index: RwSignal<Option<usize>>,
     pub pulse_detecting: RwSignal<bool>,
 
+    // File identity hashing
+    /// Whether a full hash computation (Layer 3/4) is currently running.
+    pub hash_computing: RwSignal<bool>,
+    /// Generation counter for cancelling in-progress hash computations.
+    pub hash_generation: RwSignal<u32>,
+
     // Annotations
     pub annotation_store: RwSignal<AnnotationStore>,
     pub annotations_dirty: RwSignal<bool>,
@@ -1086,6 +1094,9 @@ impl AppState {
             pulse_overlay_enabled: RwSignal::new(true),
             selected_pulse_index: RwSignal::new(None),
             pulse_detecting: RwSignal::new(false),
+
+            hash_computing: RwSignal::new(false),
+            hash_generation: RwSignal::new(0),
 
             annotation_store: RwSignal::new(AnnotationStore::default()),
             annotations_dirty: RwSignal::new(false),

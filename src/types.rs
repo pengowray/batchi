@@ -9,6 +9,10 @@ pub struct FileMetadata {
     pub bits_per_sample: u16,
     pub is_float: bool,
     pub guano: Option<GuanoMetadata>,
+    /// Byte offset of audio data within the file (WAV: data chunk start). None for non-WAV.
+    pub data_offset: Option<u64>,
+    /// Byte length of audio data region. None for non-WAV.
+    pub data_size: Option<u64>,
 }
 
 #[derive(Clone)]

@@ -465,6 +465,8 @@ mod tests {
                 bits_per_sample: 32,
                 is_float: true,
                 guano: None,
+                data_offset: None,
+                data_size: None,
             },
         }
     }

@@ -43,8 +43,15 @@ pub(super) async fn read_and_load_file(file: File, state: AppState, load_id: u64
         });
         // Compute file identity (Layer 1 + Layer 2 async)
         let file_index = state.files.get_untracked().len().saturating_sub(1);
+        // Read data_offset/data_size from the loaded file's metadata
+        let (data_offset, data_size) = state.files.with_untracked(|files| {
+            files.get(file_index)
+                .map(|f| (f.audio.metadata.data_offset, f.audio.metadata.data_size))
+                .unwrap_or((None, None))
+        });
         crate::file_identity::start_identity_computation(
             state, file_index, file_name, file_size, None,
+            data_offset, data_size, lm,
         );
     };
 
@@ -204,6 +211,8 @@ async fn try_streaming_wav(file: &File, name: &str, state: AppState) -> Result<(
             bits_per_sample: header.bits_per_sample,
             is_float: header.is_float,
             guano,
+            data_offset: Some(header.data_offset),
+            data_size: Some(header.data_size),
         },
     };
 
@@ -265,6 +274,7 @@ async fn try_streaming_wav(file: &File, name: &str, state: AppState) -> Result<(
                 add_order: idx,
                 last_modified_ms: None,
                 identity: None,
+                file_handle: Some(FileHandle::WebFile(file.clone())),
             });
             if files.len() == 1 {
                 state.current_file_index.set(Some(0));
@@ -473,6 +483,8 @@ async fn try_streaming_flac(file: &File, name: &str, state: AppState) -> Result<
             bits_per_sample: header.bits_per_sample,
             is_float: false,
             guano: None,
+            data_offset: None,
+            data_size: None,
         },
     };
 
@@ -534,6 +546,7 @@ async fn try_streaming_flac(file: &File, name: &str, state: AppState) -> Result<
                 add_order: idx,
                 last_modified_ms: None,
                 identity: None,
+                file_handle: Some(FileHandle::WebFile(file.clone())),
             });
             if files.len() == 1 {
                 state.current_file_index.set(Some(0));
@@ -820,6 +833,8 @@ async fn try_streaming_mp3(file: &File, name: &str, state: AppState) -> Result<(
             bits_per_sample: 16,
             is_float: false,
             guano: None,
+            data_offset: None,
+            data_size: None,
         },
     };
 
@@ -881,6 +896,7 @@ async fn try_streaming_mp3(file: &File, name: &str, state: AppState) -> Result<(
                 add_order: idx,
                 last_modified_ms: None,
                 identity: None,
+                file_handle: Some(FileHandle::WebFile(file.clone())),
             });
             if files.len() == 1 {
                 state.current_file_index.set(Some(0));
@@ -1276,6 +1292,7 @@ pub(crate) async fn load_named_bytes(name: String, bytes: &[u8], xc_metadata: Op
                 add_order: idx,
                 last_modified_ms: None,
                 identity: None,
+                file_handle: None,
             });
             if files.len() == 1 {
                 state.current_file_index.set(Some(0));
@@ -1285,8 +1302,14 @@ pub(crate) async fn load_named_bytes(name: String, bytes: &[u8], xc_metadata: Op
     }
 
     // Compute file identity (Layer 1 + Layer 2 with bytes available)
+    let (data_offset, data_size) = state.files.with_untracked(|files| {
+        files.get(file_index)
+            .map(|f| (f.audio.metadata.data_offset, f.audio.metadata.data_size))
+            .unwrap_or((None, None))
+    });
     crate::file_identity::start_identity_computation(
         state, file_index, name_check.clone(), bytes.len() as u64, Some(bytes.to_vec()),
+        data_offset, data_size, None,
     );
 
     // Notify user about silent/quiet files

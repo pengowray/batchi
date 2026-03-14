@@ -1043,6 +1043,8 @@ fn finalize_recording_tauri(result: JsValue, state: AppState) {
             bits_per_sample,
             is_float,
             guano: Some(guano),
+            data_offset: None,
+            data_size: None,
         },
     };
 
@@ -1106,6 +1108,7 @@ fn finalize_recording_tauri(result: JsValue, state: AppState) {
                 add_order: idx,
                 last_modified_ms: None,
                 identity: None,
+                file_handle: None,
             });
         });
         file_index = idx;
@@ -1806,6 +1809,8 @@ fn start_live_recording(state: &AppState, sample_rate: u32) -> usize {
             bits_per_sample: state.mic_bits_per_sample.get_untracked(),
             is_float: false,
             guano: None,
+            data_offset: None,
+            data_size: None,
         },
     };
 
@@ -1835,6 +1840,7 @@ fn start_live_recording(state: &AppState, sample_rate: u32) -> usize {
             add_order: file_index,
             last_modified_ms: None,
             identity: None,
+            file_handle: None,
         });
     });
 
@@ -2133,6 +2139,8 @@ fn finalize_live_recording(samples: Vec<f32>, sample_rate: u32, state: AppState)
             bits_per_sample: state.mic_bits_per_sample.get_untracked(),
             is_float: false,
             guano: Some(guano),
+            data_offset: None,
+            data_size: None,
         },
     };
 
@@ -2231,6 +2239,8 @@ fn finalize_recording(samples: Vec<f32>, sample_rate: u32, state: AppState) {
             bits_per_sample: 16,
             is_float: false,
             guano: Some(guano),
+            data_offset: None,
+            data_size: None,
         },
     };
 
@@ -2271,6 +2281,7 @@ fn finalize_recording(samples: Vec<f32>, sample_rate: u32, state: AppState) {
                 add_order: idx,
                 last_modified_ms: None,
                 identity: None,
+                file_handle: None,
             });
         });
         file_index = idx;

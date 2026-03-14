@@ -1053,6 +1053,28 @@ body.sidebar-resizing {
     display: block;
 }
 
+.hash-calc-btn {
+    background: #333;
+    color: #aaa;
+    border: 1px solid #555;
+    border-radius: 3px;
+    padding: 2px 8px;
+    cursor: pointer;
+    font-size: 11px;
+    font-family: inherit;
+}
+
+.hash-calc-btn:hover:not(:disabled) {
+    background: #444;
+    color: #ddd;
+    border-color: #777;
+}
+
+.hash-calc-btn:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
 .copy-report-row {
     display: flex;
     justify-content: flex-end;
