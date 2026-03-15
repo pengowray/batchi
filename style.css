@@ -2541,23 +2541,47 @@ body.sidebar-resizing {
     z-index: 199;
 }
 
-/* ── Left sidebar header label ─────────────────────────────────────── */
+/* ── Left sidebar header tab labels ────────────────────────────────── */
 .sidebar-header-label {
     flex: 1;
     padding: 10px 8px;
     font-size: 11px;
     font-weight: 600;
-    color: #eee;
-    border-bottom: 2px solid #4a8;
-}
-
-.sidebar-header-label.clickable {
+    color: #777;
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
     cursor: pointer;
+    transition: color 0.15s, border-color 0.15s;
 }
 
-.sidebar-header-label.clickable:hover {
-    color: #fff;
-    background: rgba(255, 255, 255, 0.05);
+.sidebar-header-label:hover {
+    color: #bbb;
+}
+
+.sidebar-header-label.active {
+    color: #eee;
+    border-bottom-color: #4a8;
+}
+
+/* ── Project panel ────────────────────────────────────────────────── */
+.project-panel {
+    padding: 16px 12px;
+    flex: 1;
+    overflow-y: auto;
+}
+
+.project-panel-empty {
+    color: #888;
+    font-size: 12px;
+    text-align: center;
+    padding-top: 24px;
+}
+
+.project-panel-hint {
+    color: #666;
+    font-size: 11px;
+    margin-top: 8px;
 }
 
 /* ── Right sidebar overrides ───────────────────────────────────────── */

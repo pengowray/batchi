@@ -535,6 +535,14 @@ impl FileSortMode {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
+pub enum LeftSidebarTab {
+    #[default]
+    Files,
+    Project,
+    Settings,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Default)]
 pub enum StatusLevel {
     #[default]
     Error,
@@ -781,7 +789,7 @@ pub struct AppState {
     pub cursor_time: RwSignal<Option<f64>>,
 
     // Left sidebar settings page
-    pub settings_page_open: RwSignal<bool>,
+    pub left_sidebar_tab: RwSignal<LeftSidebarTab>,
 
     // User colormap preference (when not overridden by HFR/flow)
     pub colormap_preference: RwSignal<Colormap>,
@@ -1066,7 +1074,7 @@ impl AppState {
             axis_drag_start_freq: RwSignal::new(None),
             axis_drag_current_freq: RwSignal::new(None),
             cursor_time: RwSignal::new(None),
-            settings_page_open: RwSignal::new(false),
+            left_sidebar_tab: RwSignal::new(LeftSidebarTab::default()),
             colormap_preference: RwSignal::new(Colormap::Viridis),
             chroma_colormap: RwSignal::new(ChromaColormap::PitchClass),
             chroma_gain: RwSignal::new(1.0),

@@ -1,6 +1,7 @@
 pub(crate) mod file_groups;
 mod files_panel;
 mod config_panel;
+mod project_panel;
 pub mod settings_panel;
 pub mod analysis;
 pub mod metadata_panel;
@@ -21,6 +22,8 @@ use crate::state::AppState;
 
 use files_panel::FilesPanel;
 use config_panel::ConfigPanel;
+use project_panel::ProjectPanel;
+use crate::state::LeftSidebarTab;
 pub(crate) use settings_panel::{SpectrogramSettingsPanel, SelectionPanel};
 pub(crate) use analysis::AnalysisPanel as SidebarAnalysisPanel;
 pub(crate) use metadata_panel::MetadataPanel;
@@ -122,40 +125,60 @@ pub fn FileSidebar() -> impl IntoView {
                 } else {
                     None
                 }}
-                <div
-                    class=move || if state.settings_page_open.get() {
-                        "sidebar-header-label clickable"
+                <button
+                    class=move || if state.left_sidebar_tab.get() == LeftSidebarTab::Files {
+                        "sidebar-header-label active"
                     } else {
                         "sidebar-header-label"
                     }
                     on:click=move |_| {
-                        if state.settings_page_open.get() {
-                            state.settings_page_open.set(false);
-                        }
+                        state.left_sidebar_tab.set(LeftSidebarTab::Files);
                     }
-                    title=move || if state.settings_page_open.get() { "Back to files" } else { "" }
+                    title="Files"
                 >
-                    {move || if state.settings_page_open.get() { "Settings" } else { "Files" }}
-                </div>
+                    "Files"
+                </button>
                 <button
-                    class=move || if state.settings_page_open.get() {
+                    class=move || if state.left_sidebar_tab.get() == LeftSidebarTab::Project {
+                        "sidebar-header-label active"
+                    } else {
+                        "sidebar-header-label"
+                    }
+                    on:click=move |_| {
+                        state.left_sidebar_tab.set(LeftSidebarTab::Project);
+                    }
+                    title="Project"
+                >
+                    "Project"
+                </button>
+                <button
+                    class=move || if state.left_sidebar_tab.get() == LeftSidebarTab::Settings {
                         "sidebar-settings-btn active"
                     } else {
                         "sidebar-settings-btn"
                     }
                     on:click=move |_| {
-                        state.settings_page_open.update(|open| *open = !*open);
+                        let current = state.left_sidebar_tab.get();
+                        if current == LeftSidebarTab::Settings {
+                            state.left_sidebar_tab.set(LeftSidebarTab::Files);
+                        } else {
+                            state.left_sidebar_tab.set(LeftSidebarTab::Settings);
+                        }
                     }
-                    title=move || if state.settings_page_open.get() { "Back to files" } else { "Settings" }
+                    title=move || if state.left_sidebar_tab.get() == LeftSidebarTab::Settings {
+                        "Back to files"
+                    } else {
+                        "Settings"
+                    }
                 >
                     {"\u{2699}"}
                 </button>
             </div>
             {move || {
-                if state.settings_page_open.get() {
-                    view! { <ConfigPanel /> }.into_any()
-                } else {
-                    view! { <FilesPanel /> }.into_any()
+                match state.left_sidebar_tab.get() {
+                    LeftSidebarTab::Files => view! { <FilesPanel /> }.into_any(),
+                    LeftSidebarTab::Project => view! { <ProjectPanel /> }.into_any(),
+                    LeftSidebarTab::Settings => view! { <ConfigPanel /> }.into_any(),
                 }
             }}
             {if !is_mobile {
