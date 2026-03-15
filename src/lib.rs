@@ -13,6 +13,7 @@ pub mod format_time;
 pub mod opfs;
 pub mod project;
 pub mod project_store;
+pub mod timeline;
 
 use leptos::prelude::*;
 use components::app::App;

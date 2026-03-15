@@ -190,6 +190,7 @@ pub fn Spectrogram() -> impl IntoView {
         let _dsp_decimate = state.display_decimate_effective.get();
         let annotation_store = state.annotation_store.get();
         let selected_annotation_ids = state.selected_annotation_ids.get();
+        let _timeline = state.active_timeline.get(); // trigger redraw on timeline change
         let _pre = pre_rendered.track();
 
         let Some(canvas_el) = canvas_ref.get() else { return };
@@ -216,18 +217,26 @@ pub fn Spectrogram() -> impl IntoView {
             .unwrap();
 
         let files = state.files.get_untracked();
-        let idx = state.current_file_index.get_untracked();
-        let time_res = idx
+        let timeline = state.active_timeline.get_untracked();
+        let idx = if timeline.is_some() { None } else { state.current_file_index.get_untracked() };
+
+        // In timeline mode, use the first segment's file for freq/resolution defaults
+        let primary_file_idx = if let Some(ref tl) = timeline {
+            tl.segments.first().map(|s| s.file_index)
+        } else {
+            idx
+        };
+        let time_res = primary_file_idx
             .and_then(|i| files.get(i))
             .map(|f| f.spectrogram.time_resolution)
             .unwrap_or(1.0);
         let scroll_col = scroll / time_res;
-        let original_max_freq = idx
+        let original_max_freq = primary_file_idx
             .and_then(|i| files.get(i))
             .map(|f| f.spectrogram.max_freq)
             .unwrap_or(96_000.0);
         let decim_effective = state.display_decimate_effective.get_untracked();
-        let original_sample_rate = idx
+        let original_sample_rate = primary_file_idx
             .and_then(|i| files.get(i))
             .map(|f| f.spectrogram.sample_rate)
             .unwrap_or(192_000);
@@ -262,14 +271,20 @@ pub fn Spectrogram() -> impl IntoView {
             ColormapMode::Uniform(colormap_pref)
         };
 
+        // Timeline or single-file duration and rendering setup
+        let duration = if let Some(ref tl) = timeline {
+            tl.total_duration_secs
+        } else {
+            idx.and_then(|i| files.get(i)).map(|f| f.audio.duration_secs).unwrap_or(0.0)
+        };
+        let visible_time = (display_w as f64 / zoom) * time_res;
+
         let file = idx.and_then(|i| files.get(i));
         let total_cols = file.map(|f| {
             let tc = f.spectrogram.total_columns;
             if tc > 0 { tc } else { f.spectrogram.columns.len() }
         }).unwrap_or(0);
         let file_idx_val = idx.unwrap_or(0);
-        let visible_time = (display_w as f64 / zoom) * time_res;
-        let duration = file.map(|f| f.audio.duration_secs).unwrap_or(0.0);
 
         // Compute reference dB level for mapping absolute-dB tile data to display.
         // When display_auto_gain is ON: peak-normalize using the file's running
@@ -317,8 +332,123 @@ pub fn Spectrogram() -> impl IntoView {
         let freq_adjustments = compute_freq_adjustments(&state, file_max_freq, tile_height);
 
         // Step 1: Render base spectrogram.
-        // Priority: flow tiles | normal tiles > pre_rendered > preview > black
-        let base_drawn = if flow_on && total_cols > 0 {
+        // Priority: timeline | flow tiles | normal tiles > pre_rendered > preview > black
+        let base_drawn = if timeline.is_some() {
+            // ── Timeline mode: render each visible segment ──
+            let tl = timeline.as_ref().unwrap();
+            let px_per_sec = zoom / time_res;
+            let visible_start = scroll;
+            let visible_end = scroll + visible_time;
+
+            // Fill entire canvas with black first (covers gaps)
+            ctx.set_fill_style_str("#000");
+            ctx.fill_rect(0.0, 0.0, display_w as f64, display_h as f64);
+
+            let mut any_drawn = false;
+            for seg in tl.segments_in_range(visible_start, visible_end) {
+                let seg_file = match files.get(seg.file_index) {
+                    Some(f) => f,
+                    None => continue,
+                };
+                let seg_time_res = seg_file.spectrogram.time_resolution;
+                let seg_total_cols = {
+                    let tc = seg_file.spectrogram.total_columns;
+                    if tc > 0 { tc } else { seg_file.spectrogram.columns.len() }
+                };
+                if seg_total_cols == 0 { continue; }
+
+                // Canvas pixel range for this segment
+                let seg_canvas_start = (seg.timeline_offset_secs - scroll) * px_per_sec;
+                let seg_canvas_end = ((seg.timeline_offset_secs + seg.duration_secs) - scroll) * px_per_sec;
+                let clip_left = seg_canvas_start.max(0.0);
+                let clip_right = seg_canvas_end.min(display_w as f64);
+                if clip_left >= clip_right { continue; }
+
+                // Scroll offset within this file
+                let file_scroll = (scroll - seg.timeline_offset_secs).max(0.0);
+                let file_scroll_col = file_scroll / seg_time_res;
+
+                ctx.save();
+                ctx.begin_path();
+                ctx.rect(clip_left, 0.0, clip_right - clip_left, display_h as f64);
+                ctx.clip();
+
+                // Translate so the segment's start aligns correctly
+                let translate_x = seg_canvas_start;
+                ctx.translate(translate_x, 0.0).unwrap_or(());
+
+                let seg_visible_time = (clip_right - clip_left) / px_per_sec;
+                let seg_px_per_sec = px_per_sec;
+                let seg_zoom = seg_px_per_sec * seg_time_res;
+
+                let ideal_lod_for_source = crate::canvas::tile_cache::select_lod(seg_zoom);
+                let tile_source = if reassign_on && ideal_lod_for_source > 0 {
+                    spectrogram_renderer::TileSource::Reassigned
+                } else {
+                    spectrogram_renderer::TileSource::Normal
+                };
+                let xform_on = state.display_transform.get_untracked();
+                let preview_ref = if xform_on || decim_effective > 0 {
+                    None
+                } else {
+                    seg_file.preview.as_ref()
+                };
+
+                let drawn = spectrogram_renderer::blit_tiles_viewport(
+                    &ctx, canvas, seg.file_index, seg_total_cols,
+                    file_scroll_col, seg_zoom, freq_crop_lo, freq_crop_hi, colormap,
+                    &display_settings,
+                    freq_adjustments.as_deref(),
+                    preview_ref,
+                    file_scroll, seg_visible_time, seg.duration_secs,
+                    tile_source,
+                );
+
+                // Schedule missing tiles for this segment
+                crate::canvas::tile_scheduler::schedule_normal_tiles(
+                    state, seg.file_index, seg_total_cols, file_scroll_col, seg_zoom,
+                    clip_right - clip_left, seg_time_res, is_playing, reassign_on, &disposed,
+                );
+
+                ctx.restore();
+                if drawn { any_drawn = true; }
+            }
+
+            // Draw gap indicators
+            let segments = &tl.segments;
+            for i in 0..segments.len() {
+                let seg_end = segments[i].timeline_offset_secs + segments[i].duration_secs;
+                let next_start = if i + 1 < segments.len() {
+                    segments[i + 1].timeline_offset_secs
+                } else {
+                    continue;
+                };
+                if next_start > seg_end + 0.001 {
+                    // There's a gap
+                    let gap_x1 = (seg_end - scroll) * px_per_sec;
+                    let gap_x2 = (next_start - scroll) * px_per_sec;
+                    if gap_x2 > 0.0 && gap_x1 < display_w as f64 {
+                        let x1 = gap_x1.max(0.0);
+                        let x2 = gap_x2.min(display_w as f64);
+                        // Draw subtle dashed line at gap center
+                        let mid = (x1 + x2) / 2.0;
+                        ctx.set_stroke_style_str("#333");
+                        ctx.set_line_width(1.0);
+                        let _ = ctx.set_line_dash(&js_sys::Array::of2(
+                            &JsValue::from_f64(3.0),
+                            &JsValue::from_f64(3.0),
+                        ));
+                        ctx.begin_path();
+                        ctx.move_to(mid, 0.0);
+                        ctx.line_to(mid, display_h as f64);
+                        ctx.stroke();
+                        let _ = ctx.set_line_dash(&js_sys::Array::new());
+                    }
+                }
+            }
+
+            any_drawn
+        } else if flow_on && total_cols > 0 {
             // Flow mode (includes phase coherence): composite dB+shift tiles at render time
             let ig = state.flow_intensity_gate.get_untracked();
             let mg = state.flow_gate.get_untracked();
@@ -486,11 +616,22 @@ pub fn Spectrogram() -> impl IntoView {
 
             // Time scale along the bottom edge
             {
-                let clock_cfg = state.current_file()
-                    .and_then(|f| f.recording_start_epoch_ms())
-                    .map(|ms| crate::canvas::time_markers::ClockTimeConfig {
-                        recording_start_epoch_ms: ms,
-                    });
+                let clock_cfg = if let Some(ref tl) = timeline {
+                    // In timeline mode, use the timeline origin as the clock reference
+                    if tl.origin_epoch_ms > 0.0 {
+                        Some(crate::canvas::time_markers::ClockTimeConfig {
+                            recording_start_epoch_ms: tl.origin_epoch_ms,
+                        })
+                    } else {
+                        None
+                    }
+                } else {
+                    state.current_file()
+                        .and_then(|f| f.recording_start_epoch_ms())
+                        .map(|ms| crate::canvas::time_markers::ClockTimeConfig {
+                            recording_start_epoch_ms: ms,
+                        })
+                };
                 let time_scale = if xform_on && playback_mode == PlaybackMode::TimeExpansion && te_factor.abs() > 1.0 {
                     te_factor.abs()
                 } else {
@@ -999,10 +1140,15 @@ pub fn Spectrogram() -> impl IntoView {
                     let zoom = state.zoom_level.get();
                     let cw = state.spectrogram_canvas_width.get();
                     let files = state.files.get_untracked();
-                    let idx = state.current_file_index.get_untracked();
-                    let time_res = idx.and_then(|i| files.get(i))
-                        .map(|f| f.spectrogram.time_resolution)
-                        .unwrap_or(1.0);
+                    let time_res = if let Some(ref tl) = state.active_timeline.get_untracked() {
+                        tl.segments.first().and_then(|s| files.get(s.file_index))
+                            .map(|f| f.spectrogram.time_resolution).unwrap_or(1.0)
+                    } else {
+                        let idx = state.current_file_index.get_untracked();
+                        idx.and_then(|i| files.get(i))
+                            .map(|f| f.spectrogram.time_resolution)
+                            .unwrap_or(1.0)
+                    };
                     let visible_time = (cw / zoom) * time_res;
                     let px_per_sec = if visible_time > 0.0 { cw / visible_time } else { 0.0 };
                     let x = (playhead - scroll) * px_per_sec;

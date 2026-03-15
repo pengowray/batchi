@@ -860,6 +860,14 @@ pub struct AppState {
     /// Whether the project has unsaved changes.
     pub project_dirty: RwSignal<bool>,
 
+    // Timeline
+    /// Multi-selected file indices for timeline creation (separate from current_file_index).
+    pub selected_file_indices: RwSignal<Vec<usize>>,
+    /// Active timeline view (when Some, spectrogram/waveform render in timeline mode).
+    pub active_timeline: RwSignal<Option<crate::timeline::TimelineView>>,
+    /// Currently selected multitrack track label (None = primary/default).
+    pub active_timeline_track: RwSignal<Option<String>>,
+
     // Display-affecting checkboxes (spectrogram intensity settings)
     pub display_auto_gain: RwSignal<bool>,
     pub display_eq: RwSignal<bool>,
@@ -1126,6 +1134,10 @@ impl AppState {
 
             current_project: RwSignal::new(None),
             project_dirty: RwSignal::new(false),
+
+            selected_file_indices: RwSignal::new(Vec::new()),
+            active_timeline: RwSignal::new(None),
+            active_timeline_track: RwSignal::new(None),
 
             display_auto_gain: RwSignal::new(false),
             display_eq: RwSignal::new(false),

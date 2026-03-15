@@ -168,10 +168,20 @@ pub fn apply_hand_pan(
     let files = state.files.get_untracked();
     let idx = state.current_file_index.get_untracked();
     let file = idx.and_then(|i| files.get(i));
-    let time_res = file.as_ref().map(|f| f.spectrogram.time_resolution).unwrap_or(1.0);
+    let timeline = state.active_timeline.get_untracked();
+    let time_res = if let Some(ref tl) = timeline {
+        tl.segments.first().and_then(|s| files.get(s.file_index))
+            .map(|f| f.spectrogram.time_resolution).unwrap_or(1.0)
+    } else {
+        file.as_ref().map(|f| f.spectrogram.time_resolution).unwrap_or(1.0)
+    };
     let zoom = state.zoom_level.get_untracked();
     let visible_time = (cw / zoom) * time_res;
-    let duration = file.as_ref().map(|f| f.audio.duration_secs).unwrap_or(f64::MAX);
+    let duration = if let Some(ref tl) = timeline {
+        tl.total_duration_secs
+    } else {
+        file.as_ref().map(|f| f.audio.duration_secs).unwrap_or(f64::MAX)
+    };
     let max_scroll = (duration - visible_time).max(0.0);
     let dt = -(dx / cw) * visible_time;
     state.suspend_follow();
@@ -699,12 +709,23 @@ pub fn on_wheel(
     } else {
         let raw_delta = ev.delta_y() + ev.delta_x();
         let files = state.files.get_untracked();
-        let idx = state.current_file_index.get_untracked().unwrap_or(0);
-        if let Some(file) = files.get(idx) {
+        let timeline = state.active_timeline.get_untracked();
+        let (time_res, duration) = if let Some(ref tl) = timeline {
+            let tr = tl.segments.first().and_then(|s| files.get(s.file_index))
+                .map(|f| f.spectrogram.time_resolution).unwrap_or(1.0);
+            (tr, tl.total_duration_secs)
+        } else {
+            let idx = state.current_file_index.get_untracked().unwrap_or(0);
+            match files.get(idx) {
+                Some(file) => (file.spectrogram.time_resolution, file.audio.duration_secs),
+                None => return,
+            }
+        };
+        {
             let zoom = state.zoom_level.get_untracked();
             let canvas_w = state.spectrogram_canvas_width.get_untracked();
-            let visible_time = (canvas_w / zoom) * file.spectrogram.time_resolution;
-            let max_scroll = (file.audio.duration_secs - visible_time).max(0.0);
+            let visible_time = (canvas_w / zoom) * time_res;
+            let max_scroll = (duration - visible_time).max(0.0);
             // Scroll proportional to visible time (like arrow keys),
             // normalized so a typical wheel tick (~100px) scrolls ~10% of the view
             let delta = raw_delta.signum() * visible_time * 0.1 * (raw_delta.abs() / 100.0).min(3.0);

@@ -82,6 +82,7 @@ pub fn Waveform() -> impl IntoView {
         let zoom = state.zoom_level.get();
         let selection = state.selection.get();
         let files = state.files.get();
+        let _timeline_trigger = state.active_timeline.get(); // trigger redraw on timeline change
         let idx = state.current_file_index.get();
         let mode = state.playback_mode.get();
         let hfr = state.hfr_enabled.get();
@@ -116,7 +117,98 @@ pub fn Waveform() -> impl IntoView {
             .dyn_into::<CanvasRenderingContext2d>()
             .unwrap();
 
-        if let Some(file) = idx.and_then(|i| files.get(i)) {
+        let timeline = state.active_timeline.get_untracked();
+
+        if let Some(ref tl) = timeline {
+            // ── Timeline mode: render waveform for each visible segment ──
+            let primary_file = tl.segments.first()
+                .and_then(|s| files.get(s.file_index));
+            let time_res = primary_file
+                .map(|f| f.spectrogram.time_resolution)
+                .unwrap_or(1.0);
+            let total_duration = tl.total_duration_secs;
+            let px_per_sec = zoom / time_res;
+            let visible_time = (display_w as f64 / zoom) * time_res;
+            let visible_start = scroll;
+            let visible_end = scroll + visible_time;
+            let sel_time = selection.map(|s| (s.time_start, s.time_end));
+
+            // Clear canvas
+            ctx.set_fill_style_str("#111");
+            ctx.fill_rect(0.0, 0.0, display_w as f64, display_h as f64);
+
+            for seg in tl.segments_in_range(visible_start, visible_end) {
+                let seg_file = match files.get(seg.file_index) {
+                    Some(f) => f,
+                    None => continue,
+                };
+                let sr = seg_file.audio.sample_rate;
+                let seg_time_res = seg_file.spectrogram.time_resolution;
+
+                // Canvas pixel range for this segment
+                let seg_canvas_start = (seg.timeline_offset_secs - scroll) * px_per_sec;
+                let seg_canvas_end = ((seg.timeline_offset_secs + seg.duration_secs) - scroll) * px_per_sec;
+                let clip_left = seg_canvas_start.max(0.0);
+                let clip_right = seg_canvas_end.min(display_w as f64);
+                if clip_left >= clip_right { continue; }
+
+                // File-local scroll offset
+                let file_scroll = (scroll - seg.timeline_offset_secs).max(0.0);
+                let vis_start_time = file_scroll;
+                let vis_end_time = (file_scroll + visible_time).min(seg.duration_secs);
+
+                let margin_samples = 64usize;
+                let region_start = ((vis_start_time * sr as f64) as usize).saturating_sub(margin_samples);
+                let region_end = ((vis_end_time * sr as f64) as usize) + margin_samples;
+                let region_len = region_end.saturating_sub(region_start);
+                let waveform_buf = seg_file.audio.source.read_region(cv, region_start as u64, region_len);
+
+                ctx.save();
+                ctx.begin_path();
+                ctx.rect(clip_left, 0.0, clip_right - clip_left, display_h as f64);
+                ctx.clip();
+                ctx.translate(seg_canvas_start, 0.0).unwrap_or(());
+
+                waveform_renderer::draw_waveform(
+                    &ctx,
+                    &waveform_buf,
+                    sr,
+                    file_scroll,
+                    zoom,
+                    seg_time_res,
+                    display_w as f64,
+                    display_h as f64,
+                    sel_time,
+                    gain_db,
+                    seg.duration_secs,
+                    region_start,
+                );
+
+                ctx.restore();
+            }
+
+            // Time markers
+            {
+                let clock_cfg = if tl.origin_epoch_ms > 0.0 {
+                    Some(crate::canvas::time_markers::ClockTimeConfig {
+                        recording_start_epoch_ms: tl.origin_epoch_ms,
+                    })
+                } else {
+                    None
+                };
+                crate::canvas::time_markers::draw_time_markers(
+                    &ctx,
+                    scroll,
+                    visible_time,
+                    display_w as f64,
+                    display_h as f64,
+                    total_duration,
+                    clock_cfg,
+                    state.show_clock_time.get(),
+                    1.0,
+                );
+            }
+        } else if let Some(file) = idx.and_then(|i| files.get(i)) {
             let sel_time = selection.map(|s| (s.time_start, s.time_end));
             let max_freq_khz = file.spectrogram.max_freq / 1000.0;
             let total_duration = file.audio.duration_secs;
@@ -527,10 +619,15 @@ pub fn Waveform() -> impl IntoView {
                     let zoom = state.zoom_level.get();
                     let cw = state.spectrogram_canvas_width.get();
                     let files = state.files.get_untracked();
-                    let idx = state.current_file_index.get_untracked();
-                    let time_res = idx.and_then(|i| files.get(i))
-                        .map(|f| f.spectrogram.time_resolution)
-                        .unwrap_or(1.0);
+                    let time_res = if let Some(ref tl) = state.active_timeline.get_untracked() {
+                        tl.segments.first().and_then(|s| files.get(s.file_index))
+                            .map(|f| f.spectrogram.time_resolution).unwrap_or(1.0)
+                    } else {
+                        let idx = state.current_file_index.get_untracked();
+                        idx.and_then(|i| files.get(i))
+                            .map(|f| f.spectrogram.time_resolution)
+                            .unwrap_or(1.0)
+                    };
                     let visible_time = (cw / zoom) * time_res;
                     let px_per_sec = if visible_time > 0.0 { cw / visible_time } else { 0.0 };
                     let x = (playhead - scroll) * px_per_sec;

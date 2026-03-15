@@ -299,6 +299,7 @@ pub fn OverviewPanel() -> impl IntoView {
     // Redraw effect — runs when anything that affects the overview display changes
     Effect::new(move || {
         let files = state.files.get();
+        let _timeline_trigger = state.active_timeline.get(); // trigger redraw on timeline change
         let idx = state.current_file_index.get();
         let scroll = state.scroll_offset.get();
         let zoom = state.zoom_level.get();
@@ -328,115 +329,233 @@ pub fn OverviewPanel() -> impl IntoView {
         ctx.set_fill_style_str("#000");
         ctx.fill_rect(0.0, 0.0, w as f64, h as f64);
 
-        let Some(i) = idx else { return };
-        let Some(file) = files.get(i) else { return };
+        let timeline = state.active_timeline.get_untracked();
 
-        let bm_tuples: Vec<(f64,)> = bookmarks.iter().map(|b| (b.time,)).collect();
-        let max_freq = if file.spectrogram.max_freq > 0.0 {
-            file.spectrogram.max_freq
-        } else {
-            file.audio.sample_rate as f64 / 2.0
-        };
+        if let Some(ref tl) = timeline {
+            // ── Timeline mode overview ──
+            let total_duration = tl.total_duration_secs;
+            if total_duration <= 0.0 { return; }
+            let cw = w as f64;
+            let ch = h as f64;
+            let px_per_sec = cw / total_duration;
 
-        // Fractions of Nyquist shown in the main view
-        let main_freq_crop_hi = max_display_freq
-            .map(|mdf| (mdf / max_freq).clamp(0.001, 1.0))
-            .unwrap_or(1.0);
-        let main_freq_crop_lo = min_display_freq
-            .map(|mdf| (mdf / max_freq).clamp(0.0, 1.0))
-            .unwrap_or(0.0);
+            // Get primary file for freq info
+            let primary_file = tl.segments.first().and_then(|s| files.get(s.file_index));
+            let max_freq = primary_file.map(|f| f.spectrogram.max_freq).unwrap_or(96_000.0);
+            let spec_time_res = primary_file.map(|f| f.spectrogram.time_resolution).unwrap_or(1.0);
 
-        // FF range as fractions of Nyquist (for the inner highlight)
-        let ff_range = if ff_hi_hz > ff_lo_hz {
-            let lo_frac = (ff_lo_hz / max_freq).clamp(0.0, 1.0);
-            let hi_frac = (ff_hi_hz.min(max_freq) / max_freq).clamp(0.0, 1.0);
-            Some((lo_frac, hi_frac))
-        } else {
-            None
-        };
+            let main_freq_crop_hi = max_display_freq
+                .map(|mdf| (mdf / max_freq).clamp(0.001, 1.0))
+                .unwrap_or(1.0);
+            let main_freq_crop_lo = min_display_freq
+                .map(|mdf| (mdf / max_freq).clamp(0.0, 1.0))
+                .unwrap_or(0.0);
 
-        match overview_view {
-            OverviewView::Spectrogram => {
-                // Prefer higher-resolution overview image when available,
-                // fall back to the fast 256×128 preview during loading.
-                let overview_src = file.overview_image.as_ref().or(file.preview.as_ref());
-                if let Some(preview) = overview_src {
-                    // Overview freq crop
-                    let display_max = match freq_mode {
-                        OverviewFreqMode::All => max_freq,
-                        OverviewFreqMode::Human => 20_000.0f64.min(max_freq),
-                        OverviewFreqMode::MatchMain => max_display_freq.unwrap_or(max_freq),
-                    };
-                    let overview_freq_crop = (display_max / max_freq).clamp(0.001, 1.0);
+            // Render each segment's preview at its position
+            for seg in &tl.segments {
+                let seg_file = match files.get(seg.file_index) {
+                    Some(f) => f,
+                    None => continue,
+                };
+                let overview_src = seg_file.overview_image.as_ref().or(seg_file.preview.as_ref());
+                let Some(preview) = overview_src else { continue };
 
-                    draw_overview_spectrogram(
-                        &ctx, canvas, preview,
-                        scroll, zoom,
-                        file.spectrogram.time_resolution, // spec_time_res (for viewport width)
-                        file.audio.duration_secs,         // true total duration
-                        main_canvas_w,
-                        main_freq_crop_lo,
-                        main_freq_crop_hi,
-                        &bm_tuples,
-                        overview_freq_crop,
-                        ff_range,
-                    );
-                } else {
-                    ctx.set_fill_style_str("#333");
-                    ctx.fill_rect(0.0, 0.0, w as f64, h as f64);
-                    ctx.set_fill_style_str("#666");
-                    ctx.set_font("11px system-ui");
-                    ctx.set_text_align("center");
-                    ctx.set_text_baseline("middle");
-                    let _ = ctx.fill_text("Loading…", w as f64 / 2.0, h as f64 / 2.0);
+                let seg_x = seg.timeline_offset_secs * px_per_sec;
+                let seg_w = seg.duration_secs * px_per_sec;
+                if seg_w < 1.0 { continue; }
+
+                ctx.save();
+                ctx.begin_path();
+                ctx.rect(seg_x, 0.0, seg_w, ch);
+                ctx.clip();
+
+                // Draw the preview image scaled to the segment region
+                let img_data = web_sys::ImageData::new_with_u8_clamped_array_and_sh(
+                    wasm_bindgen::Clamped(preview.pixels.as_slice()),
+                    preview.width,
+                    preview.height,
+                );
+                if let Ok(img) = img_data {
+                    // Create a temporary canvas for the preview
+                    if let Some(doc) = web_sys::window().and_then(|w| w.document()) {
+                        if let Ok(tmp) = doc.create_element("canvas") {
+                            let tmp_canvas: web_sys::HtmlCanvasElement = tmp.unchecked_into();
+                            tmp_canvas.set_width(preview.width);
+                            tmp_canvas.set_height(preview.height);
+                            if let Some(tmp_ctx) = get_canvas_ctx(&tmp_canvas) {
+                                let _ = tmp_ctx.put_image_data(&img, 0.0, 0.0);
+                                let _ = ctx.draw_image_with_html_canvas_element_and_dw_and_dh(
+                                    &tmp_canvas, seg_x, 0.0, seg_w, ch,
+                                );
+                            }
+                        }
+                    }
+                }
+
+                ctx.restore();
+            }
+
+            // Draw viewport rectangle
+            let visible_cols = main_canvas_w / zoom.max(0.001);
+            let visible_time_span = visible_cols * spec_time_res;
+            let vp_x = (scroll * px_per_sec).max(0.0);
+            let vp_w = (visible_time_span * px_per_sec).max(2.0);
+            let vp_y1 = (ch * (1.0 - main_freq_crop_hi)).clamp(0.0, ch);
+            let vp_y2 = (ch * (1.0 - main_freq_crop_lo)).clamp(0.0, ch);
+            let vp_h = (vp_y2 - vp_y1).max(1.0);
+
+            ctx.set_stroke_style_str("rgba(255, 255, 255, 0.7)");
+            ctx.set_line_width(1.5);
+            ctx.stroke_rect(vp_x, vp_y1, vp_w, vp_h);
+
+            // Draw gap indicators
+            for i in 0..tl.segments.len() {
+                let seg_end = tl.segments[i].timeline_offset_secs + tl.segments[i].duration_secs;
+                if i + 1 < tl.segments.len() {
+                    let next_start = tl.segments[i + 1].timeline_offset_secs;
+                    if next_start > seg_end + 0.001 {
+                        let gap_x = seg_end * px_per_sec;
+                        let gap_w = (next_start - seg_end) * px_per_sec;
+                        ctx.set_fill_style_str("rgba(50, 50, 80, 0.5)");
+                        ctx.fill_rect(gap_x, 0.0, gap_w, ch);
+                    }
                 }
             }
-            OverviewView::Waveform => {
-                let ov_buf;
-                let ov_samples: &[f32] = match cv {
-                    crate::audio::source::ChannelView::MonoMix => &file.audio.samples,
-                    _ => {
-                        ov_buf = file.audio.source.read_region(cv, 0, file.audio.source.total_samples() as usize);
-                        &ov_buf
-                    }
-                };
-                draw_overview_waveform(
-                    &ctx, canvas,
-                    ov_samples,
-                    file.audio.sample_rate,
-                    file.spectrogram.time_resolution,
-                    scroll, zoom,
-                    main_canvas_w,
-                    &bm_tuples,
-                    gain_db,
-                );
-            }
-        }
 
-        // Time markers along the bottom edge (full file duration)
-        {
-            let clock_cfg = file.recording_start_epoch_ms()
-                .map(|ms| crate::canvas::time_markers::ClockTimeConfig {
-                    recording_start_epoch_ms: ms,
-                });
+            // Time markers
+            let clock_cfg = if tl.origin_epoch_ms > 0.0 {
+                Some(crate::canvas::time_markers::ClockTimeConfig {
+                    recording_start_epoch_ms: tl.origin_epoch_ms,
+                })
+            } else {
+                None
+            };
             crate::canvas::time_markers::draw_time_markers(
                 &ctx,
                 0.0,
-                file.audio.duration_secs,
-                w as f64,
-                h as f64,
-                file.audio.duration_secs,
+                total_duration,
+                cw,
+                ch,
+                total_duration,
                 clock_cfg,
                 state.show_clock_time.get(),
                 1.0,
             );
+        } else {
+            // ── Single file overview ──
+            let Some(i) = idx else { return };
+            let Some(file) = files.get(i) else { return };
+
+            let bm_tuples: Vec<(f64,)> = bookmarks.iter().map(|b| (b.time,)).collect();
+            let max_freq = if file.spectrogram.max_freq > 0.0 {
+                file.spectrogram.max_freq
+            } else {
+                file.audio.sample_rate as f64 / 2.0
+            };
+
+            // Fractions of Nyquist shown in the main view
+            let main_freq_crop_hi = max_display_freq
+                .map(|mdf| (mdf / max_freq).clamp(0.001, 1.0))
+                .unwrap_or(1.0);
+            let main_freq_crop_lo = min_display_freq
+                .map(|mdf| (mdf / max_freq).clamp(0.0, 1.0))
+                .unwrap_or(0.0);
+
+            // FF range as fractions of Nyquist (for the inner highlight)
+            let ff_range = if ff_hi_hz > ff_lo_hz {
+                let lo_frac = (ff_lo_hz / max_freq).clamp(0.0, 1.0);
+                let hi_frac = (ff_hi_hz.min(max_freq) / max_freq).clamp(0.0, 1.0);
+                Some((lo_frac, hi_frac))
+            } else {
+                None
+            };
+
+            match overview_view {
+                OverviewView::Spectrogram => {
+                    // Prefer higher-resolution overview image when available,
+                    // fall back to the fast 256×128 preview during loading.
+                    let overview_src = file.overview_image.as_ref().or(file.preview.as_ref());
+                    if let Some(preview) = overview_src {
+                        // Overview freq crop
+                        let display_max = match freq_mode {
+                            OverviewFreqMode::All => max_freq,
+                            OverviewFreqMode::Human => 20_000.0f64.min(max_freq),
+                            OverviewFreqMode::MatchMain => max_display_freq.unwrap_or(max_freq),
+                        };
+                        let overview_freq_crop = (display_max / max_freq).clamp(0.001, 1.0);
+
+                        draw_overview_spectrogram(
+                            &ctx, canvas, preview,
+                            scroll, zoom,
+                            file.spectrogram.time_resolution, // spec_time_res (for viewport width)
+                            file.audio.duration_secs,         // true total duration
+                            main_canvas_w,
+                            main_freq_crop_lo,
+                            main_freq_crop_hi,
+                            &bm_tuples,
+                            overview_freq_crop,
+                            ff_range,
+                        );
+                    } else {
+                        ctx.set_fill_style_str("#333");
+                        ctx.fill_rect(0.0, 0.0, w as f64, h as f64);
+                        ctx.set_fill_style_str("#666");
+                        ctx.set_font("11px system-ui");
+                        ctx.set_text_align("center");
+                        ctx.set_text_baseline("middle");
+                        let _ = ctx.fill_text("Loading\u{2026}", w as f64 / 2.0, h as f64 / 2.0);
+                    }
+                }
+                OverviewView::Waveform => {
+                    let ov_buf;
+                    let ov_samples: &[f32] = match cv {
+                        crate::audio::source::ChannelView::MonoMix => &file.audio.samples,
+                        _ => {
+                            ov_buf = file.audio.source.read_region(cv, 0, file.audio.source.total_samples() as usize);
+                            &ov_buf
+                        }
+                    };
+                    draw_overview_waveform(
+                        &ctx, canvas,
+                        ov_samples,
+                        file.audio.sample_rate,
+                        file.spectrogram.time_resolution,
+                        scroll, zoom,
+                        main_canvas_w,
+                        &bm_tuples,
+                        gain_db,
+                    );
+                }
+            }
+
+            // Time markers along the bottom edge (full file duration)
+            {
+                let clock_cfg = file.recording_start_epoch_ms()
+                    .map(|ms| crate::canvas::time_markers::ClockTimeConfig {
+                        recording_start_epoch_ms: ms,
+                    });
+                crate::canvas::time_markers::draw_time_markers(
+                    &ctx,
+                    0.0,
+                    file.audio.duration_secs,
+                    w as f64,
+                    h as f64,
+                    file.audio.duration_secs,
+                    clock_cfg,
+                    state.show_clock_time.get(),
+                    1.0,
+                );
+            }
         }
     });
 
     // ── Mouse handlers ────────────────────────────────────────────────────────
 
-    // Get the true total duration for the current file (always from audio data)
+    // Get the true total duration (timeline or single file)
     let file_duration = move || -> f64 {
+        if let Some(ref tl) = state.active_timeline.get_untracked() {
+            return tl.total_duration_secs;
+        }
         let files = state.files.get_untracked();
         let idx = state.current_file_index.get_untracked();
         idx.and_then(|i| files.get(i))
@@ -632,11 +751,15 @@ pub fn OverviewPanel() -> impl IntoView {
                 class="playhead-dot"
                 style:left=move || {
                     let playhead = state.playhead_time.get();
-                    let files = state.files.get_untracked();
-                    let idx = state.current_file_index.get_untracked();
-                    let duration = idx.and_then(|i| files.get(i))
-                        .map(|f| f.audio.duration_secs)
-                        .unwrap_or(0.0);
+                    let duration = if let Some(ref tl) = state.active_timeline.get_untracked() {
+                        tl.total_duration_secs
+                    } else {
+                        let files = state.files.get_untracked();
+                        let idx = state.current_file_index.get_untracked();
+                        idx.and_then(|i| files.get(i))
+                            .map(|f| f.audio.duration_secs)
+                            .unwrap_or(0.0)
+                    };
                     let pct = if duration > 0.0 {
                         (playhead / duration * 100.0).clamp(0.0, 100.0)
                     } else { 0.0 };

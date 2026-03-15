@@ -11,6 +11,7 @@ use crate::state::{AppState, FileSortMode, LoadedFile};
 use crate::types::PreviewImage;
 
 use super::file_groups;
+use crate::timeline::TimelineView;
 
 use super::loading::{read_and_load_file, DemoEntry, fetch_demo_index, load_single_demo};
 
@@ -254,7 +255,36 @@ pub(super) fn FilesPanel() -> impl IntoView {
                             .unwrap_or(false);
                         let is_streaming = streaming_source::is_streaming(f.audio.source.as_ref());
                         let is_active = move || current_idx.get() == Some(i);
-                        let on_click = move |_| {
+                        let is_selected = move || state.selected_file_indices.with(|sel| sel.contains(&i));
+                        let on_click = move |ev: MouseEvent| {
+                            let ctrl = ev.ctrl_key() || ev.meta_key();
+                            let shift = ev.shift_key();
+
+                            if ctrl {
+                                // Toggle this file in multi-selection
+                                state.selected_file_indices.update(|sel| {
+                                    if let Some(pos) = sel.iter().position(|&x| x == i) {
+                                        sel.remove(pos);
+                                    } else {
+                                        sel.push(i);
+                                    }
+                                });
+                                return;
+                            }
+
+                            if shift {
+                                // Range select from current_file_index (or first selected) to i
+                                let anchor = current_idx.get_untracked().unwrap_or(0);
+                                let (lo, hi) = if anchor <= i { (anchor, i) } else { (i, anchor) };
+                                // Use the sorted_indices order for the range
+                                state.selected_file_indices.set((lo..=hi).collect());
+                                return;
+                            }
+
+                            // Plain click: switch to single file, clear multi-selection
+                            state.selected_file_indices.set(Vec::new());
+                            state.active_timeline.set(None);
+                            state.active_timeline_track.set(None);
                             // Clear navigation history and bookmarks when switching files
                             state.nav_history.set(vec![]);
                             state.nav_index.set(0);
@@ -303,7 +333,12 @@ pub(super) fn FilesPanel() -> impl IntoView {
                         let show_unsaved = is_rec && !is_tauri;
                         let file_view = view! {
                             <div
-                                class=move || if is_active() { "file-item active" } else { "file-item" }
+                                class=move || {
+                                    let mut cls = "file-item".to_string();
+                                    if is_active() { cls.push_str(" active"); }
+                                    if is_selected() { cls.push_str(" selected"); }
+                                    cls
+                                }
                                 on:click=on_click
                             >
                                 {preview.map(|pv| view! { <PreviewCanvas preview=pv /> })}
@@ -360,12 +395,69 @@ pub(super) fn FilesPanel() -> impl IntoView {
                         }
                     };
                     let show_sort = file_vec.len() > 1;
+
+                    let on_create_timeline = move |_: web_sys::MouseEvent| {
+                        let sel = state.selected_file_indices.get_untracked();
+                        if sel.len() < 2 { return; }
+                        let files = state.files.get_untracked();
+                        if let Some(tv) = TimelineView::from_files(&sel, &files) {
+                            state.active_timeline.set(Some(tv));
+                            state.active_timeline_track.set(None);
+                            state.current_file_index.set(None);
+                        }
+                    };
+
+                    let on_exit_timeline = move |_: web_sys::MouseEvent| {
+                        state.active_timeline.set(None);
+                        state.active_timeline_track.set(None);
+                        state.selected_file_indices.set(Vec::new());
+                        // Restore to first file if none active
+                        if state.current_file_index.get_untracked().is_none() && !state.files.with_untracked(|f| f.is_empty()) {
+                            state.current_file_index.set(Some(0));
+                        }
+                    };
+
                     view! {
                         <div class="file-list">
                             {if show_sort {
                                 Some(view! { <SortBar sort_mode=sort_mode /> })
                             } else {
                                 None
+                            }}
+                            // Timeline creation / active banner
+                            {move || {
+                                if state.active_timeline.with(|t| t.is_some()) {
+                                    let seg_count = state.active_timeline.with(|t| {
+                                        t.as_ref().map(|tv| tv.segments.len()).unwrap_or(0)
+                                    });
+                                    let total_dur = state.active_timeline.with(|t| {
+                                        t.as_ref().map(|tv| tv.total_duration_secs).unwrap_or(0.0)
+                                    });
+                                    view! {
+                                        <div class="timeline-banner">
+                                            <span class="timeline-banner-label">
+                                                {format!("Timeline: {} files, {:.1}s", seg_count, total_dur)}
+                                            </span>
+                                            <button class="timeline-exit-btn" on:click=on_exit_timeline
+                                                title="Exit timeline view"
+                                            >"\u{00D7}"</button>
+                                        </div>
+                                    }.into_any()
+                                } else {
+                                    let sel_count = state.selected_file_indices.with(|s| s.len());
+                                    if sel_count >= 2 {
+                                        view! {
+                                            <div class="timeline-create-bar">
+                                                <span>{format!("{} files selected", sel_count)}</span>
+                                                <button class="timeline-create-btn" on:click=on_create_timeline
+                                                    title="Create a stitched timeline from selected files"
+                                                >"Create Timeline"</button>
+                                            </div>
+                                        }.into_any()
+                                    } else {
+                                        view! { <span></span> }.into_any()
+                                    }
+                                }
                             }}
                             {items}
                             {move || {

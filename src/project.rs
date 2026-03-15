@@ -41,6 +41,10 @@ pub struct BatProject {
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub multitrack_groups: Vec<MultitrackGroup>,
 
+    /// Timeline definitions (multi-file stitched views).
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub timelines: Vec<TimelineDefinition>,
+
     /// Shared project-level settings (playback, export, display — expanded later).
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub config: Option<ProjectConfig>,
@@ -114,6 +118,30 @@ pub struct MultitrackGroup {
     pub label: Option<String>,
 }
 
+/// A timeline positions multiple files on a shared time axis.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct TimelineDefinition {
+    pub id: String,
+    /// Ordered entries (files positioned on the timeline).
+    pub entries: Vec<TimelineEntry>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub label: Option<String>,
+}
+
+/// A single file's placement within a timeline.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct TimelineEntry {
+    /// Index into `BatProject::files`.
+    pub file_index: usize,
+    /// Absolute start time (ms since epoch). From metadata or user override.
+    pub start_epoch_ms: f64,
+    /// Duration in seconds (from audio metadata).
+    pub duration_secs: f64,
+    /// Which multitrack group this belongs to (if any).
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub multitrack_group_id: Option<String>,
+}
+
 /// Shared project-level settings. Expanded over time.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct ProjectConfig {
@@ -151,6 +179,7 @@ impl BatProject {
             files: Vec::new(),
             sequences: Vec::new(),
             multitrack_groups: Vec::new(),
+            timelines: Vec::new(),
             config: None,
             merge_history: Vec::new(),
         }

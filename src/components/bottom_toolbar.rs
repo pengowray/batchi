@@ -357,27 +357,37 @@ pub fn BottomToolbar() -> impl IntoView {
                 }
             })}
 
-            // ── Channel selector (stereo+ only) ──
+            // ── Channel / Track selector (stereo+ or timeline multitracks) ──
             <Show when=move || {
                 let files = state.files.get();
                 let idx = state.current_file_index.get();
-                idx.and_then(|i| files.get(i)).map(|f| f.audio.channels).unwrap_or(1) > 1
+                let has_stereo = idx.and_then(|i| files.get(i)).map(|f| f.audio.channels).unwrap_or(1) > 1;
+                let has_mt = state.active_timeline.with(|t| {
+                    t.as_ref().map(|tv| !tv.multitrack_groups.is_empty()).unwrap_or(false)
+                });
+                has_stereo || has_mt
             }>
                 <div style="position:relative">
                     <button
                         class=move || if state.layer_panel_open.get() == Some(LayerPanel::Channel) { "layer-btn open" } else { "layer-btn" }
                         on:click=move |_| toggle_panel(&state, LayerPanel::Channel)
-                        title="Channel view"
+                        title="Channel / Track view"
                     >
                         <span class="layer-btn-category">"Ch"</span>
-                        <span class="layer-btn-value">{move || match state.channel_view.get() {
-                            ChannelView::MonoMix => "L+R",
-                            ChannelView::Channel(0) => "L",
-                            ChannelView::Channel(1) => "R",
-                            ChannelView::Difference => "L-R",
-                            ChannelView::Channel(2) => "Ch3",
-                            ChannelView::Channel(3) => "Ch4",
-                            ChannelView::Channel(_) => "Ch?",
+                        <span class="layer-btn-value">{move || {
+                            // Show active track label if in timeline mode with multitrack
+                            if let Some(ref track) = state.active_timeline_track.get() {
+                                return format!("Trk {}", track);
+                            }
+                            match state.channel_view.get() {
+                                ChannelView::MonoMix => "L+R".to_string(),
+                                ChannelView::Channel(0) => "L".to_string(),
+                                ChannelView::Channel(1) => "R".to_string(),
+                                ChannelView::Difference => "L-R".to_string(),
+                                ChannelView::Channel(2) => "Ch3".to_string(),
+                                ChannelView::Channel(3) => "Ch4".to_string(),
+                                ChannelView::Channel(_) => "Ch?".to_string(),
+                            }
                         }}</span>
                     </button>
                     <Show when=move || state.layer_panel_open.get() == Some(LayerPanel::Channel)>
@@ -385,30 +395,75 @@ pub fn BottomToolbar() -> impl IntoView {
                             let set_ch = move |cv: ChannelView| {
                                 move |_: web_sys::MouseEvent| {
                                     state.channel_view.set(cv);
+                                    state.active_timeline_track.set(None); // Clear track when switching channel
                                     crate::canvas::tile_cache::clear_all_caches();
                                     state.tile_ready_signal.update(|n| *n = n.wrapping_add(1));
                                     state.layer_panel_open.set(None);
                                 }
                             };
+
+                            // Check if current file is stereo
+                            let files = state.files.get_untracked();
+                            let idx = state.current_file_index.get_untracked();
+                            let is_stereo = idx.and_then(|i| files.get(i)).map(|f| f.audio.channels).unwrap_or(1) > 1;
+
+                            // Get multitrack options from active timeline
+                            let mt_groups: Vec<crate::timeline::MultitrackOption> = state.active_timeline.with_untracked(|t| {
+                                t.as_ref().map(|tv| tv.multitrack_groups.clone()).unwrap_or_default()
+                            });
+
                             view! {
                                 <div class="layer-panel" style="bottom: calc(100% + 4px); left: 0; min-width:100px;">
                                     <div class="layer-panel-title">"Channel"</div>
-                                    <button
-                                        class=move || layer_opt_class(state.channel_view.get() == ChannelView::MonoMix)
-                                        on:click=set_ch(ChannelView::MonoMix)
-                                    >"Mix (L+R)"</button>
-                                    <button
-                                        class=move || layer_opt_class(state.channel_view.get() == ChannelView::Channel(0))
-                                        on:click=set_ch(ChannelView::Channel(0))
-                                    >"Left"</button>
-                                    <button
-                                        class=move || layer_opt_class(state.channel_view.get() == ChannelView::Channel(1))
-                                        on:click=set_ch(ChannelView::Channel(1))
-                                    >"Right"</button>
-                                    <button
-                                        class=move || layer_opt_class(state.channel_view.get() == ChannelView::Difference)
-                                        on:click=set_ch(ChannelView::Difference)
-                                    >"Diff (L-R)"</button>
+                                    {if is_stereo {
+                                        Some(view! {
+                                            <button
+                                                class=move || layer_opt_class(state.channel_view.get() == ChannelView::MonoMix && state.active_timeline_track.with(|t| t.is_none()))
+                                                on:click=set_ch(ChannelView::MonoMix)
+                                            >"Mix (L+R)"</button>
+                                            <button
+                                                class=move || layer_opt_class(state.channel_view.get() == ChannelView::Channel(0) && state.active_timeline_track.with(|t| t.is_none()))
+                                                on:click=set_ch(ChannelView::Channel(0))
+                                            >"Left"</button>
+                                            <button
+                                                class=move || layer_opt_class(state.channel_view.get() == ChannelView::Channel(1) && state.active_timeline_track.with(|t| t.is_none()))
+                                                on:click=set_ch(ChannelView::Channel(1))
+                                            >"Right"</button>
+                                            <button
+                                                class=move || layer_opt_class(state.channel_view.get() == ChannelView::Difference && state.active_timeline_track.with(|t| t.is_none()))
+                                                on:click=set_ch(ChannelView::Difference)
+                                            >"Diff (L-R)"</button>
+                                        })
+                                    } else {
+                                        None
+                                    }}
+                                    {if !mt_groups.is_empty() {
+                                        let items: Vec<_> = mt_groups.iter().map(|mt| {
+                                            let label = mt.label.clone();
+                                            let label2 = label.clone();
+                                            let label3 = label.clone();
+                                            view! {
+                                                <button
+                                                    class=move || layer_opt_class(
+                                                        state.active_timeline_track.with(|t| t.as_deref() == Some(&label3))
+                                                    )
+                                                    on:click=move |_: web_sys::MouseEvent| {
+                                                        state.active_timeline_track.set(Some(label2.clone()));
+                                                        crate::canvas::tile_cache::clear_all_caches();
+                                                        state.tile_ready_signal.update(|n| *n = n.wrapping_add(1));
+                                                        state.layer_panel_open.set(None);
+                                                    }
+                                                >{format!("Track: {}", label)}</button>
+                                            }
+                                        }).collect();
+                                        Some(view! {
+                                            <div class="layer-panel-divider"></div>
+                                            <div class="layer-panel-title">"Tracks"</div>
+                                            {items}
+                                        })
+                                    } else {
+                                        None
+                                    }}
                                 </div>
                             }
                         }

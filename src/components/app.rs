@@ -593,12 +593,23 @@ pub fn App() -> impl IntoView {
         if let Some(key) = nav_action {
             ev.prevent_default();
             let files = state_kb.files.get_untracked();
-            let idx = state_kb.current_file_index.get_untracked().unwrap_or(0);
-            if let Some(file) = files.get(idx) {
+            let timeline = state_kb.active_timeline.get_untracked();
+            let (time_res, duration) = if let Some(ref tl) = timeline {
+                let tr = tl.segments.first().and_then(|s| files.get(s.file_index))
+                    .map(|f| f.spectrogram.time_resolution).unwrap_or(1.0);
+                (tr, tl.total_duration_secs)
+            } else {
+                let idx = state_kb.current_file_index.get_untracked().unwrap_or(0);
+                match files.get(idx) {
+                    Some(file) => (file.spectrogram.time_resolution, file.audio.duration_secs),
+                    None => (1.0, 0.0),
+                }
+            };
+            {
                 let zoom = state_kb.zoom_level.get_untracked();
                 let canvas_w = state_kb.spectrogram_canvas_width.get_untracked();
-                let visible_time = (canvas_w / zoom) * file.spectrogram.time_resolution;
-                let max_scroll = (file.audio.duration_secs - visible_time).max(0.0);
+                let visible_time = (canvas_w / zoom) * time_res;
+                let max_scroll = (duration - visible_time).max(0.0);
                 let new_scroll = match key.as_str() {
                     "Home" => 0.0,
                     "End" => max_scroll,

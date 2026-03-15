@@ -206,6 +206,8 @@ fn ProjectView(project: BatProject) -> impl IntoView {
     let notes_text = project.notes.clone().unwrap_or_default();
     let seq_count = project.sequences.len();
     let mt_count = project.multitrack_groups.len();
+    let timeline_count = project.timelines.len();
+    let timelines_clone = project.timelines.clone();
 
     // Track which project files are currently loaded
     let loaded_files = state.files.get_untracked();
@@ -462,6 +464,37 @@ fn ProjectView(project: BatProject) -> impl IntoView {
                 <div class="project-section-header">"Files"</div>
                 {file_items}
             </div>
+
+            // Timelines
+            {if timeline_count > 0 || seq_count > 0 {
+                let timeline_items: Vec<_> = timelines_clone.iter().map(|tl| {
+                    let label = tl.label.clone().unwrap_or_else(|| format!("Timeline ({})", tl.entries.len()));
+                    let entry_count = tl.entries.len();
+                    view! {
+                        <div class="project-file-item">
+                            <div class="project-file-name">{label}</div>
+                            <div class="project-file-info">{format!("{} files", entry_count)}</div>
+                        </div>
+                    }
+                }).collect();
+                Some(view! {
+                    <div class="project-timelines-section">
+                        <div class="project-section-header">"Timelines"</div>
+                        {if timeline_items.is_empty() {
+                            Some(view! {
+                                <div class="project-panel-hint" style="margin: 4px 0;">
+                                    "Select files in the Files tab and click Create Timeline."
+                                </div>
+                            })
+                        } else {
+                            None
+                        }}
+                        {timeline_items}
+                    </div>
+                })
+            } else {
+                None
+            }}
 
             // Notes
             <div class="project-notes-section">
