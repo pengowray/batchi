@@ -1,5 +1,6 @@
 use crate::canvas::colors::{freq_marker_color, freq_marker_label};
 use crate::canvas::spectrogram_renderer::freq_to_y;
+use crate::dsp::filters::harmonics_band_bounds;
 use crate::state::{SpectrogramHandle, Selection};
 use web_sys::CanvasRenderingContext2d;
 
@@ -714,16 +715,18 @@ pub fn draw_filter_overlay(
     canvas_width: f64,
     canvas_height: f64,
 ) {
-    let harmonics_active = band_mode >= 4 && freq_low > 0.0 && freq_high / freq_low < 2.0;
-    let harmonics_upper = freq_high * 2.0;
+    let harmonics_bounds = harmonics_band_bounds(freq_low, freq_high, band_mode);
 
     // Determine the frequency range for the hovered band
     let (band_lo, band_hi, color) = match hovered_band {
         0 => (0.0, freq_low, "rgba(255, 80, 80, 0.15)"),       // below — red tint
         1 => (freq_low, freq_high, "rgba(80, 255, 120, 0.15)"), // selected — green
-        2 if harmonics_active => (freq_high, harmonics_upper, "rgba(80, 120, 255, 0.15)"), // harmonics — blue
+        2 if harmonics_bounds.is_some() => {
+            let (harmonics_lower, harmonics_upper) = harmonics_bounds.expect("checked is_some");
+            (harmonics_lower, harmonics_upper, "rgba(80, 120, 255, 0.15)")
+        }
         3 => {
-            let lo = if harmonics_active { harmonics_upper } else { freq_high };
+            let lo = harmonics_bounds.map(|(_, harmonics_upper)| harmonics_upper).unwrap_or(freq_high);
             (lo, max_freq, "rgba(255, 180, 60, 0.15)")          // above — orange
         }
         _ => return,

@@ -7,6 +7,20 @@ thread_local! {
     static HANN_CACHE: RefCell<HashMap<usize, Vec<f32>>> = RefCell::new(HashMap::new());
 }
 
+pub fn harmonics_band_bounds(freq_low: f64, freq_high: f64, band_mode: u8) -> Option<(f64, f64)> {
+    if band_mode < 4 || freq_high <= 0.0 || freq_low >= freq_high {
+        return None;
+    }
+
+    let band_low = (freq_low * 2.0).max(freq_high);
+    let band_high = freq_high * 2.0;
+    if band_low < band_high {
+        Some((band_low, band_high))
+    } else {
+        None
+    }
+}
+
 fn hann_window(size: usize) -> Vec<f32> {
     HANN_CACHE.with(|cache| {
         cache
@@ -29,7 +43,7 @@ fn hann_window(size: usize) -> Vec<f32> {
 /// Bands are defined relative to the "selected" frequency range [freq_low, freq_high]:
 /// - Below: 0 to freq_low
 /// - Selected: freq_low to freq_high
-/// - Harmonics: freq_high to freq_high*2 (only band_mode==4 and selection < 1 octave)
+/// - Harmonics: max(freq_high, freq_low*2) to freq_high*2 (only band_mode >= 4)
 /// - Above: everything above (band_mode >= 3)
 ///
 /// In 2-band mode, everything at or above freq_low uses db_selected.
@@ -57,8 +71,7 @@ pub fn apply_eq_filter(
     // Build per-bin gain table
     let num_bins = fft_size / 2 + 1;
     let freq_per_bin = sample_rate as f64 / fft_size as f64;
-    let harmonics_active = band_mode >= 4 && freq_high > 0.0;
-    let harmonics_upper = freq_high * 2.0;
+    let harmonics_bounds = harmonics_band_bounds(freq_low, freq_high, band_mode);
 
     let gains: Vec<f32> = (0..num_bins)
         .map(|i| {
@@ -70,10 +83,13 @@ pub fn apply_eq_filter(
             } else if band_mode <= 2 {
                 // 2-band: everything above uses selected
                 db_selected
-            } else if harmonics_active && freq <= harmonics_upper {
-                db_harmonics
+            } else if let Some((harmonics_lower, harmonics_upper)) = harmonics_bounds {
+                if freq >= harmonics_lower && freq <= harmonics_upper {
+                    db_harmonics
+                } else {
+                    db_above
+                }
             } else {
-                // 3-band or 4-band above region
                 db_above
             };
             10.0_f64.powf(db / 20.0) as f32
@@ -161,8 +177,8 @@ pub fn apply_eq_filter_fast(
 
     let gain_below = 10.0_f64.powf(db_below / 20.0) as f32;
     let gain_selected = 10.0_f64.powf(db_selected / 20.0) as f32;
-    let harmonics_active = band_mode >= 4 && freq_high > 0.0;
-    let gain_harmonics = if harmonics_active { 10.0_f64.powf(db_harmonics / 20.0) as f32 } else { 0.0 };
+    let harmonics_bounds = harmonics_band_bounds(freq_low, freq_high, band_mode);
+    let gain_harmonics = if harmonics_bounds.is_some() { 10.0_f64.powf(db_harmonics / 20.0) as f32 } else { 0.0 };
     let gain_above = if band_mode >= 3 { 10.0_f64.powf(db_above / 20.0) as f32 } else { gain_selected };
 
     // Split at freq_low: below vs rest
@@ -185,14 +201,20 @@ pub fn apply_eq_filter_fast(
         output[i] += lp_high[i] * gain_selected;
     }
 
-    if harmonics_active {
-        // hp_high = hp_low - lp_high; split upper at harmonics boundary
-        let harmonics_upper = freq_high * 2.0;
+    if let Some((harmonics_lower, harmonics_upper)) = harmonics_bounds {
+        // Split the upper region around the harmonics band so widened selections map to 2x bounds.
         let hp_high: Vec<f32> = hp_low.iter().zip(lp_high.iter()).map(|(s, l)| s - l).collect();
-        let lp_harm = cascaded_lowpass(&hp_high, harmonics_upper, sample_rate, 4);
-        // hp_harm = hp_high - lp_harm; inline into output to avoid extra Vec
+        let lp_harm_upper = cascaded_lowpass(&hp_high, harmonics_upper, sample_rate, 4);
+        let hp_harm_lower: Vec<f32> = if harmonics_lower > freq_high {
+            let lp_harm_lower = cascaded_lowpass(&hp_high, harmonics_lower, sample_rate, 4);
+            hp_high.iter().zip(lp_harm_lower.iter()).map(|(s, l)| s - l).collect()
+        } else {
+            hp_high.clone()
+        };
         for i in 0..len {
-            output[i] += lp_harm[i] * gain_harmonics + (hp_high[i] - lp_harm[i]) * gain_above;
+            let harmonics = hp_harm_lower[i] - (hp_high[i] - lp_harm_upper[i]);
+            let above = hp_high[i] - hp_harm_lower[i] + (hp_high[i] - lp_harm_upper[i]);
+            output[i] += harmonics * gain_harmonics + above * gain_above;
         }
     } else {
         // Above band (or selected dB in 2-band mode): hp_high = hp_low - lp_high; inline
@@ -297,6 +319,22 @@ pub fn decimated_rate(source_rate: u32, target_rate: u32) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn harmonics_band_starts_at_focus_high_for_narrow_selections() {
+        assert_eq!(harmonics_band_bounds(20_000.0, 30_000.0, 4), Some((30_000.0, 60_000.0)));
+    }
+
+    #[test]
+    fn harmonics_band_uses_doubled_low_for_wide_selections() {
+        assert_eq!(harmonics_band_bounds(20_000.0, 50_000.0, 4), Some((40_000.0, 100_000.0)));
+    }
+
+    #[test]
+    fn harmonics_band_is_disabled_for_invalid_ranges() {
+        assert_eq!(harmonics_band_bounds(50_000.0, 50_000.0, 4), None);
+        assert_eq!(harmonics_band_bounds(20_000.0, 50_000.0, 3), None);
+    }
 
     #[test]
     fn test_lowpass_attenuates_high_frequency() {

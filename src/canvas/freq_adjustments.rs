@@ -1,4 +1,5 @@
 use leptos::prelude::*;
+use crate::dsp::filters::harmonics_band_bounds;
 use crate::state::{AppState, DisplayFilterMode};
 
 /// Compute per-row dB adjustments for display EQ and noise filtering.
@@ -23,8 +24,7 @@ pub fn compute_freq_adjustments(state: &AppState, file_max_freq: f64, tile_heigh
         let db_harmonics = state.filter_db_harmonics.get_untracked() as f32;
         let db_above = state.filter_db_above.get_untracked() as f32;
         let band_mode = state.filter_band_mode.get_untracked();
-        let harm_active = band_mode >= 4 && freq_high > 0.0 && (freq_high / freq_low.max(1.0)) < 2.0;
-        let harm_upper = freq_high * 2.0;
+        let harmonics_bounds = harmonics_band_bounds(freq_low, freq_high, band_mode);
 
         for row in 0..tile_height {
             let bin = tile_height - 1 - row; // bin 0 = DC
@@ -35,8 +35,12 @@ pub fn compute_freq_adjustments(state: &AppState, file_max_freq: f64, tile_heigh
                 db_selected
             } else if band_mode <= 2 {
                 db_selected
-            } else if harm_active && freq <= harm_upper {
-                db_harmonics
+            } else if let Some((harmonics_lower, harmonics_upper)) = harmonics_bounds {
+                if freq >= harmonics_lower && freq <= harmonics_upper {
+                    db_harmonics
+                } else {
+                    db_above
+                }
             } else {
                 db_above
             };
