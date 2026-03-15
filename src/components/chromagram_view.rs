@@ -33,6 +33,9 @@ pub fn ChromagramView() -> impl IntoView {
         let idx = state.current_file_index.get();
         let is_playing = state.is_playing.get();
         let canvas_tool = state.canvas_tool.get();
+        // Re-read canvas dimensions when sidebar layout changes
+        let _sidebar = state.sidebar_collapsed.get();
+        let _rsidebar = state.right_sidebar_collapsed.get();
 
         let Some(canvas_el) = canvas_ref.get() else { return };
         let canvas: &HtmlCanvasElement = canvas_el.as_ref();

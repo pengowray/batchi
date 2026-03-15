@@ -192,6 +192,9 @@ pub fn Spectrogram() -> impl IntoView {
         let selected_annotation_ids = state.selected_annotation_ids.get();
         let _timeline = state.active_timeline.get(); // trigger redraw on timeline change
         let _pre = pre_rendered.track();
+        // Re-read canvas dimensions when sidebar layout changes
+        let _sidebar = state.sidebar_collapsed.get();
+        let _rsidebar = state.right_sidebar_collapsed.get();
 
         let Some(canvas_el) = canvas_ref.get() else { return };
         let canvas: &HtmlCanvasElement = canvas_el.as_ref();

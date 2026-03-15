@@ -95,6 +95,9 @@ pub fn Waveform() -> impl IntoView {
         } else {
             state.gain_db.get()
         };
+        // Re-read canvas dimensions when sidebar layout changes
+        let _sidebar = state.sidebar_collapsed.get();
+        let _rsidebar = state.right_sidebar_collapsed.get();
 
         let Some(canvas_el) = canvas_ref.get() else { return };
         let canvas: &HtmlCanvasElement = canvas_el.as_ref();

@@ -315,6 +315,9 @@ pub fn OverviewPanel() -> impl IntoView {
         let cv = state.channel_view.get();
         let auto_gain = state.auto_gain.get();
         let gain_db = if auto_gain { state.compute_auto_gain() } else { state.gain_db.get() };
+        // Re-read canvas dimensions when sidebar layout changes
+        let _sidebar = state.sidebar_collapsed.get();
+        let _rsidebar = state.right_sidebar_collapsed.get();
 
         let Some(canvas_el) = canvas_ref.get() else { return };
         let canvas: &HtmlCanvasElement = canvas_el.as_ref();

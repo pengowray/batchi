@@ -102,6 +102,9 @@ pub fn ZcDotChart() -> impl IntoView {
         let spec_drag = state.spec_drag_handle.get();
         let mouse_freq = state.mouse_freq.get();
         let mouse_cx = state.mouse_canvas_x.get();
+        // Re-read canvas dimensions when sidebar layout changes
+        let _sidebar = state.sidebar_collapsed.get();
+        let _rsidebar = state.right_sidebar_collapsed.get();
 
         let Some(canvas_el) = canvas_ref.get() else { return };
         let canvas: &HtmlCanvasElement = canvas_el.as_ref();
