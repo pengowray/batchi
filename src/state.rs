@@ -859,6 +859,8 @@ pub struct AppState {
     pub current_project: RwSignal<Option<crate::project::BatProject>>,
     /// Whether the project has unsaved changes.
     pub project_dirty: RwSignal<bool>,
+    /// Save status for UI feedback: "", "Saving...", "Saved"
+    pub project_save_status: RwSignal<&'static str>,
 
     // Timeline
     /// Multi-selected file indices for timeline creation (separate from current_file_index).
@@ -1134,6 +1136,7 @@ impl AppState {
 
             current_project: RwSignal::new(None),
             project_dirty: RwSignal::new(false),
+            project_save_status: RwSignal::new(""),
 
             selected_file_indices: RwSignal::new(Vec::new()),
             active_timeline: RwSignal::new(None),

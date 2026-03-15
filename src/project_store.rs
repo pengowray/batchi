@@ -94,9 +94,19 @@ pub async fn load_project(id: &str) -> Result<Option<BatProject>, String> {
     Ok(Some(project))
 }
 
+/// Summary info for a saved project (for the list picker).
+#[derive(Clone)]
+pub struct ProjectSummary {
+    pub id: String,
+    pub name: Option<String>,
+    pub file_count: usize,
+    pub created_at: Option<String>,
+    pub modified_at: Option<String>,
+}
+
 /// List all project IDs stored in OPFS.
-/// Returns Vec of (id, name) pairs.
-pub async fn list_projects() -> Result<Vec<(String, Option<String>)>, String> {
+/// Returns Vec of project summaries.
+pub async fn list_projects() -> Result<Vec<ProjectSummary>, String> {
     let dir = get_projects_dir().await?;
     let mut result = Vec::new();
 
@@ -123,14 +133,27 @@ pub async fn list_projects() -> Result<Vec<(String, Option<String>)>, String> {
 
         if key.ends_with(".batproj") {
             let id = key.trim_end_matches(".batproj").to_string();
-            // Try to load just enough to get the name — load full project
             match load_project(&id).await {
-                Ok(Some(proj)) => result.push((id, proj.name)),
-                Ok(None) => result.push((id, None)),
-                Err(_) => result.push((id, None)),
+                Ok(Some(proj)) => result.push(ProjectSummary {
+                    id,
+                    name: proj.name,
+                    file_count: proj.files.len(),
+                    created_at: proj.created_at,
+                    modified_at: proj.modified_at,
+                }),
+                _ => result.push(ProjectSummary {
+                    id,
+                    name: None,
+                    file_count: 0,
+                    created_at: None,
+                    modified_at: None,
+                }),
             }
         }
     }
+
+    // Sort by modified_at descending (most recent first)
+    result.sort_by(|a, b| b.modified_at.cmp(&a.modified_at));
 
     Ok(result)
 }

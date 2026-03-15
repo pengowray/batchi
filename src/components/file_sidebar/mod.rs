@@ -151,6 +151,13 @@ pub fn FileSidebar() -> impl IntoView {
                     title="Project"
                 >
                     "Project"
+                    {move || {
+                        if state.current_project.with(|p| p.is_some()) {
+                            Some(view! { <span class="project-tab-dot">{"\u{25CF}"}</span> })
+                        } else {
+                            None
+                        }
+                    }}
                 </button>
                 <button
                     class=move || if state.left_sidebar_tab.get() == LeftSidebarTab::Settings {

@@ -25,10 +25,28 @@ fn audio_meta_from_loaded(f: &crate::state::LoadedFile) -> AudioFileMetadata {
 pub(crate) fn save_project_async(state: AppState) {
     let proj = state.current_project.get_untracked();
     if let Some(proj) = proj {
+        state.project_save_status.set("Saving...");
         spawn_local(async move {
             match project_store::save_project(&proj).await {
-                Ok(()) => state.project_dirty.set(false),
-                Err(e) => log::error!("Failed to save project: {e}"),
+                Ok(()) => {
+                    state.project_dirty.set(false);
+                    state.project_save_status.set("Saved");
+                    // Clear "Saved" after 3 seconds
+                    let cb = wasm_bindgen::closure::Closure::once(move || {
+                        if state.project_save_status.get_untracked() == "Saved" {
+                            state.project_save_status.set("");
+                        }
+                    });
+                    let _ = web_sys::window().unwrap()
+                        .set_timeout_with_callback_and_timeout_and_arguments_0(
+                            cb.as_ref().unchecked_ref(), 3000,
+                        );
+                    cb.forget();
+                }
+                Err(e) => {
+                    log::error!("Failed to save project: {e}");
+                    state.project_save_status.set("");
+                }
             }
         });
     }
@@ -56,7 +74,7 @@ pub fn ProjectPanel() -> impl IntoView {
 #[component]
 fn NoProjectView() -> impl IntoView {
     let state = expect_context::<AppState>();
-    let project_list: RwSignal<Option<Vec<(String, Option<String>)>>> = RwSignal::new(None);
+    let project_list: RwSignal<Option<Vec<project_store::ProjectSummary>>> = RwSignal::new(None);
     let loading_list = RwSignal::new(false);
 
     let on_create = move |_: web_sys::MouseEvent| {
@@ -166,24 +184,62 @@ fn NoProjectView() -> impl IntoView {
                         view! { <p class="project-panel-hint">"No saved projects found."</p> }.into_any()
                     }
                     Some(projects) => {
-                        let items: Vec<_> = projects.iter().map(|(id, name)| {
-                            let id = id.clone();
-                            let display = name.clone().unwrap_or_else(|| format!("Untitled ({}...)", &id[..8.min(id.len())]));
-                            view! {
-                                <button class="project-list-item" on:click=move |_| {
-                                    let id = id.clone();
-                                    spawn_local(async move {
-                                        match project_store::load_project(&id).await {
-                                            Ok(Some(proj)) => {
-                                                state.current_project.set(Some(proj));
-                                                state.project_dirty.set(false);
-                                                project_list.set(None);
-                                            }
-                                            Ok(None) => log::warn!("Project {id} not found"),
-                                            Err(e) => log::error!("Failed to load project: {e}"),
+                        let items: Vec<_> = projects.iter().map(|summary| {
+                            let id = summary.id.clone();
+                            let id_load = id.clone();
+                            let id_del = id.clone();
+                            let display = summary.name.clone().unwrap_or_else(|| format!("Untitled ({}...)", &id[..8.min(id.len())]));
+                            let file_count = summary.file_count;
+                            let date = summary.modified_at.as_deref()
+                                .or(summary.created_at.as_deref())
+                                .and_then(|d: &str| d.get(..10))
+                                .unwrap_or("")
+                                .to_string();
+                            let on_load = move |_: web_sys::MouseEvent| {
+                                let id = id_load.clone();
+                                spawn_local(async move {
+                                    match project_store::load_project(&id).await {
+                                        Ok(Some(proj)) => {
+                                            state.current_project.set(Some(proj));
+                                            state.project_dirty.set(false);
+                                            project_list.set(None);
                                         }
-                                    });
-                                }>{display}</button>
+                                        Ok(None) => log::warn!("Project {id} not found"),
+                                        Err(e) => log::error!("Failed to load project: {e}"),
+                                    }
+                                });
+                            };
+                            let on_delete = move |ev: web_sys::MouseEvent| {
+                                ev.stop_propagation();
+                                let id = id_del.clone();
+                                spawn_local(async move {
+                                    match project_store::delete_project(&id).await {
+                                        Ok(()) => {
+                                            // Refresh list
+                                            match project_store::list_projects().await {
+                                                Ok(updated) => project_list.set(Some(updated)),
+                                                Err(e) => log::error!("Failed to refresh list: {e}"),
+                                            }
+                                        }
+                                        Err(e) => log::error!("Failed to delete project: {e}"),
+                                    }
+                                });
+                            };
+                            view! {
+                                <div class="project-list-item" on:click=on_load>
+                                    <div class="project-list-item-name">{display}</div>
+                                    <div class="project-list-item-meta">
+                                        <span>{format!("{file_count} file(s)")}</span>
+                                        {if !date.is_empty() {
+                                            Some(view! { <span class="project-list-item-date">{date}</span> })
+                                        } else {
+                                            None
+                                        }}
+                                        <button class="project-list-item-delete" on:click=on_delete
+                                            title="Delete this project"
+                                        >{"\u{1F5D1}"}</button>
+                                    </div>
+                                </div>
                             }
                         }).collect();
                         view! { <div class="project-list-picker">{items}</div> }.into_any()
@@ -206,7 +262,7 @@ fn ProjectView(project: BatProject) -> impl IntoView {
     let notes_text = project.notes.clone().unwrap_or_default();
     let seq_count = project.sequences.len();
     let mt_count = project.multitrack_groups.len();
-    let timeline_count = project.timelines.len();
+    let _timeline_count = project.timelines.len();
     let timelines_clone = project.timelines.clone();
 
     // Track which project files are currently loaded
@@ -277,8 +333,15 @@ fn ProjectView(project: BatProject) -> impl IntoView {
     };
 
     let on_close = move |_: web_sys::MouseEvent| {
+        if state.project_dirty.get_untracked() {
+            let window = web_sys::window().unwrap();
+            if !window.confirm_with_message("You have unsaved changes. Close project anyway?").unwrap_or(true) {
+                return;
+            }
+        }
         state.current_project.set(None);
         state.project_dirty.set(false);
+        state.project_save_status.set("");
     };
 
     // Merge .batm sidecars from loaded files into the project
@@ -413,10 +476,15 @@ fn ProjectView(project: BatProject) -> impl IntoView {
                 <span class="project-meta-sep">{"\u{00B7}"}</span>
                 <span title=format!("Created: {created}")>{created_short}</span>
                 {move || {
-                    if state.project_dirty.get() {
-                        Some(view! { <span class="project-unsaved">" (unsaved)"</span> })
+                    let dirty = state.project_dirty.get();
+                    let status = state.project_save_status.get();
+                    if !status.is_empty() {
+                        let cls = if status == "Saved" { "project-save-status saved" } else { "project-save-status" };
+                        view! { <span class=cls>{format!(" {status}")}</span> }.into_any()
+                    } else if dirty {
+                        view! { <span class="project-unsaved">" (unsaved)"</span> }.into_any()
                     } else {
-                        None
+                        view! { <span></span> }.into_any()
                     }
                 }}
             </div>
@@ -466,7 +534,7 @@ fn ProjectView(project: BatProject) -> impl IntoView {
             </div>
 
             // Timelines
-            {if timeline_count > 0 || seq_count > 0 {
+            {
                 let timeline_items: Vec<_> = timelines_clone.iter().enumerate().map(|(_tl_idx, tl)| {
                     let label = tl.label.clone().unwrap_or_else(|| format!("Timeline ({})", tl.entries.len()));
                     let entry_count = tl.entries.len();
@@ -523,10 +591,13 @@ fn ProjectView(project: BatProject) -> impl IntoView {
                     };
 
                     view! {
-                        <div class="project-file-item clickable" on:click=on_activate
+                        <div class="project-timeline-item clickable" on:click=on_activate
                             title="Click to activate this timeline"
                         >
-                            <div class="project-file-name">{label}</div>
+                            <div class="project-timeline-name">
+                                <span class="project-timeline-icon">{"\u{25B6}"}</span>
+                                {label}
+                            </div>
                             <div class="project-file-info">
                                 {format!("{} files", entry_count)}
                                 <button class="project-timeline-delete" on:click=on_delete
@@ -536,7 +607,7 @@ fn ProjectView(project: BatProject) -> impl IntoView {
                         </div>
                     }
                 }).collect();
-                Some(view! {
+                view! {
                     <div class="project-timelines-section">
                         <div class="project-section-header">"Timelines"</div>
                         {if timeline_items.is_empty() {
@@ -550,10 +621,8 @@ fn ProjectView(project: BatProject) -> impl IntoView {
                         }}
                         {timeline_items}
                     </div>
-                })
-            } else {
-                None
-            }}
+                }
+            }
 
             // Notes
             <div class="project-notes-section">

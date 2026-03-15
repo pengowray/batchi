@@ -2807,12 +2807,6 @@ body.sidebar-resizing {
     padding-left: 14px;
 }
 
-.project-file-item.clickable {
-    cursor: pointer;
-}
-.project-file-item.clickable:hover {
-    background: #282828;
-}
 .project-timeline-delete {
     background: none;
     border: none;
@@ -2824,6 +2818,43 @@ body.sidebar-resizing {
 }
 .project-timeline-delete:hover {
     color: #f66;
+}
+
+.project-save-status {
+    color: #888;
+    font-style: italic;
+}
+.project-save-status.saved {
+    color: #4a8;
+}
+.project-timeline-item {
+    padding: 4px 0;
+    border-bottom: 1px solid #222;
+}
+.project-timeline-item.clickable {
+    cursor: pointer;
+}
+.project-timeline-item.clickable:hover {
+    background: #282828;
+}
+.project-timeline-name {
+    color: #aad;
+    font-size: 11px;
+}
+.project-timeline-icon {
+    color: #68a;
+    font-size: 8px;
+    margin-right: 4px;
+}
+.project-tab-dot {
+    color: #4a8;
+    font-size: 7px;
+    margin-left: 3px;
+    vertical-align: super;
+}
+.project-timelines-section {
+    border-top: 1px solid #333;
+    margin-top: 6px;
 }
 
 .project-meta-warn {
@@ -2907,7 +2938,9 @@ body.sidebar-resizing {
     overflow: hidden;
 }
 .project-list-item {
-    display: block;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
     width: 100%;
     padding: 6px 8px;
     font-size: 11px;
@@ -2920,6 +2953,38 @@ body.sidebar-resizing {
 }
 .project-list-item:last-child { border-bottom: none; }
 .project-list-item:hover { background: #252530; }
+.project-list-item-name {
+    font-size: 11px;
+    color: #ccc;
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.project-list-item-meta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 10px;
+    color: #777;
+    white-space: nowrap;
+}
+.project-list-item-date {
+    color: #666;
+}
+.project-list-item-delete {
+    background: none;
+    border: none;
+    color: #666;
+    cursor: pointer;
+    font-size: 11px;
+    padding: 0 2px;
+    line-height: 1;
+}
+.project-list-item-delete:hover {
+    color: #f66;
+}
 
 .file-badge-tauri {
     color: #a8d;
