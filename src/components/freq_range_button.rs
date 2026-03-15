@@ -66,6 +66,7 @@ pub fn FreqRangeButton() -> impl IntoView {
                 if state.mouse_in_label_area.get() { "0" } else { "1" },
                 if visible() { "" } else { " display: none;" })
             on:click=|ev: web_sys::MouseEvent| ev.stop_propagation()
+            on:touchstart=|ev: web_sys::TouchEvent| ev.stop_propagation()
         >
             <div style=move || format!("position: relative; pointer-events: {};",
                 if state.mouse_in_label_area.get() { "none" } else { "auto" })>

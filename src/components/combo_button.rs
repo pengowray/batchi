@@ -92,6 +92,7 @@ pub fn ComboButton(
                 if state.mouse_in_label_area.get() { "none" } else { "auto" }
             )
             on:click=|ev: web_sys::MouseEvent| ev.stop_propagation()
+            on:touchstart=|ev: web_sys::TouchEvent| ev.stop_propagation()
         >
             // ── Left button ──
             <button

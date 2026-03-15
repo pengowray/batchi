@@ -249,6 +249,7 @@ fn OverviewLayersButton() -> impl IntoView {
         <div
             style="position: absolute; bottom: 4px; left: 64px; pointer-events: none;"
             on:click=|ev: MouseEvent| ev.stop_propagation()
+            on:touchstart=|ev: web_sys::TouchEvent| ev.stop_propagation()
         >
             <div style="position: relative; pointer-events: auto;">
                 <button
@@ -718,6 +719,7 @@ pub fn OverviewPanel() -> impl IntoView {
             // Back/Forward navigation buttons (top-left)
             <div class="overview-nav"
                 on:click=|ev: MouseEvent| ev.stop_propagation()
+                on:touchstart=|ev: web_sys::TouchEvent| ev.stop_propagation()
             >
                 <button
                     class="overview-nav-btn"

@@ -21,6 +21,7 @@ pub fn ToolButton() -> impl IntoView {
         <div
             style="position: absolute; bottom: 50px; right: 12px; pointer-events: none;"
             on:click=|ev: web_sys::MouseEvent| ev.stop_propagation()
+            on:touchstart=|ev: web_sys::TouchEvent| ev.stop_propagation()
         >
             <div style="position: relative; pointer-events: auto;">
                 <button

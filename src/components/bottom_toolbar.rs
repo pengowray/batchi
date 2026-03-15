@@ -150,6 +150,7 @@ pub fn BottomToolbar() -> impl IntoView {
     view! {
         <div class=if is_mobile { "bottom-toolbar mobile" } else { "bottom-toolbar" }
             on:click=|ev: web_sys::MouseEvent| ev.stop_propagation()
+            on:touchstart=|ev: web_sys::TouchEvent| ev.stop_propagation()
         >
             // ── HFR combo button ──
             <HfrButton />

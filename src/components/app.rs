@@ -722,8 +722,17 @@ fn MainArea() -> impl IntoView {
 
     let is_mobile = state.is_mobile.get_untracked();
 
-    // Click anywhere in the main area closes open layer panels (and sidebar on mobile)
+    // Click/tap anywhere in the main area closes open layer panels (and sidebar on mobile)
     let on_main_click = move |_: web_sys::MouseEvent| {
+        state.layer_panel_open.set(None);
+        if is_mobile {
+            state.sidebar_collapsed.set(true);
+            state.right_sidebar_collapsed.set(true);
+        }
+    };
+    // touchstart also closes menus — needed because mobile touch handlers often
+    // call preventDefault() which suppresses the synthetic click event
+    let on_main_touchstart = move |_: web_sys::TouchEvent| {
         state.layer_panel_open.set(None);
         if is_mobile {
             state.sidebar_collapsed.set(true);
@@ -732,7 +741,7 @@ fn MainArea() -> impl IntoView {
     };
 
     view! {
-        <div class="main" on:click=on_main_click>
+        <div class="main" on:click=on_main_click on:touchstart=on_main_touchstart>
             <Toolbar />
             <ToastDisplay />
             {move || {
