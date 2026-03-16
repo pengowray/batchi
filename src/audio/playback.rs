@@ -109,9 +109,9 @@ pub fn play_from_start(state: &AppState) {
     stop(state);
     state.pre_play_scroll.set(pre);
     state.selection.set(None);
-    state.scroll_offset.set(0.0);
-    play(state);
-    state.pre_play_scroll.set(pre);
+    // Use play_from_time_inner directly to avoid double-stop (play() calls stop() again,
+    // which would restore scroll_offset to pre_play_scroll, undoing our scroll_offset=0).
+    play_from_time_inner(state, 0.0, None);
 }
 
 /// Play from the current "here" time (play_from_here_time signal).
@@ -120,24 +120,37 @@ pub fn play_from_here(state: &AppState) {
     let start_secs = state.play_from_here_time.get_untracked();
     stop(state);
     state.pre_play_scroll.set(pre);
-    play_from_time(state, start_secs);
-    state.pre_play_scroll.set(pre);
+    // Ignore selection for end time — "play from here" should always play to end of file.
+    // If the user has a selection and the "here" marker is past the selection end,
+    // this previously caused silent failure.
+    play_from_time_inner(state, start_secs, None);
 }
 
 /// Play from a specific time offset in the current file.
+/// Uses the current selection (if any) for end time.
 pub fn play_from_time(state: &AppState, start_secs: f64) {
+    let selection = state.selection.get_untracked();
+    play_from_time_inner(state, start_secs, selection);
+}
+
+/// Inner implementation: play from `start_secs` to `sel_end` (or end of file).
+fn play_from_time_inner(state: &AppState, start_secs: f64, selection: Option<Selection>) {
     let files = state.files.get_untracked();
     let idx = state.current_file_index.get_untracked();
     let Some(file) = idx.and_then(|i| files.get(i)) else { return };
 
     let sr = file.audio.sample_rate;
     let total = file.audio.source.total_samples() as usize;
-    let selection = state.selection.get_untracked();
     let end_secs = selection.map(|s| s.time_end).unwrap_or(file.audio.duration_secs);
     let start_secs = start_secs.max(0.0).min(end_secs);
     let start_sample = (start_secs * sr as f64) as usize;
     let end_sample = ((end_secs * sr as f64) as usize).min(total);
-    if end_sample <= start_sample { return; }
+    if end_sample <= start_sample {
+        web_sys::console::warn_1(&format!(
+            "Playback: nothing to play (start={start_secs:.3}s, end={end_secs:.3}s, total={total})"
+        ).into());
+        return;
+    }
 
     let params = snapshot_params(state, selection, sr);
     let channel_view = state.channel_view.get_untracked();
@@ -149,7 +162,10 @@ pub fn play_from_time(state: &AppState, start_secs: f64) {
         start_sample,
         end_sample,
         params,
-    ) else { return };
+    ) else {
+        web_sys::console::warn_1(&"Playback failed: could not start audio stream".into());
+        return;
+    };
 
     let play_duration = (end_sample - start_sample) as f64 / sr as f64;
     let te_factor = state.te_factor.get_untracked();
