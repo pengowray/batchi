@@ -273,45 +273,6 @@ pub fn draw_freq_markers(
         ctx.stroke();
     }
 
-    // --- Cursor frequency indicator (hidden when FF handles are active) ---
-    if let Some(mf) = ms.mouse_freq {
-        if !ms.mouse_in_label_area && !ms.ff_handles_active && mf > min_freq && mf < max_freq {
-            let y = freq_to_y(mf, min_freq, max_freq, canvas_height);
-
-            // Label (above the dashed line, starting around midpoint)
-            let freq_label = if mf >= 1000.0 {
-                format!("{:.1} kHz", mf / 1000.0)
-            } else {
-                format!("{:.0} Hz", mf)
-            };
-            let cursor_line_len = canvas_width * 0.5;
-            let label_start_x = cursor_line_len * 0.5;
-            ctx.set_font("10px sans-serif");
-            ctx.set_text_baseline("bottom");
-            ctx.set_fill_style_str("rgba(0,210,240,0.8)");
-            let _ = ctx.fill_text(&freq_label, label_start_x, y - 2.0);
-
-            // Dashed line (cyan)
-            ctx.set_stroke_style_str("rgba(0,210,240,0.45)");
-            ctx.set_line_width(1.0);
-            let _ = ctx.set_line_dash(&js_sys::Array::of2(
-                &wasm_bindgen::JsValue::from_f64(4.0),
-                &wasm_bindgen::JsValue::from_f64(4.0),
-            ));
-            ctx.begin_path();
-            ctx.move_to(0.0, y);
-            ctx.line_to(cursor_line_len, y);
-            ctx.stroke();
-            let _ = ctx.set_line_dash(&js_sys::Array::new());
-
-            // Right-side frequency label
-            ctx.set_text_baseline("middle");
-            ctx.set_fill_style_str("rgba(0,210,240,0.7)");
-            let metrics = ctx.measure_text(&freq_label).unwrap();
-            let text_w = metrics.width();
-            let _ = ctx.fill_text(&freq_label, canvas_width - text_w - right_tick_len - 4.0, y);
-        }
-    }
 
     ctx.set_text_baseline("alphabetic"); // reset
 }
