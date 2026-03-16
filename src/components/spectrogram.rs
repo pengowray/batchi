@@ -1112,7 +1112,7 @@ pub fn Spectrogram() -> impl IntoView {
         <div class="spectrogram-container"
             style=move || {
                 if state.axis_drag_start_freq.get().is_some() || state.mouse_in_label_area.get() {
-                    return "cursor: crosshair; touch-action: none;".to_string();
+                    return "cursor: cell; touch-action: none;".to_string();
                 }
                 if state.spec_drag_handle.get().is_some() {
                     return "cursor: ns-resize; touch-action: none;".to_string();
