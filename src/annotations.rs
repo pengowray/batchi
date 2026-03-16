@@ -122,6 +122,15 @@ pub struct Region {
     pub label: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub color: Option<String>,
+    /// Whether this region is locked (cannot be resized/moved via handles).
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub locked: Option<bool>,
+}
+
+impl Region {
+    pub fn is_locked(&self) -> bool {
+        self.locked.unwrap_or(false)
+    }
 }
 
 /// A time-position marker (future).

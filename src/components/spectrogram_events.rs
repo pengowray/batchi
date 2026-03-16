@@ -1,9 +1,9 @@
 use leptos::prelude::*;
 use web_sys::{HtmlCanvasElement, MouseEvent};
 use crate::canvas::coord::pointer_to_xtf;
-use crate::canvas::hit_test::{hit_test_spec_handles, is_in_ff_drag_zone};
+use crate::canvas::hit_test::{hit_test_spec_handles, is_in_ff_drag_zone, hit_test_annotation_handles, hit_test_annotation_body};
 use crate::canvas::spectrogram_renderer;
-use crate::state::{AppState, CanvasTool, PlayStartMode, SpectrogramHandle, Selection};
+use crate::state::{AppState, CanvasTool, PlayStartMode, SpectrogramHandle, Selection, UndoEntry};
 use crate::viewport;
 
 pub const LABEL_AREA_WIDTH: f64 = 60.0;
@@ -201,6 +201,67 @@ pub fn apply_hand_pan(
     state.scroll_offset.set(viewport::clamp_scroll_for_mode(start_scroll + dt, duration, visible_time, from_here_mode));
 }
 
+/// Apply annotation resize based on which handle is being dragged.
+pub fn apply_annotation_resize(
+    state: AppState,
+    ann_id: String,
+    handle: crate::state::ResizeHandlePosition,
+    time: f64,
+    freq: f64,
+) {
+    use crate::state::ResizeHandlePosition::*;
+
+    let file_idx = state.current_file_index.get_untracked().unwrap_or(0);
+    state.annotation_store.update(|store| {
+        if let Some(Some(set)) = store.sets.get_mut(file_idx) {
+            if let Some(ann) = set.annotations.iter_mut().find(|a| a.id == ann_id) {
+                if let crate::annotations::AnnotationKind::Region(ref mut r) = ann.kind {
+                    match handle {
+                        Left => r.time_start = time.min(r.time_end - 0.0001),
+                        Right => r.time_end = time.max(r.time_start + 0.0001),
+                        Top => if r.freq_high.is_some() {
+                            let lo = r.freq_low.unwrap_or(0.0);
+                            r.freq_high = Some(freq.max(lo + 100.0));
+                        },
+                        Bottom => if r.freq_low.is_some() {
+                            let hi = r.freq_high.unwrap_or(f64::MAX);
+                            r.freq_low = Some(freq.min(hi - 100.0));
+                        },
+                        TopLeft => {
+                            r.time_start = time.min(r.time_end - 0.0001);
+                            if r.freq_high.is_some() {
+                                let lo = r.freq_low.unwrap_or(0.0);
+                                r.freq_high = Some(freq.max(lo + 100.0));
+                            }
+                        },
+                        TopRight => {
+                            r.time_end = time.max(r.time_start + 0.0001);
+                            if r.freq_high.is_some() {
+                                let lo = r.freq_low.unwrap_or(0.0);
+                                r.freq_high = Some(freq.max(lo + 100.0));
+                            }
+                        },
+                        BottomLeft => {
+                            r.time_start = time.min(r.time_end - 0.0001);
+                            if r.freq_low.is_some() {
+                                let hi = r.freq_high.unwrap_or(f64::MAX);
+                                r.freq_low = Some(freq.min(hi - 100.0));
+                            }
+                        },
+                        BottomRight => {
+                            r.time_end = time.max(r.time_start + 0.0001);
+                            if r.freq_low.is_some() {
+                                let hi = r.freq_high.unwrap_or(f64::MAX);
+                                r.freq_low = Some(freq.min(hi - 100.0));
+                            }
+                        },
+                    }
+                }
+            }
+        }
+    });
+}
+
 // ── Mouse event handlers ───────────────────────────────────────────────────
 
 pub fn on_mousedown(
@@ -227,6 +288,41 @@ pub fn on_mousedown(
         };
         if allow_drag {
             state.spec_drag_handle.set(Some(handle));
+            state.is_dragging.set(true);
+            ev.prevent_default();
+            return;
+        }
+    }
+
+    // Check for annotation resize handle drag (takes priority over axis/tool drags)
+    if let Some((ref ann_id, handle_pos)) = state.annotation_hover_handle.get_untracked() {
+        // Check if the annotation is locked
+        let file_idx = state.current_file_index.get_untracked().unwrap_or(0);
+        let store = state.annotation_store.get_untracked();
+        let locked = store.sets.get(file_idx)
+            .and_then(|s| s.as_ref())
+            .and_then(|set| set.annotations.iter().find(|a| a.id == *ann_id))
+            .and_then(|a| match &a.kind {
+                crate::annotations::AnnotationKind::Region(r) => Some(r.is_locked()),
+                _ => None,
+            })
+            .unwrap_or(false);
+
+        if !locked {
+            // Snapshot for undo
+            let snapshot = store.sets.get(file_idx).and_then(|s| s.clone());
+            state.undo_stack.update(|stack| {
+                stack.push_undo(UndoEntry { file_idx, snapshot });
+            });
+            // Store original bounds
+            if let Some(set) = store.sets.get(file_idx).and_then(|s| s.as_ref()) {
+                if let Some(a) = set.annotations.iter().find(|a| a.id == *ann_id) {
+                    if let crate::annotations::AnnotationKind::Region(ref r) = a.kind {
+                        state.annotation_drag_original.set(Some((r.time_start, r.time_end, r.freq_low, r.freq_high)));
+                    }
+                }
+            }
+            state.annotation_drag_handle.set(Some((ann_id.clone(), handle_pos)));
             state.is_dragging.set(true);
             ev.prevent_default();
             return;
@@ -297,6 +393,56 @@ pub fn on_mousedown(
                 ev.prevent_default();
                 return;
             }
+        }
+    }
+
+    // Check for annotation body click-to-select (both tools)
+    if let Some((px_x, px_y, _, _)) = pointer_to_xtf(ev.client_x() as f64, ev.client_y() as f64, canvas_ref, &state) {
+        let file_idx = state.current_file_index.get_untracked().unwrap_or(0);
+        let store = state.annotation_store.get_untracked();
+        if let Some(Some(set)) = store.sets.get(file_idx) {
+            if let Some(canvas_el) = canvas_ref.get() {
+                let canvas: &HtmlCanvasElement = canvas_el.as_ref();
+                let cw = canvas.width() as f64;
+                let ch = canvas.height() as f64;
+                let files = state.files.get_untracked();
+                let file = files.get(file_idx);
+                let file_max_freq = file.map(|f| f.spectrogram.max_freq).unwrap_or(96_000.0);
+                let min_freq = state.min_display_freq.get_untracked().unwrap_or(0.0);
+                let max_freq = state.max_display_freq.get_untracked().unwrap_or(file_max_freq);
+                let scroll = state.scroll_offset.get_untracked();
+                let time_res = file.map(|f| f.spectrogram.time_resolution).unwrap_or(1.0);
+                let zoom = state.zoom_level.get_untracked();
+
+                if let Some(hit_id) = hit_test_annotation_body(
+                    set, px_x, px_y, min_freq, max_freq, scroll, time_res, zoom, cw, ch,
+                ) {
+                    let ctrl = ev.ctrl_key() || ev.meta_key();
+                    if ctrl {
+                        // Toggle in/out of selection
+                        state.selected_annotation_ids.update(|ids| {
+                            if let Some(pos) = ids.iter().position(|id| *id == hit_id) {
+                                ids.remove(pos);
+                            } else {
+                                ids.push(hit_id.clone());
+                            }
+                        });
+                    } else {
+                        state.selected_annotation_ids.set(vec![hit_id.clone()]);
+                    }
+                    state.last_clicked_annotation_id.set(Some(hit_id));
+                    ev.prevent_default();
+                    return;
+                }
+            }
+        }
+    }
+
+    // Click on empty area deselects annotations (unless modifier held)
+    if !ev.ctrl_key() && !ev.meta_key() && !ev.shift_key() {
+        let ids = state.selected_annotation_ids.get_untracked();
+        if !ids.is_empty() {
+            state.selected_annotation_ids.set(Vec::new());
         }
     }
 
@@ -371,7 +517,13 @@ pub fn on_mousemove(
                 return;
             }
 
-            // Axis drag takes second priority
+            // Annotation resize handle drag takes second priority
+            if let Some((ref ann_id, handle_pos)) = state.annotation_drag_handle.get_untracked() {
+                apply_annotation_resize(state, ann_id.clone(), handle_pos, t, f);
+                return;
+            }
+
+            // Axis drag takes third priority
             if state.axis_drag_start_freq.get_untracked().is_some() {
                 let raw_start = ix.axis_drag_raw_start.get_untracked();
                 let snap = if ev.shift_key() { 10_000.0 } else { 5_000.0 };
@@ -415,15 +567,42 @@ pub fn on_mousemove(
                     let canvas_el = canvas_ref.get();
                     if let Some(canvas_el) = canvas_el {
                         let canvas: &HtmlCanvasElement = canvas_el.as_ref();
+                        let cw = canvas.width() as f64;
                         let ch = canvas.height() as f64;
                         let handle = hit_test_spec_handles(
                             &state, px_y, min_freq_val, max_freq_val, ch, 8.0,
                         );
                         state.spec_hover_handle.set(handle);
+
+                        // Annotation resize handle hover detection
+                        let selected_ids = state.selected_annotation_ids.get_untracked();
+                        if !selected_ids.is_empty() {
+                            let file_idx = state.current_file_index.get_untracked().unwrap_or(0);
+                            let store = state.annotation_store.get_untracked();
+                            if let Some(Some(set)) = store.sets.get(file_idx) {
+                                let scroll = state.scroll_offset.get_untracked();
+                                let files = state.files.get_untracked();
+                                let time_res = files.get(file_idx)
+                                    .map(|f| f.spectrogram.time_resolution).unwrap_or(1.0);
+                                let zoom = state.zoom_level.get_untracked();
+                                let ann_handle = hit_test_annotation_handles(
+                                    set, &selected_ids,
+                                    px_x, px_y,
+                                    min_freq_val, max_freq_val,
+                                    scroll, time_res, zoom, cw, ch,
+                                );
+                                state.annotation_hover_handle.set(ann_handle);
+                            } else {
+                                state.annotation_hover_handle.set(None);
+                            }
+                        } else {
+                            state.annotation_hover_handle.set(None);
+                        }
                     }
                 }
             } else {
                 state.spec_hover_handle.set(None);
+                state.annotation_hover_handle.set(None);
             }
         }
     }
@@ -442,6 +621,9 @@ pub fn on_mouseleave(
     state.is_dragging.set(false);
     state.spec_drag_handle.set(None);
     state.spec_hover_handle.set(None);
+    state.annotation_drag_handle.set(None);
+    state.annotation_drag_original.set(None);
+    state.annotation_hover_handle.set(None);
     state.axis_drag_start_freq.set(None);
     state.axis_drag_current_freq.set(None);
     ix.time_axis_dragging.set(false);
@@ -459,6 +641,24 @@ pub fn on_mouseup(
     // End HET/FF handle drag
     if state.spec_drag_handle.get_untracked().is_some() {
         state.spec_drag_handle.set(None);
+        state.is_dragging.set(false);
+        return;
+    }
+
+    // End annotation resize handle drag
+    if let Some((ref ann_id, _)) = state.annotation_drag_handle.get_untracked() {
+        let file_idx = state.current_file_index.get_untracked().unwrap_or(0);
+        let now = js_sys::Date::new_0().to_iso_string().as_string().unwrap_or_default();
+        state.annotation_store.update(|store| {
+            if let Some(Some(set)) = store.sets.get_mut(file_idx) {
+                if let Some(a) = set.annotations.iter_mut().find(|a| a.id == *ann_id) {
+                    a.modified_at = now;
+                }
+            }
+        });
+        state.annotations_dirty.set(true);
+        state.annotation_drag_handle.set(None);
+        state.annotation_drag_original.set(None);
         state.is_dragging.set(false);
         return;
     }

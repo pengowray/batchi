@@ -250,6 +250,14 @@ pub enum CanvasTool {
     Selection, // drag to select
 }
 
+/// Position of a resize handle on an annotation bounding box.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum ResizeHandlePosition {
+    TopLeft, Top, TopRight,
+    Left, Right,
+    BottomLeft, Bottom, BottomRight,
+}
+
 /// What the overview strip shows.
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
 pub enum OverviewView {
@@ -855,6 +863,12 @@ pub struct AppState {
     pub drop_target: RwSignal<Option<(AnnotationId, String)>>,
     /// Undo/redo stack for annotation operations.
     pub undo_stack: RwSignal<UndoStack>,
+    /// Active annotation resize drag: (annotation_id, handle position).
+    pub annotation_drag_handle: RwSignal<Option<(AnnotationId, ResizeHandlePosition)>>,
+    /// Hovered annotation resize handle (for cursor + highlight).
+    pub annotation_hover_handle: RwSignal<Option<(AnnotationId, ResizeHandlePosition)>>,
+    /// Snapshot of original bounds before resize drag: (time_start, time_end, freq_low, freq_high).
+    pub annotation_drag_original: RwSignal<Option<(f64, f64, Option<f64>, Option<f64>)>>,
 
     // Project
     /// Whether the Projects beta feature is enabled (persisted to localStorage).
@@ -1139,6 +1153,9 @@ impl AppState {
             dragging_annotation_id: RwSignal::new(None),
             drop_target: RwSignal::new(None),
             undo_stack: RwSignal::new(UndoStack::default()),
+            annotation_drag_handle: RwSignal::new(None),
+            annotation_hover_handle: RwSignal::new(None),
+            annotation_drag_original: RwSignal::new(None),
 
             projects_enabled: RwSignal::new({
                 web_sys::window()

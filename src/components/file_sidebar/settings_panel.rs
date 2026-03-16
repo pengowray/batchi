@@ -343,6 +343,7 @@ pub(crate) fn SelectionPanel() -> impl IntoView {
                     freq_high: sel.freq_high,
                     label: None,
                     color: None,
+                    locked: None,
                 }),
                 created_at: now_iso8601(),
                 modified_at: now_iso8601(),
@@ -636,10 +637,18 @@ fn render_tree_nodes(nodes: Vec<AnnotationNode>, state: AppState) -> impl IntoVi
         let depth = node.depth;
         let children = node.children;
 
+        let is_region = matches!(node.annotation.kind, AnnotationKind::Region(_));
+        let initial_locked = match &node.annotation.kind {
+            AnnotationKind::Region(r) => r.is_locked(),
+            _ => false,
+        };
+        let locked_signal = RwSignal::new(initial_locked);
+
         let id_click = id.clone();
         let id_delete = id.clone();
         let id_edit = id.clone();
         let id_tags = id.clone();
+        let id_lock = id.clone();
         let id_drag = id.clone();
         let id_dragover = id.clone();
         let id_dragover2 = id.clone();
@@ -902,6 +911,23 @@ fn render_tree_nodes(nodes: Vec<AnnotationNode>, state: AppState) -> impl IntoVi
                         let _ = editing.try_set(true);
                     }
                 >"\u{270E}"</button>
+                {if is_region {
+                    view! {
+                        <button class="annotation-lock"
+                            title=move || if locked_signal.get() { "Unlock (allow resize)" } else { "Lock (prevent resize)" }
+                            on:click=move |e| {
+                                e.stop_propagation();
+                                let new_locked = !locked_signal.get_untracked();
+                                locked_signal.set(new_locked);
+                                toggle_annotation_lock(state, &id_lock, new_locked);
+                            }
+                        >
+                            {move || if locked_signal.get() { "\u{1F512}" } else { "\u{1F513}" }}
+                        </button>
+                    }.into_any()
+                } else {
+                    view! { <span></span> }.into_any()
+                }}
                 <button class="annotation-delete"
                     on:click=move |e| {
                         e.stop_propagation();
@@ -988,6 +1014,24 @@ fn jump_to_time(state: AppState, time: f64) {
         let centered = (time - half_visible).clamp(0.0, max_scroll);
         state.scroll_offset.set(centered);
     }
+}
+
+fn toggle_annotation_lock(state: AppState, annotation_id: &str, locked: bool) {
+    let idx = match state.current_file_index.get_untracked() {
+        Some(i) => i,
+        None => return,
+    };
+    state.annotation_store.update(|store| {
+        if let Some(Some(ref mut set)) = store.sets.get_mut(idx) {
+            if let Some(ann) = set.annotations.iter_mut().find(|a| a.id == annotation_id) {
+                if let AnnotationKind::Region(ref mut r) = ann.kind {
+                    r.locked = if locked { Some(true) } else { None };
+                    ann.modified_at = js_sys::Date::new_0().to_iso_string().as_string().unwrap_or_default();
+                }
+            }
+        }
+    });
+    state.annotations_dirty.set(true);
 }
 
 fn delete_annotation(state: AppState, annotation_id: &str) {

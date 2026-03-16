@@ -191,6 +191,7 @@ pub fn Spectrogram() -> impl IntoView {
         let _dsp_decimate = state.display_decimate_effective.get();
         let annotation_store = state.annotation_store.get();
         let selected_annotation_ids = state.selected_annotation_ids.get();
+        let annotation_hover_handle = state.annotation_hover_handle.get();
         let _timeline = state.active_timeline.get(); // trigger redraw on timeline change
         let _pre = pre_rendered.track();
         // Re-read canvas dimensions when sidebar layout changes
@@ -743,10 +744,13 @@ pub fn Spectrogram() -> impl IntoView {
             if !xform_on {
                 if let Some(file_idx_val) = idx {
                     if let Some(Some(set)) = annotation_store.sets.get(file_idx_val) {
+                        let hover_ref = annotation_hover_handle.as_ref()
+                            .map(|(id, pos)| (id.as_str(), *pos));
                         spectrogram_renderer::draw_annotations(
                             &ctx,
                             set,
                             &selected_annotation_ids,
+                            hover_ref,
                             min_freq,
                             max_freq,
                             scroll,
@@ -1126,6 +1130,21 @@ pub fn Spectrogram() -> impl IntoView {
                     ) {
                         return "cursor: ns-resize; touch-action: none;".to_string();
                     }
+                }
+                // Annotation resize handle cursor
+                if let Some((_, pos)) = state.annotation_hover_handle.get() {
+                    use crate::state::ResizeHandlePosition::*;
+                    let cursor = match pos {
+                        TopLeft | BottomRight => "nwse-resize",
+                        TopRight | BottomLeft => "nesw-resize",
+                        Top | Bottom => "ns-resize",
+                        Left | Right => "ew-resize",
+                    };
+                    return format!("cursor: {}; touch-action: none;", cursor);
+                }
+                // Annotation drag in progress
+                if state.annotation_drag_handle.get().is_some() {
+                    return "cursor: move; touch-action: none;".to_string();
                 }
                 match state.canvas_tool.get() {
                     CanvasTool::Hand => if state.is_dragging.get() {

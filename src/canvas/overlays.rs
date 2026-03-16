@@ -1,7 +1,7 @@
 use crate::canvas::colors::{freq_marker_color, freq_marker_label};
 use crate::canvas::spectrogram_renderer::freq_to_y;
 use crate::dsp::filters::harmonics_band_bounds;
-use crate::state::{SpectrogramHandle, Selection};
+use crate::state::{SpectrogramHandle, Selection, ResizeHandlePosition};
 use web_sys::CanvasRenderingContext2d;
 
 // Time markers extracted to crate::canvas::time_markers
@@ -1003,6 +1003,7 @@ pub fn draw_annotations(
     ctx: &web_sys::CanvasRenderingContext2d,
     annotation_set: &crate::annotations::AnnotationSet,
     selected_ids: &[String],
+    hover_handle: Option<(&str, ResizeHandlePosition)>,
     min_freq: f64,
     max_freq: f64,
     scroll_offset: f64,
@@ -1075,6 +1076,45 @@ pub fn draw_annotations(
             ctx.set_font("11px monospace");
             ctx.set_fill_style_str("rgba(200, 255, 200, 0.8)");
             let _ = ctx.fill_text(label, x0 + 3.0, y0 + 12.0);
+        }
+
+        // Resize handles for selected annotations
+        if is_selected {
+            let locked = sel.is_locked();
+            let handles = crate::canvas::hit_test::get_annotation_handle_positions(
+                sel.time_start, sel.time_end,
+                sel.freq_low, sel.freq_high,
+                scroll_offset, time_resolution, zoom, canvas_width,
+                min_freq, max_freq, canvas_height,
+            );
+
+            for (pos, hx, hy) in &handles {
+                let is_hovered = hover_handle
+                    .as_ref()
+                    .map_or(false, |(hid, hp)| *hid == annotation.id && *hp == *pos);
+
+                let size = if is_hovered { 4.0 } else { 3.0 };
+
+                let fill = if locked {
+                    if is_hovered { "rgba(160, 160, 160, 0.9)" } else { "rgba(120, 120, 120, 0.7)" }
+                } else if is_hovered {
+                    "rgba(255, 220, 100, 1.0)"
+                } else {
+                    "rgba(255, 200, 80, 0.9)"
+                };
+
+                let stroke = if locked {
+                    "rgba(80, 80, 80, 0.8)"
+                } else {
+                    "rgba(180, 120, 20, 0.9)"
+                };
+
+                ctx.set_fill_style_str(fill);
+                ctx.fill_rect(hx - size, hy - size, size * 2.0, size * 2.0);
+                ctx.set_stroke_style_str(stroke);
+                ctx.set_line_width(1.0);
+                ctx.stroke_rect(hx - size, hy - size, size * 2.0, size * 2.0);
+            }
         }
     }
 }
