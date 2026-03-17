@@ -117,4 +117,21 @@ impl BatBookRegion {
         Self::Australia,
         Self::VicAustralia,
     ];
+
+    pub fn storage_key(self) -> &'static str {
+        match self {
+            Self::Global => "global",
+            Self::Europe => "europe",
+            Self::NorthAmerica => "north_america",
+            Self::Australia => "australia",
+            Self::VicAustralia => "vic_australia",
+            Self::Africa => "africa",
+            Self::Asia => "asia",
+            Self::SouthAmerica => "south_america",
+        }
+    }
+
+    pub fn from_storage_key(key: &str) -> Option<Self> {
+        Self::ALL.iter().find(|r| r.storage_key() == key).copied()
+    }
 }

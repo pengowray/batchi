@@ -68,6 +68,11 @@ pub fn BatBookStrip() -> impl IntoView {
                                         on:click=move |ev: web_sys::MouseEvent| {
                                             ev.stop_propagation();
                                             state.bat_book_region.set(r);
+                                            if let Some(ls) = web_sys::window()
+                                                .and_then(|w| w.local_storage().ok().flatten())
+                                            {
+                                                let _ = ls.set_item("batmonic_bat_book_region", r.storage_key());
+                                            }
                                             region_menu_open.set(false);
                                         }
                                     >

@@ -1213,7 +1213,13 @@ impl AppState {
             psd_hover_freqs: RwSignal::new(Vec::new()),
 
             bat_book_open: RwSignal::new(false),
-            bat_book_region: RwSignal::new(crate::bat_book::types::BatBookRegion::Global),
+            bat_book_region: RwSignal::new({
+                web_sys::window()
+                    .and_then(|w: web_sys::Window| w.local_storage().ok().flatten())
+                    .and_then(|ls: web_sys::Storage| ls.get_item("batmonic_bat_book_region").ok().flatten())
+                    .and_then(|v| crate::bat_book::types::BatBookRegion::from_storage_key(&v))
+                    .unwrap_or(crate::bat_book::types::BatBookRegion::Global)
+            }),
             bat_book_selected_ids: RwSignal::new(Vec::new()),
             bat_book_ref_open: RwSignal::new(false),
             bat_book_last_clicked_id: RwSignal::new(None),
