@@ -199,6 +199,7 @@ pub fn Spectrogram() -> impl IntoView {
         let _sidebar_width = state.sidebar_width.get();
         let _rsidebar = state.right_sidebar_collapsed.get();
         let _rsidebar_width = state.right_sidebar_width.get();
+        let clean_view = state.clean_view.get();
 
         let Some(canvas_el) = canvas_ref.get() else { return };
         let canvas: &HtmlCanvasElement = canvas_el.as_ref();
@@ -557,7 +558,7 @@ pub fn Spectrogram() -> impl IntoView {
         }
 
         // Step 2: Draw overlays on top of the base spectrogram
-        if base_drawn {
+        if base_drawn && !clean_view {
             let show_het = het_interacting
                 || playback_mode == PlaybackMode::Heterodyne;
             let shift_mode = if show_het {
@@ -1191,10 +1192,11 @@ pub fn Spectrogram() -> impl IntoView {
                     let x = (playhead - scroll) * px_per_sec;
                     format!("translateX({:.1}px)", x)
                 }
-                style:display=move || if state.is_playing.get() { "block" } else { "none" }
+                style:display=move || if state.is_playing.get() && !state.clean_view.get() { "block" } else { "none" }
             />
             // Time-axis hover tooltip (shows full date/time/timezone + source)
             {move || {
+                if state.clean_view.get() { return None; }
                 time_axis_tooltip.get().map(|(x, text)| {
                     view! {
                         <div

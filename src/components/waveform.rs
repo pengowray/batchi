@@ -103,6 +103,7 @@ pub fn Waveform() -> impl IntoView {
         let _sidebar_width = state.sidebar_width.get();
         let _rsidebar = state.right_sidebar_collapsed.get();
         let _rsidebar_width = state.right_sidebar_width.get();
+        let clean_view = state.clean_view.get();
 
         let Some(canvas_el) = canvas_ref.get() else { return };
         let canvas: &HtmlCanvasElement = canvas_el.as_ref();
@@ -196,7 +197,7 @@ pub fn Waveform() -> impl IntoView {
             }
 
             // Time markers
-            {
+            if !clean_view {
                 let clock_cfg = if tl.origin_epoch_ms > 0.0 {
                     Some(crate::canvas::time_markers::ClockTimeConfig {
                         recording_start_epoch_ms: tl.origin_epoch_ms,
@@ -307,7 +308,7 @@ pub fn Waveform() -> impl IntoView {
             }
 
             // Time markers along the bottom edge
-            {
+            if !clean_view {
                 let visible_time = (display_w as f64 / zoom) * file.spectrogram.time_resolution;
                 let clock_cfg = file.recording_start_epoch_ms()
                     .map(|ms| crate::canvas::time_markers::ClockTimeConfig {
@@ -327,7 +328,7 @@ pub fn Waveform() -> impl IntoView {
             }
 
             // Draw "play here" marker when not playing
-            if state.play_start_mode.get() == PlayStartMode::FromHere && !is_playing && canvas_tool == CanvasTool::Hand {
+            if !clean_view && state.play_start_mode.get() == PlayStartMode::FromHere && !is_playing && canvas_tool == CanvasTool::Hand {
                 let visible_time = viewport::visible_time(display_w as f64, zoom, file.spectrogram.time_resolution);
                 let here_x = display_w as f64 * viewport::PLAY_FROM_HERE_FRACTION;
                 let here_time = viewport::play_from_here_time(scroll, visible_time);
@@ -667,7 +668,7 @@ pub fn Waveform() -> impl IntoView {
                     let x = (playhead - scroll) * px_per_sec;
                     format!("translateX({:.1}px)", x)
                 }
-                style:display=move || if state.is_playing.get() { "block" } else { "none" }
+                style:display=move || if state.is_playing.get() && !state.clean_view.get() { "block" } else { "none" }
             />
         </div>
     }

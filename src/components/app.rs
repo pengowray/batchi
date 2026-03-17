@@ -553,7 +553,7 @@ pub fn App() -> impl IntoView {
                         PlayStartMode::All => playback::play_from_start(&state_kb),
                         PlayStartMode::FromHere => playback::play_from_here(&state_kb),
                         PlayStartMode::Selected => {
-                            if state_kb.selection.get_untracked().is_some() {
+                            if playback::effective_selection(&state_kb).is_some() {
                                 playback::play(&state_kb);
                             } else {
                                 playback::play_from_start(&state_kb);
@@ -681,10 +681,34 @@ pub fn App() -> impl IntoView {
                 microphone::stop_all(&state_kb);
             }
         }
+        // Backtick: activate clean view (hide overlays)
+        if ev.key() == "`" && !ev.ctrl_key() && !ev.meta_key() && !ev.alt_key() {
+            if !state_kb.clean_view.get_untracked() {
+                state_kb.clean_view.set(true);
+            }
+        }
     });
     let window = web_sys::window().unwrap();
     let _ = window.add_event_listener_with_callback("keydown", handler.as_ref().unchecked_ref());
     handler.forget();
+
+    // Keyup handler: release clean view on backtick release
+    let state_ku = state.clone();
+    let keyup_handler = Closure::<dyn Fn(web_sys::KeyboardEvent)>::new(move |ev: web_sys::KeyboardEvent| {
+        if ev.key() == "`" {
+            state_ku.clean_view.set(false);
+        }
+    });
+    let _ = window.add_event_listener_with_callback("keyup", keyup_handler.as_ref().unchecked_ref());
+    keyup_handler.forget();
+
+    // Reset clean view if window loses focus (so it doesn't stick)
+    let state_blur = state.clone();
+    let blur_handler = Closure::<dyn Fn()>::new(move || {
+        state_blur.clean_view.set(false);
+    });
+    let _ = window.add_event_listener_with_callback("blur", blur_handler.as_ref().unchecked_ref());
+    blur_handler.forget();
 
     let is_mobile = state.is_mobile.get_untracked();
 
@@ -814,7 +838,9 @@ fn MainArea() -> impl IntoView {
                             }}
 
                             // Floating overlay layer
-                            <div class="main-overlays">
+                            <div class="main-overlays"
+                                style:display=move || if state.clean_view.get() { "none" } else { "" }
+                            >
                                 // Unsaved recording banner (web only)
                                 {move || {
                                     if state.is_tauri { return None; }
@@ -849,7 +875,7 @@ fn MainArea() -> impl IntoView {
                             </div>
 
                             // Bat book reference panel (floating overlay, right side)
-                            {move || state.bat_book_ref_open.get().then(|| view! { <BatBookRefPanel /> })}
+                            {move || (state.bat_book_ref_open.get() && !state.clean_view.get()).then(|| view! { <BatBookRefPanel /> })}
                         </div>
 
                         // Bat book strip (between main view and bottom toolbar)

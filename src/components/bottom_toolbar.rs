@@ -83,7 +83,7 @@ pub fn BottomToolbar() -> impl IntoView {
                 PlayStartMode::All => playback::play_from_start(&state),
                 PlayStartMode::FromHere => playback::play_from_here(&state),
                 PlayStartMode::Selected => {
-                    if state.selection.get_untracked().is_some() {
+                    if playback::effective_selection(&state).is_some() {
                         playback::play(&state);
                     } else {
                         playback::play_from_start(&state);
@@ -188,8 +188,9 @@ pub fn BottomToolbar() -> impl IntoView {
                     <button
                         class=move || {
                             let active = state.play_start_mode.get() == PlayStartMode::Selected;
-                            let enabled = state.canvas_tool.get() == CanvasTool::Selection
-                                && state.selection.get().is_some();
+                            let _sel = state.selection.get();
+                            let _ann = state.selected_annotation_ids.get();
+                            let enabled = playback::effective_selection(&state).is_some();
                             if !enabled {
                                 "layer-panel-opt disabled"
                             } else if active {
@@ -199,9 +200,7 @@ pub fn BottomToolbar() -> impl IntoView {
                             }
                         }
                         on:click=move |_| {
-                            let enabled = state.canvas_tool.get_untracked() == CanvasTool::Selection
-                                && state.selection.get_untracked().is_some();
-                            if enabled {
+                            if playback::effective_selection(&state).is_some() {
                                 state.play_start_mode.set(PlayStartMode::Selected);
                                 state.layer_panel_open.set(None);
                             }

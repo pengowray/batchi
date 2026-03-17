@@ -957,6 +957,9 @@ pub struct AppState {
 
     // Layered frequency focus stack
     pub focus_stack: RwSignal<crate::focus_stack::FocusStack>,
+
+    // Clean view: hide all overlays while holding backtick
+    pub clean_view: RwSignal<bool>,
 }
 
 fn detect_tauri() -> bool {
@@ -1217,6 +1220,7 @@ impl AppState {
             bat_book_auto_focus: RwSignal::new(true),
             show_clock_time: RwSignal::new(false),
             focus_stack: RwSignal::new(crate::focus_stack::FocusStack::new()),
+            clean_view: RwSignal::new(false),
         };
 
         // On mobile, start with sidebar collapsed

@@ -1,5 +1,6 @@
 use leptos::prelude::*;
 use crate::types::AudioData;
+use crate::annotations::AnnotationKind;
 use crate::state::{AppState, Selection, PlaybackMode};
 use crate::audio::streaming_playback::{self, PlaybackParams};
 use crate::viewport;
@@ -8,6 +9,62 @@ use std::cell::RefCell;
 thread_local! {
     static PLAYHEAD_HANDLE: RefCell<Option<i32>> = RefCell::new(None);
     static REPLAY_TIMER: RefCell<Option<i32>> = RefCell::new(None);
+}
+
+/// Resolve the effective selection for playback, checking both transient
+/// drag selections and selected annotations.
+pub fn effective_selection(state: &AppState) -> Option<Selection> {
+    // 1. Transient selection takes priority
+    if let Some(sel) = state.selection.get_untracked() {
+        return Some(sel);
+    }
+
+    // 2. Selected annotations — compute bounding box of all Region annotations
+    let ids = state.selected_annotation_ids.get_untracked();
+    if ids.is_empty() {
+        return None;
+    }
+    let idx = state.current_file_index.get_untracked()?;
+    let store = state.annotation_store.get_untracked();
+    let set = store.sets.get(idx)?.as_ref()?;
+
+    let mut time_start = f64::MAX;
+    let mut time_end = f64::MIN;
+    let mut all_have_freq = true;
+    let mut freq_lo = f64::MAX;
+    let mut freq_hi = f64::MIN;
+    let mut count = 0usize;
+
+    for ann in &set.annotations {
+        if !ids.contains(&ann.id) {
+            continue;
+        }
+        if let AnnotationKind::Region(ref r) = ann.kind {
+            time_start = time_start.min(r.time_start);
+            time_end = time_end.max(r.time_end);
+            match (r.freq_low, r.freq_high) {
+                (Some(lo), Some(hi)) => {
+                    freq_lo = freq_lo.min(lo);
+                    freq_hi = freq_hi.max(hi);
+                }
+                _ => {
+                    all_have_freq = false;
+                }
+            }
+            count += 1;
+        }
+    }
+
+    if count == 0 || time_end <= time_start {
+        return None;
+    }
+
+    Some(Selection {
+        time_start,
+        time_end,
+        freq_low: if all_have_freq { Some(freq_lo) } else { None },
+        freq_high: if all_have_freq { Some(freq_hi) } else { None },
+    })
 }
 
 fn cancel_replay_timer() {
@@ -214,7 +271,7 @@ pub fn play(state: &AppState) {
     let idx = state.current_file_index.get_untracked();
     let Some(file) = idx.and_then(|i| files.get(i)) else { return };
 
-    let selection = state.selection.get_untracked();
+    let selection = effective_selection(state);
     let sr = file.audio.sample_rate;
 
     let (start_sample, end_sample) = extract_selection_range(&file.audio, selection);

@@ -89,6 +89,7 @@ fn draw_overview_spectrogram(
     bookmarks: &[(f64,)],
     overview_freq_crop: f64,  // 0..1: fraction shown in the overview itself
     ff_range: Option<(f64, f64)>, // FF range as (lo_frac, hi_frac) of Nyquist
+    clean_view: bool,         // hide all overlays (viewport rect, bookmarks, FF range)
 ) {
     let cw = canvas.width() as f64;
     let ch = canvas.height() as f64;
@@ -128,47 +129,49 @@ fn draw_overview_spectrogram(
     if total_duration <= 0.0 { return; }
     let px_per_sec = cw / total_duration;
 
-    // ── Viewport highlight rect ───────────────────────────────────────────────
-    // Horizontal: scroll_offset (left edge) + visible time
-    // visible_time = (canvas_px / zoom) * spec_time_res  (zoom = px per FFT column)
-    let visible_cols = main_canvas_width / zoom.max(0.001);
-    let visible_time = visible_cols * spec_time_res;
-    let vp_x = (scroll_offset * px_per_sec).max(0.0);
-    let vp_w = (visible_time * px_per_sec).max(2.0);
+    if !clean_view {
+        // ── Viewport highlight rect ───────────────────────────────────────────────
+        // Horizontal: scroll_offset (left edge) + visible time
+        // visible_time = (canvas_px / zoom) * spec_time_res  (zoom = px per FFT column)
+        let visible_cols = main_canvas_width / zoom.max(0.001);
+        let visible_time = visible_cols * spec_time_res;
+        let vp_x = (scroll_offset * px_per_sec).max(0.0);
+        let vp_w = (visible_time * px_per_sec).max(2.0);
 
-    // Vertical: map main view freq range into the overview's freq coordinate space.
-    // overview y=0 → top freq (ofc * Nyquist), y=ch → 0 Hz.
-    let vp_y1 = (ch * (1.0 - main_freq_crop_hi / ofc)).clamp(0.0, ch);
-    let vp_y2 = (ch * (1.0 - main_freq_crop_lo / ofc)).clamp(0.0, ch);
-    let vp_h = vp_y2 - vp_y1;
+        // Vertical: map main view freq range into the overview's freq coordinate space.
+        // overview y=0 → top freq (ofc * Nyquist), y=ch → 0 Hz.
+        let vp_y1 = (ch * (1.0 - main_freq_crop_hi / ofc)).clamp(0.0, ch);
+        let vp_y2 = (ch * (1.0 - main_freq_crop_lo / ofc)).clamp(0.0, ch);
+        let vp_h = vp_y2 - vp_y1;
 
-    ctx.set_fill_style_str("rgba(80, 180, 130, 0.12)");
-    ctx.fill_rect(vp_x, vp_y1, vp_w, vp_h);
-    ctx.set_stroke_style_str("rgba(80, 180, 130, 0.55)");
-    ctx.set_line_width(1.0);
-    ctx.stroke_rect(vp_x, vp_y1, vp_w, vp_h);
+        ctx.set_fill_style_str("rgba(80, 180, 130, 0.12)");
+        ctx.fill_rect(vp_x, vp_y1, vp_w, vp_h);
+        ctx.set_stroke_style_str("rgba(80, 180, 130, 0.55)");
+        ctx.set_line_width(1.0);
+        ctx.stroke_rect(vp_x, vp_y1, vp_w, vp_h);
 
-    // FF range highlight (nested inside viewport rect)
-    if let Some((ff_lo, ff_hi)) = ff_range {
-        let ff_y1 = (ch * (1.0 - ff_hi / ofc)).clamp(0.0, ch);
-        let ff_y2 = (ch * (1.0 - ff_lo / ofc)).clamp(0.0, ch);
-        if ff_y2 - ff_y1 > 0.5 {
-            ctx.set_fill_style_str("rgba(120, 200, 160, 0.15)");
-            ctx.fill_rect(vp_x, ff_y1, vp_w, ff_y2 - ff_y1);
-            ctx.set_stroke_style_str("rgba(120, 200, 160, 0.7)");
-            ctx.set_line_width(1.0);
-            ctx.stroke_rect(vp_x, ff_y1, vp_w, ff_y2 - ff_y1);
+        // FF range highlight (nested inside viewport rect)
+        if let Some((ff_lo, ff_hi)) = ff_range {
+            let ff_y1 = (ch * (1.0 - ff_hi / ofc)).clamp(0.0, ch);
+            let ff_y2 = (ch * (1.0 - ff_lo / ofc)).clamp(0.0, ch);
+            if ff_y2 - ff_y1 > 0.5 {
+                ctx.set_fill_style_str("rgba(120, 200, 160, 0.15)");
+                ctx.fill_rect(vp_x, ff_y1, vp_w, ff_y2 - ff_y1);
+                ctx.set_stroke_style_str("rgba(120, 200, 160, 0.7)");
+                ctx.set_line_width(1.0);
+                ctx.stroke_rect(vp_x, ff_y1, vp_w, ff_y2 - ff_y1);
+            }
         }
-    }
 
-    // Bookmark dots (yellow, top edge)
-    ctx.set_fill_style_str("rgba(255, 200, 50, 0.9)");
-    for &(t,) in bookmarks {
-        let x = t * px_per_sec;
-        if x >= 0.0 && x <= cw {
-            ctx.begin_path();
-            let _ = ctx.arc(x, 5.0, 3.0, 0.0, std::f64::consts::TAU);
-            let _ = ctx.fill();
+        // Bookmark dots (yellow, top edge)
+        ctx.set_fill_style_str("rgba(255, 200, 50, 0.9)");
+        for &(t,) in bookmarks {
+            let x = t * px_per_sec;
+            if x >= 0.0 && x <= cw {
+                ctx.begin_path();
+                let _ = ctx.arc(x, 5.0, 3.0, 0.0, std::f64::consts::TAU);
+                let _ = ctx.fill();
+            }
         }
     }
 
@@ -185,6 +188,7 @@ fn draw_overview_waveform(
     main_canvas_width: f64,
     bookmarks: &[(f64,)],
     gain_db: f64,
+    clean_view: bool,
 ) {
     let cw = canvas.width() as f64;
     let ch = canvas.height() as f64;
@@ -205,25 +209,28 @@ fn draw_overview_waveform(
         total_duration,
         0,
     );
-    let px_per_sec = cw / total_duration;
-    let visible_cols = main_canvas_width / zoom.max(0.001);
-    let visible_time = visible_cols * time_resolution;
-    let vp_x = (scroll_offset * px_per_sec).max(0.0);
-    let vp_w = (visible_time * px_per_sec).max(2.0);
-    ctx.set_fill_style_str("rgba(80, 180, 130, 0.12)");
-    ctx.fill_rect(vp_x, 0.0, vp_w, ch);
-    ctx.set_stroke_style_str("rgba(80, 180, 130, 0.55)");
-    ctx.set_line_width(1.0);
-    ctx.stroke_rect(vp_x, 0.0, vp_w, ch);
 
-    // Bookmark dots
-    ctx.set_fill_style_str("rgba(255, 200, 50, 0.9)");
-    for &(t,) in bookmarks {
-        let x = t * px_per_sec;
-        if x >= 0.0 && x <= cw {
-            ctx.begin_path();
-            let _ = ctx.arc(x, 5.0, 3.0, 0.0, std::f64::consts::TAU);
-            let _ = ctx.fill();
+    if !clean_view {
+        let px_per_sec = cw / total_duration;
+        let visible_cols = main_canvas_width / zoom.max(0.001);
+        let visible_time = visible_cols * time_resolution;
+        let vp_x = (scroll_offset * px_per_sec).max(0.0);
+        let vp_w = (visible_time * px_per_sec).max(2.0);
+        ctx.set_fill_style_str("rgba(80, 180, 130, 0.12)");
+        ctx.fill_rect(vp_x, 0.0, vp_w, ch);
+        ctx.set_stroke_style_str("rgba(80, 180, 130, 0.55)");
+        ctx.set_line_width(1.0);
+        ctx.stroke_rect(vp_x, 0.0, vp_w, ch);
+
+        // Bookmark dots
+        ctx.set_fill_style_str("rgba(255, 200, 50, 0.9)");
+        for &(t,) in bookmarks {
+            let x = t * px_per_sec;
+            if x >= 0.0 && x <= cw {
+                ctx.begin_path();
+                let _ = ctx.arc(x, 5.0, 3.0, 0.0, std::f64::consts::TAU);
+                let _ = ctx.fill();
+            }
         }
     }
 }
@@ -320,6 +327,7 @@ pub fn OverviewPanel() -> impl IntoView {
         let _sidebar_width = state.sidebar_width.get();
         let _rsidebar = state.right_sidebar_collapsed.get();
         let _rsidebar_width = state.right_sidebar_width.get();
+        let clean_view = state.clean_view.get();
 
         let Some(canvas_el) = canvas_ref.get() else { return };
         let canvas: &HtmlCanvasElement = canvas_el.as_ref();
@@ -401,52 +409,54 @@ pub fn OverviewPanel() -> impl IntoView {
                 ctx.restore();
             }
 
-            // Draw viewport rectangle
-            let visible_cols = main_canvas_w / zoom.max(0.001);
-            let visible_time_span = visible_cols * spec_time_res;
-            let vp_x = (scroll * px_per_sec).max(0.0);
-            let vp_w = (visible_time_span * px_per_sec).max(2.0);
-            let vp_y1 = (ch * (1.0 - main_freq_crop_hi)).clamp(0.0, ch);
-            let vp_y2 = (ch * (1.0 - main_freq_crop_lo)).clamp(0.0, ch);
-            let vp_h = (vp_y2 - vp_y1).max(1.0);
+            if !clean_view {
+                // Draw viewport rectangle
+                let visible_cols = main_canvas_w / zoom.max(0.001);
+                let visible_time_span = visible_cols * spec_time_res;
+                let vp_x = (scroll * px_per_sec).max(0.0);
+                let vp_w = (visible_time_span * px_per_sec).max(2.0);
+                let vp_y1 = (ch * (1.0 - main_freq_crop_hi)).clamp(0.0, ch);
+                let vp_y2 = (ch * (1.0 - main_freq_crop_lo)).clamp(0.0, ch);
+                let vp_h = (vp_y2 - vp_y1).max(1.0);
 
-            ctx.set_stroke_style_str("rgba(255, 255, 255, 0.7)");
-            ctx.set_line_width(1.5);
-            ctx.stroke_rect(vp_x, vp_y1, vp_w, vp_h);
+                ctx.set_stroke_style_str("rgba(255, 255, 255, 0.7)");
+                ctx.set_line_width(1.5);
+                ctx.stroke_rect(vp_x, vp_y1, vp_w, vp_h);
 
-            // Draw gap indicators
-            for i in 0..tl.segments.len() {
-                let seg_end = tl.segments[i].timeline_offset_secs + tl.segments[i].duration_secs;
-                if i + 1 < tl.segments.len() {
-                    let next_start = tl.segments[i + 1].timeline_offset_secs;
-                    if next_start > seg_end + 0.001 {
-                        let gap_x = seg_end * px_per_sec;
-                        let gap_w = (next_start - seg_end) * px_per_sec;
-                        ctx.set_fill_style_str("rgba(50, 50, 80, 0.5)");
-                        ctx.fill_rect(gap_x, 0.0, gap_w, ch);
+                // Draw gap indicators
+                for i in 0..tl.segments.len() {
+                    let seg_end = tl.segments[i].timeline_offset_secs + tl.segments[i].duration_secs;
+                    if i + 1 < tl.segments.len() {
+                        let next_start = tl.segments[i + 1].timeline_offset_secs;
+                        if next_start > seg_end + 0.001 {
+                            let gap_x = seg_end * px_per_sec;
+                            let gap_w = (next_start - seg_end) * px_per_sec;
+                            ctx.set_fill_style_str("rgba(50, 50, 80, 0.5)");
+                            ctx.fill_rect(gap_x, 0.0, gap_w, ch);
+                        }
                     }
                 }
-            }
 
-            // Time markers
-            let clock_cfg = if tl.origin_epoch_ms > 0.0 {
-                Some(crate::canvas::time_markers::ClockTimeConfig {
-                    recording_start_epoch_ms: tl.origin_epoch_ms,
-                })
-            } else {
-                None
-            };
-            crate::canvas::time_markers::draw_time_markers(
-                &ctx,
-                0.0,
-                total_duration,
-                cw,
-                ch,
-                total_duration,
-                clock_cfg,
-                state.show_clock_time.get(),
-                1.0,
-            );
+                // Time markers
+                let clock_cfg = if tl.origin_epoch_ms > 0.0 {
+                    Some(crate::canvas::time_markers::ClockTimeConfig {
+                        recording_start_epoch_ms: tl.origin_epoch_ms,
+                    })
+                } else {
+                    None
+                };
+                crate::canvas::time_markers::draw_time_markers(
+                    &ctx,
+                    0.0,
+                    total_duration,
+                    cw,
+                    ch,
+                    total_duration,
+                    clock_cfg,
+                    state.show_clock_time.get(),
+                    1.0,
+                );
+            }
         } else {
             // ── Single file overview ──
             let Some(i) = idx else { return };
@@ -501,6 +511,7 @@ pub fn OverviewPanel() -> impl IntoView {
                             &bm_tuples,
                             overview_freq_crop,
                             ff_range,
+                            clean_view,
                         );
                     } else {
                         ctx.set_fill_style_str("#333");
@@ -530,12 +541,13 @@ pub fn OverviewPanel() -> impl IntoView {
                         main_canvas_w,
                         &bm_tuples,
                         gain_db,
+                        clean_view,
                     );
                 }
             }
 
             // Time markers along the bottom edge (full file duration)
-            {
+            if !clean_view {
                 let clock_cfg = file.recording_start_epoch_ms()
                     .map(|ms| crate::canvas::time_markers::ClockTimeConfig {
                         recording_start_epoch_ms: ms,
@@ -725,6 +737,7 @@ pub fn OverviewPanel() -> impl IntoView {
             <div class="overview-nav"
                 on:click=|ev: MouseEvent| ev.stop_propagation()
                 on:touchstart=|ev: web_sys::TouchEvent| ev.stop_propagation()
+                style:display=move || if state.clean_view.get() { "none" } else { "" }
             >
                 <button
                     class="overview-nav-btn"
@@ -772,11 +785,13 @@ pub fn OverviewPanel() -> impl IntoView {
                     } else { 0.0 };
                     format!("{:.2}%", pct)
                 }
-                style:display=move || if state.is_playing.get() { "block" } else { "none" }
+                style:display=move || if state.is_playing.get() && !state.clean_view.get() { "block" } else { "none" }
             />
 
             // Layers button (bottom-left, after nav buttons)
-            <OverviewLayersButton />
+            <Show when=move || !state.clean_view.get()>
+                <OverviewLayersButton />
+            </Show>
         </div>
     }
 }
