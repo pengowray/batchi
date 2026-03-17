@@ -36,6 +36,16 @@ pub struct SpectInteraction {
     pub velocity_tracker: StoredValue<crate::components::inertia::VelocityTracker>,
     /// Generation counter for cancelling inertia animations
     pub inertia_generation: StoredValue<u32>,
+    /// True when drag started in the ambiguous bottom-left corner zone
+    pub corner_drag_active: RwSignal<bool>,
+    /// Client (x, y) at the start of a corner drag
+    pub corner_drag_start_client: RwSignal<(f64, f64)>,
+    /// Which axis is currently committed: None = undecided, true = Y (freq), false = X (time)
+    pub corner_drag_axis: RwSignal<Option<bool>>,
+    /// Saved FF range before corner drag, for restoration when switching to X-axis
+    pub corner_drag_saved_ff: RwSignal<(f64, f64)>,
+    /// Saved selection before corner drag, for restoration when switching to Y-axis
+    pub corner_drag_saved_selection: RwSignal<Option<Selection>>,
 }
 
 impl SpectInteraction {
@@ -53,6 +63,11 @@ impl SpectInteraction {
             time_axis_drag_raw_start: RwSignal::new(0.0f64),
             velocity_tracker: StoredValue::new(crate::components::inertia::VelocityTracker::new()),
             inertia_generation: StoredValue::new(0u32),
+            corner_drag_active: RwSignal::new(false),
+            corner_drag_start_client: RwSignal::new((0.0, 0.0)),
+            corner_drag_axis: RwSignal::new(None),
+            corner_drag_saved_ff: RwSignal::new((0.0, 0.0)),
+            corner_drag_saved_selection: RwSignal::new(None),
         }
     }
 }
@@ -329,6 +344,57 @@ pub fn on_mousedown(
         }
     }
 
+    // Check for ambiguous corner drag (bottom-left: both axis zones overlap)
+    if let Some((px_x, px_y, t, freq)) = pointer_to_xtf(ev.client_x() as f64, ev.client_y() as f64, canvas_ref, &state) {
+        if let Some(canvas_el) = canvas_ref.get() {
+            let canvas: &HtmlCanvasElement = canvas_el.as_ref();
+            let ch = canvas.get_bounding_client_rect().height();
+            let in_left_axis = px_x < LABEL_AREA_WIDTH && !state.display_transform.get_untracked();
+            let in_bottom_axis = px_y > ch - 16.0;
+
+            if in_left_axis && in_bottom_axis {
+                // Corner zone — defer axis choice until drag direction is clear.
+                // Pre-initialize both axis drag states so we can commit to either.
+                let ff_lo = state.ff_freq_lo.get_untracked();
+                let ff_hi = state.ff_freq_hi.get_untracked();
+                ix.corner_drag_saved_ff.set((ff_lo, ff_hi));
+                ix.corner_drag_saved_selection.set(state.selection.get_untracked());
+
+                // Y-axis (freq) init
+                let _snap = if ev.shift_key() { 10_000.0 } else { 5_000.0 };
+                let has_range = ff_hi > ff_lo;
+                let raw_start_freq = if ev.shift_key() && has_range {
+                    let anchor = if (freq - ff_lo).abs() < (freq - ff_hi).abs() { ff_hi } else { ff_lo };
+                    anchor
+                } else {
+                    freq
+                };
+                ix.axis_drag_raw_start.set(raw_start_freq);
+
+                // X-axis (time) init
+                let anchor_time = if ev.shift_key() {
+                    state.selection.get_untracked().and_then(|sel| {
+                        if sel.time_end - sel.time_start > 0.0001 {
+                            Some(if (t - sel.time_start).abs() < (t - sel.time_end).abs() {
+                                sel.time_end
+                            } else {
+                                sel.time_start
+                            })
+                        } else { None }
+                    })
+                } else { None };
+                ix.time_axis_drag_raw_start.set(anchor_time.unwrap_or(t));
+
+                ix.corner_drag_active.set(true);
+                ix.corner_drag_start_client.set((ev.client_x() as f64, ev.client_y() as f64));
+                ix.corner_drag_axis.set(None);
+                state.is_dragging.set(true);
+                ev.prevent_default();
+                return;
+            }
+        }
+    }
+
     // Check for axis drag (left axis frequency range selection) — disabled in xform view
     if let Some((px_x, _, _, freq)) = pointer_to_xtf(ev.client_x() as f64, ev.client_y() as f64, canvas_ref, &state) {
         if px_x < LABEL_AREA_WIDTH && !state.display_transform.get_untracked() {
@@ -523,6 +589,59 @@ pub fn on_mousemove(
                 return;
             }
 
+            // Corner drag: determine axis from drag direction, allow switching
+            if ix.corner_drag_active.get_untracked() {
+                let (sx, sy) = ix.corner_drag_start_client.get_untracked();
+                let dx = (ev.client_x() as f64 - sx).abs();
+                let dy = (ev.client_y() as f64 - sy).abs();
+                // Need a minimum movement before committing
+                if dx < 4.0 && dy < 4.0 {
+                    return; // still undecided
+                }
+                let want_y_axis = dy >= dx; // true = freq axis, false = time axis
+                let prev_axis = ix.corner_drag_axis.get_untracked();
+                let axis_changed = prev_axis != Some(want_y_axis);
+                if axis_changed {
+                    if want_y_axis {
+                        // Switching to Y-axis: restore saved selection, activate freq drag
+                        let saved_sel = ix.corner_drag_saved_selection.get_untracked();
+                        state.selection.set(saved_sel);
+                        ix.time_axis_dragging.set(false);
+                        // Set up freq axis drag signals
+                        let raw_start = ix.axis_drag_raw_start.get_untracked();
+                        let snap = if ev.shift_key() { 10_000.0 } else { 5_000.0 };
+                        let snapped = (raw_start / snap).round() * snap;
+                        state.axis_drag_start_freq.set(Some(snapped));
+                        state.axis_drag_current_freq.set(Some(snapped));
+                    } else {
+                        // Switching to X-axis: restore saved FF range, activate time drag
+                        let (saved_lo, saved_hi) = ix.corner_drag_saved_ff.get_untracked();
+                        if saved_hi > saved_lo {
+                            state.set_ff_range(saved_lo, saved_hi);
+                        }
+                        state.axis_drag_start_freq.set(None);
+                        state.axis_drag_current_freq.set(None);
+                        ix.time_axis_dragging.set(true);
+                    }
+                    ix.corner_drag_axis.set(Some(want_y_axis));
+                }
+                // Apply the committed axis's drag update
+                if want_y_axis {
+                    let raw_start = ix.axis_drag_raw_start.get_untracked();
+                    let snap = if ev.shift_key() { 10_000.0 } else { 5_000.0 };
+                    apply_axis_drag(state, raw_start, f, snap);
+                } else {
+                    let t0 = ix.time_axis_drag_raw_start.get_untracked();
+                    state.selection.set(Some(Selection {
+                        time_start: t0.min(t),
+                        time_end: t0.max(t),
+                        freq_low: None,
+                        freq_high: None,
+                    }));
+                }
+                return;
+            }
+
             // Axis drag takes third priority
             if state.axis_drag_start_freq.get_untracked().is_some() {
                 let raw_start = ix.axis_drag_raw_start.get_untracked();
@@ -628,6 +747,8 @@ pub fn on_mouseleave(
     state.axis_drag_current_freq.set(None);
     ix.time_axis_dragging.set(false);
     ix.time_axis_tooltip.set(None);
+    ix.corner_drag_active.set(false);
+    ix.corner_drag_axis.set(None);
 }
 
 pub fn on_mouseup(
@@ -661,6 +782,23 @@ pub fn on_mouseup(
         state.annotation_drag_original.set(None);
         state.is_dragging.set(false);
         return;
+    }
+
+    // End corner drag — clear corner state, then fall through to axis/time finalization
+    let was_corner = ix.corner_drag_active.get_untracked();
+    if was_corner {
+        ix.corner_drag_active.set(false);
+        let committed = ix.corner_drag_axis.get_untracked();
+        ix.corner_drag_axis.set(None);
+        // If never committed to an axis (tiny drag), just cancel
+        if committed.is_none() {
+            state.is_dragging.set(false);
+            state.axis_drag_start_freq.set(None);
+            state.axis_drag_current_freq.set(None);
+            ix.time_axis_dragging.set(false);
+            return;
+        }
+        // Otherwise fall through — the committed axis's signals are set
     }
 
     // End axis drag (FF range already updated live during drag)
@@ -778,6 +916,8 @@ pub fn on_touchstart(
         state.axis_drag_start_freq.set(None);
         state.axis_drag_current_freq.set(None);
         ix.time_axis_dragging.set(false);
+        ix.corner_drag_active.set(false);
+        ix.corner_drag_axis.set(None);
         return;
     }
 
@@ -819,6 +959,31 @@ pub fn on_touchstart(
                     ev.prevent_default();
                     return;
                 }
+            }
+        }
+    }
+
+    // Check for ambiguous corner drag (bottom-left: both axis zones overlap)
+    if let Some((px_x, px_y, t, freq)) = pointer_to_xtf(touch.client_x() as f64, touch.client_y() as f64, canvas_ref, &state) {
+        if let Some(canvas_el) = canvas_ref.get() {
+            let canvas: &HtmlCanvasElement = canvas_el.as_ref();
+            let ch = canvas.get_bounding_client_rect().height();
+            let in_left_axis = px_x < LABEL_AREA_WIDTH;
+            let in_bottom_axis = px_y > ch - 16.0;
+
+            if in_left_axis && in_bottom_axis {
+                let ff_lo = state.ff_freq_lo.get_untracked();
+                let ff_hi = state.ff_freq_hi.get_untracked();
+                ix.corner_drag_saved_ff.set((ff_lo, ff_hi));
+                ix.corner_drag_saved_selection.set(state.selection.get_untracked());
+                ix.axis_drag_raw_start.set(freq);
+                ix.time_axis_drag_raw_start.set(t);
+                ix.corner_drag_active.set(true);
+                ix.corner_drag_start_client.set((touch.client_x() as f64, touch.client_y() as f64));
+                ix.corner_drag_axis.set(None);
+                state.is_dragging.set(true);
+                ev.prevent_default();
+                return;
             }
         }
     }
@@ -914,6 +1079,56 @@ pub fn on_touchmove(
         return;
     }
 
+    // Corner drag: determine axis from drag direction, allow switching
+    if ix.corner_drag_active.get_untracked() {
+        if let Some((_, _, t, f)) = pointer_to_xtf(touch.client_x() as f64, touch.client_y() as f64, canvas_ref, &state) {
+            let (sx, sy) = ix.corner_drag_start_client.get_untracked();
+            let dx = (touch.client_x() as f64 - sx).abs();
+            let dy = (touch.client_y() as f64 - sy).abs();
+            if dx < 4.0 && dy < 4.0 {
+                return;
+            }
+            let want_y_axis = dy >= dx;
+            let prev_axis = ix.corner_drag_axis.get_untracked();
+            let axis_changed = prev_axis != Some(want_y_axis);
+            if axis_changed {
+                if want_y_axis {
+                    let saved_sel = ix.corner_drag_saved_selection.get_untracked();
+                    state.selection.set(saved_sel);
+                    ix.time_axis_dragging.set(false);
+                    let raw_start = ix.axis_drag_raw_start.get_untracked();
+                    let snap = 5_000.0;
+                    let snapped = (raw_start / snap).round() * snap;
+                    state.axis_drag_start_freq.set(Some(snapped));
+                    state.axis_drag_current_freq.set(Some(snapped));
+                } else {
+                    let (saved_lo, saved_hi) = ix.corner_drag_saved_ff.get_untracked();
+                    if saved_hi > saved_lo {
+                        state.set_ff_range(saved_lo, saved_hi);
+                    }
+                    state.axis_drag_start_freq.set(None);
+                    state.axis_drag_current_freq.set(None);
+                    ix.time_axis_dragging.set(true);
+                }
+                ix.corner_drag_axis.set(Some(want_y_axis));
+            }
+            if want_y_axis {
+                let raw_start = ix.axis_drag_raw_start.get_untracked();
+                let snap = 5_000.0;
+                apply_axis_drag(state, raw_start, f, snap);
+            } else {
+                let t0 = ix.time_axis_drag_raw_start.get_untracked();
+                state.selection.set(Some(Selection {
+                    time_start: t0.min(t),
+                    time_end: t0.max(t),
+                    freq_low: None,
+                    freq_high: None,
+                }));
+            }
+        }
+        return;
+    }
+
     // Axis drag takes second priority
     if state.axis_drag_start_freq.get_untracked().is_some() {
         if let Some((_, _, _, f)) = pointer_to_xtf(touch.client_x() as f64, touch.client_y() as f64, canvas_ref, &state) {
@@ -977,6 +1192,20 @@ pub fn on_touchend(
             state.spec_drag_handle.set(None);
             state.is_dragging.set(false);
             return;
+        }
+        // End corner drag — clear corner state, then fall through
+        let was_corner = ix.corner_drag_active.get_untracked();
+        if was_corner {
+            ix.corner_drag_active.set(false);
+            let committed = ix.corner_drag_axis.get_untracked();
+            ix.corner_drag_axis.set(None);
+            if committed.is_none() {
+                state.is_dragging.set(false);
+                state.axis_drag_start_freq.set(None);
+                state.axis_drag_current_freq.set(None);
+                ix.time_axis_dragging.set(false);
+                return;
+            }
         }
         // Finalize axis drag
         if state.axis_drag_start_freq.get_untracked().is_some() {
