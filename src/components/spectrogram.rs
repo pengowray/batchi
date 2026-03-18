@@ -1022,6 +1022,7 @@ pub fn Spectrogram() -> impl IntoView {
     // at the current LOD, expanding outward from the viewport center.
     Effect::new(move || {
         let _file_idx = state.current_file_index.get();
+        let _scroll = state.scroll_offset.get();
         let _zoom = state.zoom_level.get();
         let _loading = state.loading_files.get();
         let _fft = state.spect_fft_mode.get();

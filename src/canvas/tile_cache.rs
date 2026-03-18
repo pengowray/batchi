@@ -257,12 +257,14 @@ thread_local! {
 
 // ── IN_FLIGHT helpers ────────────────────────────────────────────────────────
 
-/// Check if a key is actively in-flight (not stale). Returns true if the
-/// tile is being computed and should not be re-scheduled.
-fn is_in_flight_active<K: Eq + std::hash::Hash>(map: &HashMap<K, f64>, key: &K) -> bool {
-    match map.get(key) {
+fn has_active_in_flight<K: Eq + std::hash::Hash>(map: &mut HashMap<K, f64>, key: &K) -> bool {
+    match map.get(key).copied() {
         None => false,
-        Some(&ts) => js_sys::Date::now() - ts <= IN_FLIGHT_TIMEOUT_MS,
+        Some(ts) if js_sys::Date::now() - ts <= IN_FLIGHT_TIMEOUT_MS => true,
+        Some(_) => {
+            map.remove(key);
+            false
+        }
     }
 }
 
@@ -362,10 +364,10 @@ pub fn count_missing_visible(file_idx: usize, lod: u8, first_tile: usize, last_t
     CACHE.with(|c| {
         let cache = c.borrow();
         IN_FLIGHT.with(|s| {
-            let inflight = s.borrow();
+            let mut inflight = s.borrow_mut();
             (first_tile..=last_tile).filter(|&t| {
                 let key = (file_idx, lod, t);
-                !cache.tiles.contains_key(&key) && !inflight.contains_key(&key)
+                !cache.tiles.contains_key(&key) && !has_active_in_flight(&mut inflight, &key)
             }).count()
         })
     })
@@ -395,7 +397,7 @@ pub fn schedule_tile_lod(state: AppState, file_idx: usize, lod: u8, tile_idx: us
 
     let key: CacheKey = (file_idx, lod, tile_idx);
     if CACHE.with(|c| c.borrow().tiles.contains_key(&key)) { return; }
-    if IN_FLIGHT.with(|s| is_in_flight_active(&s.borrow(), &key)) { return; }
+    if IN_FLIGHT.with(|s| has_active_in_flight(&mut s.borrow_mut(), &key)) { return; }
 
     // Bounds check: reject tiles that are entirely past the audio data.
     // This prevents futile async work and IN_FLIGHT entries that never resolve.
@@ -519,7 +521,7 @@ pub fn schedule_tile_lod(state: AppState, file_idx: usize, lod: u8, tile_idx: us
 pub fn schedule_tile(state: AppState, file: LoadedFile, file_idx: usize, tile_idx: usize) {
     let key: CacheKey = (file_idx, 1, tile_idx);
     if CACHE.with(|c| c.borrow().tiles.contains_key(&key)) { return; }
-    if IN_FLIGHT.with(|s| is_in_flight_active(&s.borrow(), &key)) { return; }
+    if IN_FLIGHT.with(|s| has_active_in_flight(&mut s.borrow_mut(), &key)) { return; }
     IN_FLIGHT.with(|s| s.borrow_mut().insert(key, js_sys::Date::now()));
 
     spawn_local(async move {
@@ -668,7 +670,7 @@ pub fn schedule_tile_from_store(state: AppState, file_idx: usize, tile_idx: usiz
 
     let key: CacheKey = (file_idx, 1, tile_idx);
     if CACHE.with(|c| c.borrow().tiles.contains_key(&key)) { return; }
-    if IN_FLIGHT.with(|s| is_in_flight_active(&s.borrow(), &key)) { return; }
+    if IN_FLIGHT.with(|s| has_active_in_flight(&mut s.borrow_mut(), &key)) { return; }
     IN_FLIGHT.with(|s| s.borrow_mut().insert(key, js_sys::Date::now()));
 
     spawn_local(async move {
@@ -827,7 +829,7 @@ pub fn schedule_tile_on_demand(
 
     let key: CacheKey = (file_idx, 1, tile_idx);
     if CACHE.with(|c| c.borrow().tiles.contains_key(&key)) { return; }
-    if IN_FLIGHT.with(|s| is_in_flight_active(&s.borrow(), &key)) { return; }
+    if IN_FLIGHT.with(|s| has_active_in_flight(&mut s.borrow_mut(), &key)) { return; }
 
     // Bounds check: reject tiles past the audio data
     let total_samples = state.files.with_untracked(|files| {
@@ -941,7 +943,7 @@ pub fn schedule_flow_tile(
 
     let key: CacheKey = (file_idx, lod, tile_idx);
     if FLOW_CACHE.with(|c| c.borrow().tiles.contains_key(&key)) { return; }
-    if FLOW_IN_FLIGHT.with(|s| is_in_flight_active(&s.borrow(), &key)) { return; }
+    if FLOW_IN_FLIGHT.with(|s| has_active_in_flight(&mut s.borrow_mut(), &key)) { return; }
 
     let total_samples = state.files.with_untracked(|files| {
         files.get(file_idx).map(|f| f.audio.source.total_samples() as usize).unwrap_or(0)
@@ -1099,7 +1101,7 @@ pub fn schedule_reassign_tile(
 
     let key: CacheKey = (file_idx, lod, tile_idx);
     if REASSIGN_CACHE.with(|c| c.borrow().tiles.contains_key(&key)) { return; }
-    if REASSIGN_IN_FLIGHT.with(|s| is_in_flight_active(&s.borrow(), &key)) { return; }
+    if REASSIGN_IN_FLIGHT.with(|s| has_active_in_flight(&mut s.borrow_mut(), &key)) { return; }
 
     let total_samples = state.files.with_untracked(|files| {
         files.get(file_idx).map(|f| f.audio.source.total_samples() as usize).unwrap_or(0)
@@ -1205,7 +1207,7 @@ pub fn schedule_chroma_tile(
 
     let key = (file_idx, tile_idx);
     if CHROMA_CACHE.with(|c| c.borrow().tiles.contains_key(&key)) { return; }
-    if CHROMA_IN_FLIGHT.with(|s| is_in_flight_active(&s.borrow(), &key)) { return; }
+    if CHROMA_IN_FLIGHT.with(|s| has_active_in_flight(&mut s.borrow_mut(), &key)) { return; }
     CHROMA_IN_FLIGHT.with(|s| s.borrow_mut().insert(key, js_sys::Date::now()));
 
     spawn_local(async move {

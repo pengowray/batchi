@@ -8,6 +8,32 @@ use crate::canvas::tile_cache::TILE_COLS;
 use crate::canvas::spectrogram_renderer::FlowAlgo;
 use crate::state::AppState;
 
+fn visible_tile_order(first_tile: usize, last_tile: usize, center_tile: usize) -> Vec<usize> {
+    if first_tile > last_tile {
+        return Vec::new();
+    }
+
+    let clamped_center = center_tile.clamp(first_tile, last_tile);
+    let mut order = Vec::with_capacity(last_tile - first_tile + 1);
+    order.push(clamped_center);
+
+    let mut distance = 1usize;
+    while order.len() < last_tile - first_tile + 1 {
+        if let Some(left) = clamped_center.checked_sub(distance) {
+            if left >= first_tile {
+                order.push(left);
+            }
+        }
+        let right = clamped_center + distance;
+        if right <= last_tile {
+            order.push(right);
+        }
+        distance += 1;
+    }
+
+    order
+}
+
 /// Schedule missing normal/reassignment tiles for the visible viewport.
 ///
 /// Called from the render Effect after blitting, to ensure tiles are being
@@ -61,7 +87,9 @@ pub fn schedule_normal_tiles(
     let is_loading = state.loading_files.with_untracked(|v| !v.is_empty());
     let use_reassign = reassign_on && ideal_lod > 0;
 
-    for t in first_tile..=last_tile {
+    let tile_order = visible_tile_order(first_tile, last_tile, viewport_center_tile);
+
+    for &t in &tile_order {
         // Schedule reassignment tiles when enabled (skip LOD0)
         if use_reassign {
             if tile_cache::get_reassign_tile(file_idx, ideal_lod, t).is_none() {
@@ -73,7 +101,9 @@ pub fn schedule_normal_tiles(
         if tile_cache::get_tile(file_idx, ideal_lod, t).is_none() {
             tile_cache::schedule_tile_lod(state.clone(), file_idx, ideal_lod, t);
         }
+    }
 
+    for &t in &tile_order {
         // Also ensure a LOD1 fallback tile exists (for smooth transitions)
         if ideal_lod != 1 {
             let (fb_tile, _, _) = tile_cache::fallback_tile_info(ideal_lod, t, 1);
@@ -97,7 +127,8 @@ pub fn schedule_normal_tiles(
     if ideal_lod == 1 && !is_loading {
         let lod1_first = (vis_start / TILE_COLS as f64).floor() as usize;
         let lod1_last = ((vis_end - 0.001).max(0.0) / TILE_COLS as f64).floor() as usize;
-        for t in lod1_first..=lod1_last {
+        let lod1_center = ((vis_start + vis_end) / 2.0 / TILE_COLS as f64) as usize;
+        for t in visible_tile_order(lod1_first, lod1_last, lod1_center) {
             if tile_cache::get_tile(file_idx, 1, t).is_none() {
                 let tile_start = t * TILE_COLS;
                 let tile_end = (tile_start + TILE_COLS).min(total_cols);
@@ -123,7 +154,7 @@ pub fn schedule_normal_tiles(
         });
         let _ = web_sys::window().unwrap()
             .set_timeout_with_callback_and_timeout_and_arguments_0(
-                recovery_cb.as_ref().unchecked_ref(), 500,
+                recovery_cb.as_ref().unchecked_ref(), 250,
             );
         recovery_cb.forget();
     }
