@@ -917,7 +917,8 @@ fn render_tree_nodes(nodes: Vec<AnnotationNode>, state: AppState) -> impl IntoVi
                 >"\u{270E}"</button>
                 {if is_region {
                     view! {
-                        <button class="annotation-lock"
+                        <button
+                            class=move || if locked_signal.get() { "annotation-lock locked" } else { "annotation-lock unlocked" }
                             title=move || if locked_signal.get() { "Unlock (allow resize)" } else { "Lock (prevent resize)" }
                             on:click=move |e| {
                                 e.stop_propagation();
