@@ -13,6 +13,7 @@ use std::sync::Arc;
 use crate::audio::source::{AudioSource, ChannelView};
 use crate::audio::streaming_source;
 use crate::state::{PlaybackMode, FilterQuality, GainMode};
+use crate::dsp::agc::{AgcConfig, AgcProcessor};
 use crate::dsp::heterodyne::heterodyne_mix;
 use crate::dsp::pitch_shift::pitch_shift_realtime;
 use crate::dsp::zc_divide::zc_divide;
@@ -240,11 +241,18 @@ async fn chunk_loop(
     // - Off: no gain at all (0 dB)
     // - Manual: gain_db slider only
     // - AutoPeak: pre-scan peak normalization + gain_db slider on top
-    // - Adaptive: per-chunk normalization + gain_db slider on top (computed in process_one_chunk)
+    // - Adaptive: AGC leveler with smooth envelope following (applied in process_one_chunk)
     let is_adaptive = params.gain_mode == GainMode::Adaptive;
     let manual_boost = params.gain_db; // slider value, additive for all modes
 
     let auto_peak_gain: f64 = params.auto_peak_gain_db;
+
+    // AGC processor for Adaptive mode — persists across chunks for smooth gain transitions
+    let agc = if is_adaptive {
+        Some(RefCell::new(AgcProcessor::new(AgcConfig::default(), final_rate)))
+    } else {
+        None
+    };
 
     let mode_boost = match params.mode {
         PlaybackMode::PhaseVocoder => PV_MODE_BOOST_DB,
@@ -255,7 +263,7 @@ async fn chunk_loop(
         GainMode::Off => mode_boost,
         GainMode::Manual => manual_boost + mode_boost,
         GainMode::AutoPeak => auto_peak_gain + manual_boost + mode_boost,
-        GainMode::Adaptive => manual_boost + mode_boost, // adaptive part added per-chunk
+        GainMode::Adaptive => manual_boost + mode_boost, // AGC applied per-sample in process_one_chunk
     };
 
     // ── Pre-buffer phase ─────────────────────────────────────────────────────
@@ -275,7 +283,7 @@ async fn chunk_loop(
 
         let (final_samples, left, right, new_pos) = process_one_chunk(
             &source, channel_view, stereo_out, source_rate, &params,
-            global_gain, is_adaptive,
+            global_gain, agc.as_ref(),
             pos, start_sample, end_sample,
         ).await;
         pos = new_pos;
@@ -334,7 +342,7 @@ async fn chunk_loop(
 
         let (final_samples, left, right, new_pos) = process_one_chunk(
             &source, channel_view, stereo_out, source_rate, &params,
-            global_gain, is_adaptive,
+            global_gain, agc.as_ref(),
             pos, start_sample, end_sample,
         ).await;
         pos = new_pos;
@@ -384,7 +392,7 @@ async fn process_one_chunk(
     source_rate: u32,
     params: &PlaybackParams,
     global_gain: f64,
-    is_adaptive: bool,
+    agc: Option<&RefCell<AgcProcessor>>,
     pos: usize,
     start_sample: usize,
     end_sample: usize,
@@ -456,13 +464,10 @@ async fn process_one_chunk(
         };
         apply_pv_hq_fading(&mut final_samples);
 
-        let chunk_gain = if is_adaptive {
-            let core_end = core_len.min(final_samples.len());
-            compute_adaptive_gain(&final_samples[..core_end]) + global_gain
-        } else {
-            global_gain
-        };
-        apply_gain(&mut final_samples, chunk_gain);
+        apply_gain(&mut final_samples, global_gain);
+        if let Some(agc_cell) = agc {
+            agc_cell.borrow_mut().process(&mut final_samples);
+        }
 
         let (left, right) = if stereo_out {
             let l_proc = process_ch(ChannelView::Channel(0));
@@ -471,8 +476,12 @@ async fn process_one_chunk(
             let mut r = if trim_start < r_proc.len() { r_proc[trim_start..].to_vec() } else { r_proc };
             apply_pv_hq_fading(&mut l);
             apply_pv_hq_fading(&mut r);
-            apply_gain(&mut l, chunk_gain);
-            apply_gain(&mut r, chunk_gain);
+            apply_gain(&mut l, global_gain);
+            apply_gain(&mut r, global_gain);
+            if let Some(agc_cell) = agc {
+                agc_cell.borrow_mut().process(&mut l);
+                agc_cell.borrow_mut().process(&mut r);
+            }
             (Some(l), Some(r))
         } else {
             (None, None)
@@ -491,12 +500,10 @@ async fn process_one_chunk(
 
         let mut final_samples = trimmed.to_vec();
 
-        let chunk_gain = if is_adaptive {
-            compute_adaptive_gain(&final_samples) + global_gain
-        } else {
-            global_gain
-        };
-        apply_gain(&mut final_samples, chunk_gain);
+        apply_gain(&mut final_samples, global_gain);
+        if let Some(agc_cell) = agc {
+            agc_cell.borrow_mut().process(&mut final_samples);
+        }
 
         let (left, right) = if stereo_out {
             let l_proc = process_ch(ChannelView::Channel(0));
@@ -505,8 +512,12 @@ async fn process_one_chunk(
             let r_trim_end = r_proc.len().saturating_sub(trailing_len);
             let mut l = if trim_start < l_trim_end { l_proc[trim_start..l_trim_end].to_vec() } else { l_proc };
             let mut r = if trim_start < r_trim_end { r_proc[trim_start..r_trim_end].to_vec() } else { r_proc };
-            apply_gain(&mut l, chunk_gain);
-            apply_gain(&mut r, chunk_gain);
+            apply_gain(&mut l, global_gain);
+            apply_gain(&mut r, global_gain);
+            if let Some(agc_cell) = agc {
+                agc_cell.borrow_mut().process(&mut l);
+                agc_cell.borrow_mut().process(&mut r);
+            }
             (Some(l), Some(r))
         } else {
             (None, None)
@@ -516,23 +527,6 @@ async fn process_one_chunk(
     }
 }
 
-/// Compute per-chunk adaptive gain with noise gate.
-/// Boosts the chunk so its peak approaches −3 dBFS, but only if the peak
-/// is above a noise gate threshold (−50 dBFS). Quiet/silent chunks get no
-/// boost, avoiding amplified noise floor. Gain is capped at +60 dB.
-fn compute_adaptive_gain(samples: &[f32]) -> f64 {
-    let peak = samples.iter().fold(0.0f32, |mx, s| mx.max(s.abs()));
-    if peak < 1e-10 {
-        return 0.0;
-    }
-    let peak_db = 20.0 * (peak as f64).log10();
-    // Noise gate: if peak is below −50 dBFS, don't boost (likely silence/noise)
-    if peak_db < -50.0 {
-        return 0.0;
-    }
-    // Boost so peak → −3 dBFS, capped at +60 dB
-    (-3.0 - peak_db).clamp(0.0, 60.0)
-}
 
 pub(crate) fn apply_filters(samples: &[f32], sample_rate: u32, params: &PlaybackParams) -> Vec<f32> {
     let mut result = if params.filter_enabled {

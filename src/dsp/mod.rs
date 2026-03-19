@@ -1,3 +1,4 @@
+pub mod agc;
 pub mod bit_analysis;
 pub mod fft;
 pub mod filters;
