@@ -24,3 +24,4 @@ pub mod bat_book_tab;
 pub mod bat_book_strip;
 pub mod bat_book_ref_panel;
 pub mod display_filter_button;
+pub mod selection_combo_button;

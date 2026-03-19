@@ -1607,6 +1607,35 @@ body.sidebar-resizing {
     letter-spacing: 0.5px;
 }
 
+/* Undo/Redo buttons in toolbar */
+.toolbar-undo-redo {
+    display: flex;
+    gap: 2px;
+    align-items: center;
+    margin-right: 4px;
+}
+
+.toolbar-undo-btn {
+    background: transparent !important;
+    border: 1px solid transparent !important;
+    color: #999;
+    font-size: 16px;
+    padding: 2px 6px !important;
+    cursor: pointer;
+    border-radius: 3px;
+    line-height: 1;
+}
+
+.toolbar-undo-btn:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.1) !important;
+    color: #eee;
+}
+
+.toolbar-undo-btn:disabled {
+    opacity: 0.25;
+    cursor: default;
+}
+
 /* Mode group — radio-style buttons */
 .mode-group {
     display: flex;
@@ -2456,6 +2485,64 @@ body.sidebar-resizing {
     height: 1px;
     background: #333;
     margin: 4px 0;
+}
+
+/* Selection combo button action buttons */
+.sel-combo-action-btn {
+    display: block;
+    width: 100%;
+    padding: 5px 8px;
+    background: rgba(80, 180, 130, 0.15);
+    border: 1px solid rgba(80, 180, 130, 0.4);
+    border-radius: 4px;
+    color: #8fc;
+    font-size: 12px;
+    cursor: pointer;
+    text-align: left;
+}
+
+.sel-combo-action-btn:hover {
+    background: rgba(80, 180, 130, 0.25);
+    border-color: rgba(80, 180, 130, 0.6);
+}
+
+.sel-combo-action-btn.subtle {
+    background: rgba(255, 255, 255, 0.04);
+    border-color: rgba(255, 255, 255, 0.1);
+    color: #bbb;
+}
+
+.sel-combo-action-btn.subtle:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #eee;
+}
+
+.sel-combo-action-btn.danger {
+    background: rgba(220, 60, 60, 0.1);
+    border-color: rgba(220, 60, 60, 0.3);
+    color: #f99;
+}
+
+.sel-combo-action-btn.danger:hover {
+    background: rgba(220, 60, 60, 0.2);
+    border-color: rgba(220, 60, 60, 0.5);
+    color: #fcc;
+}
+
+.sel-combo-input {
+    width: 100%;
+    padding: 3px 6px;
+    background: #1a1a1a;
+    border: 1px solid #444;
+    border-radius: 3px;
+    color: #ddd;
+    font-size: 11px;
+    outline: none;
+    box-sizing: border-box;
+}
+
+.sel-combo-input:focus {
+    border-color: #6da;
 }
 
 .layer-panel-title {

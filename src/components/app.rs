@@ -22,6 +22,7 @@ use crate::components::bat_book_tab::BatBookTab;
 use crate::components::bat_book_strip::BatBookStrip;
 use crate::components::bat_book_ref_panel::BatBookRefPanel;
 use crate::components::display_filter_button::DspFilterRow;
+use crate::components::selection_combo_button::SelectionComboButton;
 use crate::viewport;
 
 #[component]
@@ -942,6 +943,7 @@ fn MainArea() -> impl IntoView {
                                 <BookmarkPopup />
                                 <ViewAndDspButtons />
                                 <FreqRangeButton />
+                                <SelectionComboButton />
                                 <BatBookTab />
                             </div>
 

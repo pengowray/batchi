@@ -1,14 +1,56 @@
 use leptos::prelude::*;
 use crate::state::{AppState, CanvasTool};
+use crate::annotations::AnnotationKind;
+
+/// Format a selection/annotation's dimensions: duration and optional freq range.
+fn format_selection_dims(duration: f64, freq_low: Option<f64>, freq_high: Option<f64>) -> String {
+    let dur_str = crate::format_time::format_duration(duration, 3);
+    match (freq_low, freq_high) {
+        (Some(fl), Some(fh)) => format!(
+            "Duration: {}   Freq range: {:.0} – {:.0} kHz",
+            dur_str, fl / 1000.0, fh / 1000.0
+        ),
+        _ => format!("Duration: {}", dur_str),
+    }
+}
 
 #[component]
 pub fn AnalysisPanel() -> impl IntoView {
     let state = expect_context::<AppState>();
 
-    let duration = move || {
+    let selection_dims = move || {
         let selection = state.selection.get()?;
         let d = selection.time_end - selection.time_start;
-        if d > 0.0001 { Some(d) } else { None }
+        if d > 0.0001 {
+            Some(format_selection_dims(d, selection.freq_low, selection.freq_high))
+        } else {
+            None
+        }
+    };
+
+    let annotation_dims = move || {
+        let ids = state.selected_annotation_ids.get();
+        if ids.is_empty() { return None; }
+        let idx = state.current_file_index.get()?;
+        let store = state.annotation_store.get();
+        let set = store.sets.get(idx)?.as_ref()?;
+        // Show dims for single selected annotation
+        if ids.len() == 1 {
+            let ann = set.annotations.iter().find(|a| a.id == ids[0])?;
+            match &ann.kind {
+                AnnotationKind::Region(r) => {
+                    let d = r.time_end - r.time_start;
+                    if d > 0.0001 {
+                        Some(format_selection_dims(d, r.freq_low, r.freq_high))
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            }
+        } else {
+            Some(format!("{} annotations selected", ids.len()))
+        }
     };
 
     view! {
@@ -22,10 +64,17 @@ pub fn AnalysisPanel() -> impl IntoView {
                     }.into_any();
                 }
 
-                // Selection duration takes priority
-                if let Some(d) = duration() {
+                // Selection dimensions take priority
+                if let Some(dims) = selection_dims() {
                     return view! {
-                        <span>{crate::format_time::format_duration(d, 3)}</span>
+                        <span>{dims}</span>
+                    }.into_any();
+                }
+
+                // Selected annotation dimensions
+                if let Some(dims) = annotation_dims() {
+                    return view! {
+                        <span style="color: #aaa">{dims}</span>
                     }.into_any();
                 }
 

@@ -34,6 +34,22 @@ pub fn Toolbar() -> impl IntoView {
             // Spacer
             <div style="flex: 1;"></div>
 
+            // Undo/Redo buttons
+            <div class="toolbar-undo-redo">
+                <button
+                    class="toolbar-undo-btn"
+                    title="Undo (Ctrl+Z)"
+                    on:click=move |_| state.undo_annotations()
+                    disabled=move || !state.can_undo()
+                >{"\u{21B6}"}</button>
+                <button
+                    class="toolbar-undo-btn"
+                    title="Redo (Ctrl+Shift+Z)"
+                    on:click=move |_| state.redo_annotations()
+                    disabled=move || !state.can_redo()
+                >{"\u{21B7}"}</button>
+            </div>
+
             // Right sidebar button (mobile only)
             {if is_mobile {
                 Some(view! {

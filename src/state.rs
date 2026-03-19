@@ -154,7 +154,7 @@ impl RightSidebarTab {
     pub fn label(self) -> &'static str {
         match self {
             Self::Metadata => "Info",
-            Self::Selection => "Selection",
+            Self::Selection => "Annotations",
             Self::Psd => "PSD",
             Self::Analysis => "Analysis",
             Self::Harmonics => "Harmonics (beta)",
@@ -437,6 +437,7 @@ pub enum LayerPanel {
     RecordMode,
     Channel,
     Gain,
+    SelectionCombo,
 }
 
 /// A navigation history entry (for overview back/forward buttons).
@@ -595,6 +596,7 @@ pub struct AppState {
     pub file_sort_mode: RwSignal<FileSortMode>,
     pub show_file_previews: RwSignal<bool>,
     pub selection: RwSignal<Option<Selection>>,
+    pub last_selection: RwSignal<Option<Selection>>,
     pub playback_mode: RwSignal<PlaybackMode>,
     pub het_frequency: RwSignal<f64>,
     pub te_factor: RwSignal<f64>,
@@ -997,6 +999,7 @@ impl AppState {
             file_sort_mode: RwSignal::new(FileSortMode::AddOrder),
             show_file_previews: RwSignal::new(false),
             selection: RwSignal::new(None),
+            last_selection: RwSignal::new(None),
             playback_mode: RwSignal::new(PlaybackMode::Normal),
             het_frequency: RwSignal::new(45_000.0),
             te_factor: RwSignal::new(10.0),

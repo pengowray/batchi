@@ -1,9 +1,7 @@
 use leptos::prelude::*;
 use wasm_bindgen::JsCast;
-use crate::audio::source::ChannelView;
 use crate::state::{AppState, FlowColorScheme, MainView, SpectrogramDisplay};
-use crate::dsp::zero_crossing::zero_crossing_frequency;
-use crate::annotations::{Annotation, AnnotationKind, AnnotationSet, Group, Region, generate_uuid, now_iso8601, build_annotation_tree, AnnotationNode, collect_descendants, renumber_children};
+use crate::annotations::{Annotation, AnnotationKind, AnnotationSet, Group, generate_uuid, now_iso8601, build_annotation_tree, AnnotationNode, collect_descendants, renumber_children};
 
 #[component]
 pub(crate) fn SpectrogramSettingsPanel() -> impl IntoView {
@@ -298,131 +296,22 @@ pub(crate) fn SpectrogramSettingsPanel() -> impl IntoView {
 pub(crate) fn SelectionPanel() -> impl IntoView {
     let state = expect_context::<AppState>();
 
-    let analysis = move || {
-        let selection = state.selection.get()?;
-        let dragging = state.is_dragging.get();
-        let files = state.files.get();
+    let has_annotations = move || {
         let idx = state.current_file_index.get()?;
-        let file = files.get(idx)?;
-
-        let sr = file.audio.sample_rate;
-        let total = file.audio.source.total_samples() as usize;
-        let start = ((selection.time_start * sr as f64) as usize).min(total);
-        let end = ((selection.time_end * sr as f64) as usize).min(total);
-
-        if end <= start {
-            return None;
-        }
-
-        let duration = selection.time_end - selection.time_start;
-        let frames = end - start;
-
-        let (crossing_count, estimated_freq) = if dragging {
-            (None, None)
-        } else {
-            let slice = file.audio.source.read_region(ChannelView::MonoMix, start as u64, end - start);
-            let zc = zero_crossing_frequency(&slice, sr);
-            (Some(zc.crossing_count), Some(zc.estimated_frequency_hz))
-        };
-
-        Some((duration, frames, crossing_count, estimated_freq, selection.freq_low, selection.freq_high, selection))
-    };
-
-    let annotate_region = move |_| {
-        let selection = state.selection.get_untracked();
-        let file_idx = state.current_file_index.get_untracked();
-        if let (Some(sel), Some(idx)) = (selection, file_idx) {
-            let has_freq = sel.freq_low.is_some() && sel.freq_high.is_some();
-            state.snapshot_annotations();
-            let ann_id = generate_uuid();
-            let annotation = Annotation {
-                id: ann_id.clone(),
-                kind: AnnotationKind::Region(Region {
-                    time_start: sel.time_start,
-                    time_end: sel.time_end,
-                    freq_low: sel.freq_low,
-                    freq_high: sel.freq_high,
-                    label: None,
-                    color: None,
-                    locked: None,
-                }),
-                created_at: now_iso8601(),
-                modified_at: now_iso8601(),
-                notes: None,
-                parent_id: None,
-                sort_order: None,
-                tags: Vec::new(),
-            };
-            state.annotation_store.update(|store| {
-                store.ensure_len(idx + 1);
-                if store.sets[idx].is_none() {
-                    let new_set = state.files.with_untracked(|files| {
-                        files.get(idx).map(|f| {
-                            let id = f.identity.clone().unwrap_or_else(|| {
-                                crate::file_identity::identity_layer1(&f.name, 0)
-                            });
-                            AnnotationSet::new_with_metadata(id, &f.audio)
-                        })
-                    });
-                    if let Some(set) = new_set {
-                        store.sets[idx] = Some(set);
-                    }
-                }
-                if let Some(ref mut set) = store.sets[idx] {
-                    set.annotations.push(annotation);
-                }
-            });
-            state.annotations_dirty.set(true);
-            // Clear the transient selection and select the new annotation
-            state.selection.set(None);
-            state.selected_annotation_ids.set(vec![ann_id]);
-            state.show_info_toast(if has_freq { "Region annotated" } else { "Segment annotated" });
-        }
+        let store = state.annotation_store.get();
+        let set = store.sets.get(idx)?.as_ref()?;
+        if set.annotations.is_empty() { None } else { Some(()) }
     };
 
     view! {
         <div class="sidebar-panel">
             {move || {
-                match analysis() {
-                    Some((duration, frames, crossing_count, estimated_freq, freq_low, freq_high, _sel)) => {
-                        let has_freq = freq_low.is_some() && freq_high.is_some();
-                        let freq_range_str = match (freq_low, freq_high) {
-                            (Some(fl), Some(fh)) => format!("{:.0} – {:.0} kHz", fl / 1000.0, fh / 1000.0),
-                            _ => "—".to_string(),
-                        };
-                        let btn_label = if has_freq { "Annotate Region" } else { "Annotate Segment" };
-                        view! {
-                            <div class="setting-group">
-                                <div class="setting-group-title">"Selection"</div>
-                                <div class="setting-row">
-                                    <span class="setting-label">"Duration"</span>
-                                    <span class="setting-value">{crate::format_time::format_duration(duration, 3)}</span>
-                                </div>
-                                <div class="setting-row">
-                                    <span class="setting-label">"Frames"</span>
-                                    <span class="setting-value">{format!("{}", frames)}</span>
-                                </div>
-                                <div class="setting-row">
-                                    <span class="setting-label">"Freq range"</span>
-                                    <span class="setting-value">{freq_range_str}</span>
-                                </div>
-                                <div class="setting-row">
-                                    <span class="setting-label">"ZC count"</span>
-                                    <span class="setting-value">{match crossing_count { Some(c) => format!("{c}"), None => "...".into() }}</span>
-                                </div>
-                                <div class="setting-row">
-                                    <span class="setting-label">"ZC est. freq"</span>
-                                    <span class="setting-value">{match estimated_freq { Some(f) => format!("~{:.1} kHz", f / 1000.0), None => "...".into() }}</span>
-                                </div>
-                                <button class="sidebar-btn" on:click=annotate_region>{btn_label}</button>
-                            </div>
-                        }.into_any()
-                    }
-                    None => {
-                        view! {
-                            <div class="sidebar-panel-empty">"No selection"</div>
-                        }.into_any()
-                    }
+                if has_annotations().is_none() {
+                    view! {
+                        <div class="sidebar-panel-empty">"No annotations"</div>
+                    }.into_any()
+                } else {
+                    view! { <span></span> }.into_any()
                 }
             }}
             <AnnotationsList />
@@ -535,16 +424,6 @@ fn AnnotationsList() -> impl IntoView {
                         </div>
                         <div class="setting-row" style="gap: 2px; padding: 2px 8px; justify-content: flex-end;">
                             <button class="sidebar-btn annotation-toolbar-btn"
-                                title="Undo (Ctrl+Z)"
-                                on:click=move |_| state.undo_annotations()
-                                disabled=move || !state.can_undo()
-                            >"\u{21B6}"</button>
-                            <button class="sidebar-btn annotation-toolbar-btn"
-                                title="Redo (Ctrl+Shift+Z)"
-                                on:click=move |_| state.redo_annotations()
-                                disabled=move || !state.can_redo()
-                            >"\u{21B7}"</button>
-                            <button class="sidebar-btn annotation-toolbar-btn"
                                 title="Group selected"
                                 on:click=on_group
                                 disabled=move || state.selected_annotation_ids.get().is_empty()
@@ -554,18 +433,6 @@ fn AnnotationsList() -> impl IntoView {
                                 on:click=on_ungroup
                                 disabled=move || selected_is_group().is_none()
                             >"Ungroup"</button>
-                        </div>
-                        <div class="setting-row" style="gap: 4px; align-items: center; padding: 0 8px;">
-                            <label style="font-size: 11px; display: flex; align-items: center; gap: 4px; cursor: pointer;">
-                                <input type="checkbox"
-                                    prop:checked=move || state.annotation_auto_focus.get()
-                                    on:change=move |ev| {
-                                        let checked = leptos::prelude::event_target_checked(&ev);
-                                        state.annotation_auto_focus.set(checked);
-                                    }
-                                />
-                                "Auto-focus on click"
-                            </label>
                         </div>
                     </div>
                 }.into_any()
@@ -1021,7 +888,7 @@ fn jump_to_time(state: AppState, time: f64) {
     }
 }
 
-fn toggle_annotation_lock(state: AppState, annotation_id: &str, locked: bool) {
+pub(crate) fn toggle_annotation_lock(state: AppState, annotation_id: &str, locked: bool) {
     let idx = match state.current_file_index.get_untracked() {
         Some(i) => i,
         None => return,
@@ -1039,7 +906,7 @@ fn toggle_annotation_lock(state: AppState, annotation_id: &str, locked: bool) {
     state.annotations_dirty.set(true);
 }
 
-fn delete_annotation(state: AppState, annotation_id: &str) {
+pub(crate) fn delete_annotation(state: AppState, annotation_id: &str) {
     let idx = match state.current_file_index.get_untracked() {
         Some(i) => i,
         None => return,
@@ -1067,7 +934,7 @@ fn delete_annotation(state: AppState, annotation_id: &str) {
     state.annotations_dirty.set(true);
 }
 
-fn update_annotation_label(state: AppState, annotation_id: &str, label: Option<String>) {
+pub(crate) fn update_annotation_label(state: AppState, annotation_id: &str, label: Option<String>) {
     let idx = match state.current_file_index.get_untracked() {
         Some(i) => i,
         None => return,
@@ -1089,7 +956,7 @@ fn update_annotation_label(state: AppState, annotation_id: &str, label: Option<S
     state.annotations_dirty.set(true);
 }
 
-fn update_annotation_tags(state: AppState, annotation_id: &str, tags: Vec<String>) {
+pub(crate) fn update_annotation_tags(state: AppState, annotation_id: &str, tags: Vec<String>) {
     let idx = match state.current_file_index.get_untracked() {
         Some(i) => i,
         None => return,
