@@ -46,6 +46,8 @@ pub struct SpectInteraction {
     pub corner_drag_saved_ff: RwSignal<(f64, f64)>,
     /// Saved selection before corner drag, for restoration when switching to Y-axis
     pub corner_drag_saved_selection: RwSignal<Option<Selection>>,
+    /// Pending annotation hit for Hand tool — deferred to mouseup so panning takes priority
+    pub pending_annotation_hit: RwSignal<Option<(String, bool)>>, // (annotation_id, ctrl_held)
 }
 
 impl SpectInteraction {
@@ -68,6 +70,7 @@ impl SpectInteraction {
             corner_drag_axis: RwSignal::new(None),
             corner_drag_saved_ff: RwSignal::new((0.0, 0.0)),
             corner_drag_saved_selection: RwSignal::new(None),
+            pending_annotation_hit: RwSignal::new(None),
         }
     }
 }
@@ -462,7 +465,8 @@ pub fn on_mousedown(
         }
     }
 
-    // Check for annotation body click-to-select (both tools)
+    // Check for annotation body click-to-select
+    // For Hand tool: defer selection to mouseup so panning takes priority over annotation selection
     if let Some((px_x, px_y, _, _)) = pointer_to_xtf(ev.client_x() as f64, ev.client_y() as f64, canvas_ref, &state) {
         let file_idx = state.current_file_index.get_untracked().unwrap_or(0);
         let store = state.annotation_store.get_untracked();
@@ -484,31 +488,39 @@ pub fn on_mousedown(
                     set, px_x, px_y, min_freq, max_freq, scroll, time_res, zoom, cw, ch,
                 ) {
                     let ctrl = ev.ctrl_key() || ev.meta_key();
-                    if ctrl {
-                        // Toggle in/out of selection
-                        state.selected_annotation_ids.update(|ids| {
-                            if let Some(pos) = ids.iter().position(|id| *id == hit_id) {
-                                ids.remove(pos);
-                            } else {
-                                ids.push(hit_id.clone());
-                            }
-                        });
+                    if state.canvas_tool.get_untracked() == CanvasTool::Hand {
+                        // Defer annotation selection — panning takes priority
+                        ix.pending_annotation_hit.set(Some((hit_id, ctrl)));
                     } else {
-                        state.selected_annotation_ids.set(vec![hit_id.clone()]);
+                        if ctrl {
+                            // Toggle in/out of selection
+                            state.selected_annotation_ids.update(|ids| {
+                                if let Some(pos) = ids.iter().position(|id| *id == hit_id) {
+                                    ids.remove(pos);
+                                } else {
+                                    ids.push(hit_id.clone());
+                                }
+                            });
+                        } else {
+                            state.selected_annotation_ids.set(vec![hit_id.clone()]);
+                        }
+                        state.last_clicked_annotation_id.set(Some(hit_id));
+                        ev.prevent_default();
+                        return;
                     }
-                    state.last_clicked_annotation_id.set(Some(hit_id));
-                    ev.prevent_default();
-                    return;
                 }
             }
         }
     }
 
     // Click on empty area deselects annotations (unless modifier held)
-    if !ev.ctrl_key() && !ev.meta_key() && !ev.shift_key() {
-        let ids = state.selected_annotation_ids.get_untracked();
-        if !ids.is_empty() {
-            state.selected_annotation_ids.set(Vec::new());
+    // For Hand tool: defer to mouseup so panning isn't blocked
+    if state.canvas_tool.get_untracked() != CanvasTool::Hand {
+        if !ev.ctrl_key() && !ev.meta_key() && !ev.shift_key() {
+            let ids = state.selected_annotation_ids.get_untracked();
+            if !ids.is_empty() {
+                state.selected_annotation_ids.set(Vec::new());
+            }
         }
     }
 
@@ -750,6 +762,7 @@ pub fn on_mouseleave(
     ix.time_axis_tooltip.set(None);
     ix.corner_drag_active.set(false);
     ix.corner_drag_axis.set(None);
+    ix.pending_annotation_hit.set(None);
 }
 
 pub fn on_mouseup(
@@ -824,13 +837,42 @@ pub fn on_mouseup(
     state.is_dragging.set(false);
 
     if state.canvas_tool.get_untracked() == CanvasTool::Hand {
-        // If the mouse barely moved, treat as a click → bookmark while playing
         let (start_x, _) = ix.hand_drag_start.get_untracked();
         let dx = (ev.client_x() as f64 - start_x).abs();
-        if dx < 3.0 && state.is_playing.get_untracked() {
-            let t = state.playhead_time.get_untracked();
-            state.bookmarks.update(|bm| bm.push(crate::state::Bookmark { time: t }));
+        let was_click = dx < 3.0;
+
+        if was_click {
+            // Handle deferred annotation selection on click
+            if let Some((hit_id, ctrl)) = ix.pending_annotation_hit.get_untracked() {
+                if ctrl {
+                    state.selected_annotation_ids.update(|ids| {
+                        if let Some(pos) = ids.iter().position(|id| *id == hit_id) {
+                            ids.remove(pos);
+                        } else {
+                            ids.push(hit_id.clone());
+                        }
+                    });
+                } else {
+                    state.selected_annotation_ids.set(vec![hit_id.clone()]);
+                }
+                state.last_clicked_annotation_id.set(Some(hit_id));
+            } else {
+                // Click on empty area deselects annotations
+                if !ev.ctrl_key() && !ev.meta_key() && !ev.shift_key() {
+                    let ids = state.selected_annotation_ids.get_untracked();
+                    if !ids.is_empty() {
+                        state.selected_annotation_ids.set(Vec::new());
+                    }
+                }
+            }
+            // Bookmark while playing
+            if state.is_playing.get_untracked() {
+                let t = state.playhead_time.get_untracked();
+                state.bookmarks.update(|bm| bm.push(crate::state::Bookmark { time: t }));
+            }
         }
+
+        ix.pending_annotation_hit.set(None);
         return;
     }
     if state.canvas_tool.get_untracked() != CanvasTool::Selection { return; }
