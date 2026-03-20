@@ -1535,12 +1535,38 @@ body.sidebar-resizing {
     align-items: center;
     gap: 6px;
     padding: 6px 12px;
+    padding-top: 0;
     background: #1a1a1a;
     border-top: 1px solid #333;
     flex-shrink: 0;
     overflow: visible;
     position: relative;
     z-index: 15;
+    flex-wrap: wrap;
+}
+
+.bottom-toolbar-drag-handle {
+    width: 100%;
+    height: 10px;
+    cursor: ns-resize;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    touch-action: none;
+}
+
+.bottom-toolbar-drag-grip {
+    width: 40px;
+    height: 3px;
+    border-radius: 2px;
+    background: #444;
+    transition: background 0.15s;
+}
+
+.bottom-toolbar-drag-handle:hover .bottom-toolbar-drag-grip,
+.bottom-toolbar-drag-handle:active .bottom-toolbar-drag-grip {
+    background: #777;
 }
 
 .bottom-toolbar-sep {
@@ -2207,13 +2233,8 @@ body.sidebar-resizing {
 .bottom-toolbar.mobile {
     gap: 5px;
     padding: 8px 10px calc(8px + env(safe-area-inset-bottom, 0px));
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
-}
-
-.bottom-toolbar.mobile::-webkit-scrollbar {
-    display: none;
+    flex-wrap: wrap;
+    overflow: visible;
 }
 
 .bottom-toolbar.mobile .layer-btn {
@@ -2254,7 +2275,16 @@ body.sidebar-resizing {
     height: 28px;
 }
 
-/* Popups must escape the scroll container on mobile */
+.bottom-toolbar.mobile .bottom-toolbar-drag-handle {
+    height: 14px;
+}
+
+.bottom-toolbar.mobile .bottom-toolbar-drag-grip {
+    width: 50px;
+    height: 4px;
+}
+
+/* Popups positioned above multi-row toolbar on mobile */
 .bottom-toolbar.mobile .layer-panel {
     position: fixed !important;
     bottom: calc(60px + env(safe-area-inset-bottom, 0px)) !important;

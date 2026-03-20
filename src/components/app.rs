@@ -1002,7 +1002,6 @@ fn MainArea() -> impl IntoView {
                         // Bat book strip (between main view and bottom toolbar)
                         {move || state.bat_book_open.get().then(|| view! { <BatBookStrip /> })}
 
-                        <BottomToolbar />
                         <AnalysisPanel />
                     }.into_any()
                 } else {
@@ -1031,6 +1030,7 @@ fn MainArea() -> impl IntoView {
                     }
                 }
             }}
+            <BottomToolbar />
         </div>
     }
 }

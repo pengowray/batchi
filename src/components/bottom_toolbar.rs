@@ -141,11 +141,80 @@ pub fn BottomToolbar() -> impl IntoView {
         toggle_panel(&state, LayerPanel::RecordMode);
     });
 
+    // ── Drag-to-resize state ──
+    let max_height = RwSignal::new(Option::<f64>::None); // None = auto (no constraint)
+    let drag_active = StoredValue::new(false);
+    let drag_start_y = StoredValue::new(0.0f64);
+    let drag_start_height = StoredValue::new(0.0f64);
+    let toolbar_node = NodeRef::<leptos::html::Div>::new();
+
+    // Mouse/touch handlers for drag resize
+    let on_handle_pointerdown = move |ev: web_sys::PointerEvent| {
+        ev.prevent_default();
+        ev.stop_propagation();
+        drag_active.set_value(true);
+        drag_start_y.set_value(ev.client_y() as f64);
+        // Get current toolbar height
+        if let Some(el) = toolbar_node.get() {
+            let rect = el.get_bounding_client_rect();
+            drag_start_height.set_value(rect.height());
+        }
+        // Capture pointer on the target
+        if let Some(target) = ev.target() {
+            if let Ok(el) = target.dyn_into::<web_sys::Element>() {
+                let _ = el.set_pointer_capture(ev.pointer_id());
+            }
+        }
+    };
+
+    let on_handle_pointermove = move |ev: web_sys::PointerEvent| {
+        if !drag_active.get_value() { return; }
+        ev.prevent_default();
+        let delta = drag_start_y.get_value() - ev.client_y() as f64; // dragging up = positive
+        let new_height = (drag_start_height.get_value() + delta).max(48.0).min(400.0);
+        max_height.set(Some(new_height));
+    };
+
+    let on_handle_pointerup = move |ev: web_sys::PointerEvent| {
+        if !drag_active.get_value() { return; }
+        drag_active.set_value(false);
+        // Release pointer capture
+        if let Some(target) = ev.target() {
+            if let Ok(el) = target.dyn_into::<web_sys::Element>() {
+                let _ = el.release_pointer_capture(ev.pointer_id());
+            }
+        }
+    };
+
+    // Double-click resets to auto height
+    let on_handle_dblclick = move |_: web_sys::MouseEvent| {
+        max_height.set(None);
+    };
+
     view! {
         <div class=if is_mobile { "bottom-toolbar mobile" } else { "bottom-toolbar" }
+            node_ref=toolbar_node
+            style=move || {
+                match max_height.get() {
+                    Some(h) => format!("max-height: {h}px; overflow-y: auto;"),
+                    None => String::new(),
+                }
+            }
             on:click=|ev: web_sys::MouseEvent| ev.stop_propagation()
             on:touchstart=|ev: web_sys::TouchEvent| ev.stop_propagation()
         >
+            // ── Drag handle for vertical resize ──
+            <div class="bottom-toolbar-drag-handle"
+                on:pointerdown=on_handle_pointerdown
+                on:pointermove=on_handle_pointermove
+                on:pointerup=on_handle_pointerup
+                on:pointercancel=on_handle_pointerup
+                on:dblclick=on_handle_dblclick
+                title="Drag to resize toolbar, double-click to reset"
+            >
+                <div class="bottom-toolbar-drag-grip"></div>
+            </div>
+
             // ── HFR combo button ──
             <HfrButton />
 
