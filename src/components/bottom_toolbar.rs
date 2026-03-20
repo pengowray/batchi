@@ -1,6 +1,6 @@
 use leptos::prelude::*;
 use wasm_bindgen::prelude::*;
-use crate::state::{AppState, CanvasTool, GainMode, LayerPanel, PlaybackMode, PlayStartMode, RecordMode};
+use crate::state::{AppState, CanvasTool, GainMode, LayerPanel, ListenMode, PlaybackMode, PlayStartMode, RecordMode};
 use crate::audio::{microphone, playback};
 use crate::audio::streaming_playback::PV_MODE_BOOST_DB;
 use crate::audio::source::ChannelView;
@@ -215,10 +215,10 @@ pub fn BottomToolbar() -> impl IntoView {
                 <div class="bottom-toolbar-drag-grip"></div>
             </div>
 
-            // ── HFR combo button ──
-            <HfrButton />
+            // ── HFR combo button (only when file is open) ──
+            {move || has_file().then(|| view! { <HfrButton /> })}
 
-            <div class="bottom-toolbar-sep"></div>
+            {move || has_file().then(|| view! { <div class="bottom-toolbar-sep"></div> })}
 
             // ── Play combo button ──
             {move || has_file().then(|| view! {
@@ -592,33 +592,165 @@ pub fn BottomToolbar() -> impl IntoView {
                 >"Listen only"</button>
             </ComboButton>
 
-            // ── Listen button ──
-            <button
-                class=move || if state.mic_listening.get() { "layer-btn mic-armed" } else { "layer-btn" }
-                on:click=move |_| {
+            // ── Listen combo button ──
+            {
+                let listen_is_open = Signal::derive(move || state.layer_panel_open.get() == Some(LayerPanel::ListenMode));
+
+                let listen_left_class = Signal::derive(move || {
+                    if state.mic_listening.get() {
+                        "layer-btn combo-btn-left mic-armed"
+                    } else {
+                        "layer-btn combo-btn-left"
+                    }
+                });
+                let listen_right_class = Signal::derive(move || {
+                    if listen_is_open.get() { "layer-btn combo-btn-right open" } else { "layer-btn combo-btn-right" }
+                });
+
+                let listen_left_value = Signal::derive(move || {
+                    if state.mic_needs_permission.get() && state.is_tauri && !state.mic_listening.get() {
+                        "USB mic".to_string()
+                    } else {
+                        "Listen".to_string()
+                    }
+                });
+                let listen_right_value = Signal::derive(move || {
+                    match state.listen_mode.get() {
+                        ListenMode::Heterodyne => "HET".to_string(),
+                        ListenMode::PitchShift => "PS".to_string(),
+                        ListenMode::PhaseVocoder => "PV".to_string(),
+                        ListenMode::ZeroCrossing => "ZC".to_string(),
+                        ListenMode::Normal => "1:1".to_string(),
+                    }
+                });
+
+                let listen_left_click = Callback::new(move |_: web_sys::MouseEvent| {
                     let st = state;
                     wasm_bindgen_futures::spawn_local(async move {
                         microphone::toggle_listen(&st).await;
                     });
-                }
-                title=move || if state.mic_needs_permission.get() && state.is_tauri {
-                    "Grant USB mic permission to start listening"
-                } else {
-                    "Toggle live listening (L)"
-                }
-            >
-                <span class="layer-btn-category">"Mic"</span>
-                <span class="layer-btn-value">{move || if state.mic_needs_permission.get() && state.is_tauri && !state.mic_listening.get() {
-                    "USB mic"
-                } else {
-                    "Listen"
-                }}</span>
-            </button>
+                });
+                let listen_toggle_menu = Callback::new(move |()| {
+                    toggle_panel(&state, LayerPanel::ListenMode);
+                });
 
-            <div class="bottom-toolbar-sep"></div>
+                view! {
+                    <ComboButton
+                        left_label="Mic"
+                        left_value=listen_left_value
+                        left_click=listen_left_click
+                        left_class=listen_left_class
+                        right_value=listen_right_value
+                        right_class=listen_right_class
+                        is_open=listen_is_open
+                        toggle_menu=listen_toggle_menu
+                        left_title="Toggle live listening (L)"
+                        right_title="Listen mode settings"
+                        menu_direction="above"
+                        panel_style="min-width: 220px;"
+                    >
+                        // ── Mode selection ──
+                        <div class="layer-panel-title">"Mode"</div>
+                        <button class=move || layer_opt_class(state.listen_mode.get() == ListenMode::Heterodyne)
+                            on:click=move |_| state.listen_mode.set(ListenMode::Heterodyne)
+                        >"HET \u{2014} Heterodyne"</button>
+                        <button class=move || layer_opt_class(state.listen_mode.get() == ListenMode::PitchShift)
+                            on:click=move |_| state.listen_mode.set(ListenMode::PitchShift)
+                        >"PS \u{2014} Pitch Shift"</button>
+                        <button class=move || layer_opt_class(state.listen_mode.get() == ListenMode::PhaseVocoder)
+                            on:click=move |_| state.listen_mode.set(ListenMode::PhaseVocoder)
+                        >"PV \u{2014} Phase Vocoder"</button>
+                        <button class=move || layer_opt_class(state.listen_mode.get() == ListenMode::ZeroCrossing)
+                            on:click=move |_| state.listen_mode.set(ListenMode::ZeroCrossing)
+                        >"ZC \u{2014} Zero Crossing"</button>
+                        <button class=move || layer_opt_class(state.listen_mode.get() == ListenMode::Normal)
+                            on:click=move |_| state.listen_mode.set(ListenMode::Normal)
+                        >"1:1 \u{2014} Normal (passthrough)"</button>
 
-            // ── Tool button (Hand / Selection) ──
-            <ToolButtonInline />
+                        // ── Heterodyne settings ──
+                        <Show when=move || state.listen_mode.get() == ListenMode::Heterodyne>
+                            <hr />
+                            <div class="layer-panel-title">"Heterodyne"</div>
+                            <div class="layer-panel-slider-row het-text-row">
+                                <label>"Freq"</label>
+                                <span class="het-value">{move || format!("{:.1} kHz", state.listen_het_frequency.get() / 1000.0)}</span>
+                            </div>
+                            <div class="layer-panel-slider-row">
+                                <input type="range" min="10000" max="200000" step="1000"
+                                    prop:value=move || state.listen_het_frequency.get().to_string()
+                                    on:input=move |ev| {
+                                        if let Ok(val) = event_target_value(&ev).parse::<f64>() {
+                                            state.listen_het_frequency.set(val);
+                                        }
+                                    }
+                                />
+                            </div>
+                            <div class="layer-panel-slider-row het-text-row">
+                                <label>"LP cutoff"</label>
+                                <span class="het-value">{move || format!("{:.1} kHz", state.listen_het_cutoff.get() / 1000.0)}</span>
+                            </div>
+                            <div class="layer-panel-slider-row">
+                                <input type="range" min="1000" max="20000" step="500"
+                                    prop:value=move || state.listen_het_cutoff.get().to_string()
+                                    on:input=move |ev| {
+                                        if let Ok(val) = event_target_value(&ev).parse::<f64>() {
+                                            state.listen_het_cutoff.set(val);
+                                        }
+                                    }
+                                />
+                            </div>
+                        </Show>
+
+                        // ── Bandpass filter ──
+                        <hr />
+                        <div class="layer-panel-title">"Bandpass Filter"</div>
+                        <div style="display: flex; gap: 2px; padding: 0 6px 4px;">
+                            <button class=move || layer_opt_class(!state.listen_bandpass_enabled.get())
+                                on:click=move |_| state.listen_bandpass_enabled.set(false)
+                            >"OFF"</button>
+                            <button class=move || layer_opt_class(state.listen_bandpass_enabled.get())
+                                on:click=move |_| state.listen_bandpass_enabled.set(true)
+                            >"ON"</button>
+                        </div>
+                        <Show when=move || state.listen_bandpass_enabled.get()>
+                            <div class="layer-panel-slider-row het-text-row">
+                                <label>"Low"</label>
+                                <span class="het-value">{move || format!("{:.1} kHz", state.listen_bandpass_lo.get() / 1000.0)}</span>
+                            </div>
+                            <div class="layer-panel-slider-row">
+                                <input type="range" min="1000" max="200000" step="1000"
+                                    prop:value=move || state.listen_bandpass_lo.get().to_string()
+                                    on:input=move |ev| {
+                                        if let Ok(val) = event_target_value(&ev).parse::<f64>() {
+                                            state.listen_bandpass_lo.set(val);
+                                        }
+                                    }
+                                />
+                            </div>
+                            <div class="layer-panel-slider-row het-text-row">
+                                <label>"High"</label>
+                                <span class="het-value">{move || format!("{:.1} kHz", state.listen_bandpass_hi.get() / 1000.0)}</span>
+                            </div>
+                            <div class="layer-panel-slider-row">
+                                <input type="range" min="1000" max="200000" step="1000"
+                                    prop:value=move || state.listen_bandpass_hi.get().to_string()
+                                    on:input=move |ev| {
+                                        if let Ok(val) = event_target_value(&ev).parse::<f64>() {
+                                            state.listen_bandpass_hi.set(val);
+                                        }
+                                    }
+                                />
+                            </div>
+                        </Show>
+                    </ComboButton>
+                }
+            }
+
+            // ── Tool button (Hand / Selection, only when file is open) ──
+            {move || has_file().then(|| view! {
+                <div class="bottom-toolbar-sep"></div>
+                <ToolButtonInline />
+            })}
         </div>
     }
 }

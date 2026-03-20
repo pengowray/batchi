@@ -433,6 +433,7 @@ pub enum LayerPanel {
     Channel,
     Gain,
     SelectionCombo,
+    ListenMode,
 }
 
 /// A navigation history entry (for overview back/forward buttons).
@@ -562,6 +563,17 @@ pub enum MicMode {
     Browser,
     Cpal,
     RawUsb,
+}
+
+/// Playback mode for live listening (like PlaybackMode but without TimeExpansion).
+#[derive(Clone, Copy, Debug, PartialEq, Default)]
+pub enum ListenMode {
+    #[default]
+    Heterodyne,
+    PitchShift,
+    PhaseVocoder,
+    ZeroCrossing,
+    Normal,
 }
 
 // ── Loading progress ─────────────────────────────────────────────────────────
@@ -780,6 +792,14 @@ pub struct AppState {
     pub mic_selected_device: RwSignal<Option<String>>,
     /// Whether the mic chooser modal dialog is visible.
     pub show_mic_chooser: RwSignal<bool>,
+
+    // Listen mode settings (independent from HFR file playback)
+    pub listen_mode: RwSignal<ListenMode>,
+    pub listen_het_frequency: RwSignal<f64>,
+    pub listen_het_cutoff: RwSignal<f64>,
+    pub listen_bandpass_enabled: RwSignal<bool>,
+    pub listen_bandpass_lo: RwSignal<f64>,
+    pub listen_bandpass_hi: RwSignal<f64>,
 
     // Transient status message (e.g. permission errors)
     pub status_message: RwSignal<Option<String>>,
@@ -1114,6 +1134,12 @@ impl AppState {
             mic_needs_permission: RwSignal::new(false),
             mic_selected_device: RwSignal::new(None),
             show_mic_chooser: RwSignal::new(false),
+            listen_mode: RwSignal::new(ListenMode::default()),
+            listen_het_frequency: RwSignal::new(45_000.0),
+            listen_het_cutoff: RwSignal::new(15_000.0),
+            listen_bandpass_enabled: RwSignal::new(false),
+            listen_bandpass_lo: RwSignal::new(18_000.0),
+            listen_bandpass_hi: RwSignal::new(96_000.0),
             status_message: RwSignal::new(None),
             status_level: RwSignal::new(StatusLevel::Error),
             debug_log_entries: RwSignal::new(Vec::new()),

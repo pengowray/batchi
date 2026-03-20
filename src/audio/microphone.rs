@@ -596,8 +596,8 @@ async fn ensure_mic_open_web(state: &AppState) -> bool {
 
         if state_cb.mic_listening.get_untracked() {
             let sr = state_cb.mic_sample_rate.get_untracked();
-            let het_freq = state_cb.het_frequency.get_untracked();
-            let het_cutoff = state_cb.het_cutoff.get_untracked();
+            let het_freq = state_cb.listen_het_frequency.get_untracked();
+            let het_cutoff = state_cb.listen_het_cutoff.get_untracked();
             let mut out_data = vec![0.0f32; input_data.len()];
             RT_HET.with(|h| {
                 h.borrow_mut().process(&input_data, &mut out_data, sr, het_freq, het_cutoff);
@@ -815,8 +815,8 @@ async fn ensure_mic_open_tauri(state: &AppState) -> bool {
         // HET listening: process and play through speakers
         if state_cb.mic_listening.get_untracked() {
             let sr = state_cb.mic_sample_rate.get_untracked();
-            let het_freq = state_cb.het_frequency.get_untracked();
-            let het_cutoff = state_cb.het_cutoff.get_untracked();
+            let het_freq = state_cb.listen_het_frequency.get_untracked();
+            let het_cutoff = state_cb.listen_het_cutoff.get_untracked();
             let mut out_data = vec![0.0f32; len];
             RT_HET.with(|h| {
                 h.borrow_mut().process(&input_data, &mut out_data, sr, het_freq, het_cutoff);
@@ -1319,8 +1319,8 @@ async fn ensure_mic_open_usb(state: &AppState) -> bool {
 
         if state_cb.mic_listening.get_untracked() {
             let sr = state_cb.mic_sample_rate.get_untracked();
-            let het_freq = state_cb.het_frequency.get_untracked();
-            let het_cutoff = state_cb.het_cutoff.get_untracked();
+            let het_freq = state_cb.listen_het_frequency.get_untracked();
+            let het_cutoff = state_cb.listen_het_cutoff.get_untracked();
             let mut out_data = vec![0.0f32; len];
             RT_HET.with(|h| {
                 h.borrow_mut().process(&input_data, &mut out_data, sr, het_freq, het_cutoff);
