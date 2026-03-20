@@ -324,6 +324,20 @@ fn write_central_annotations(app: tauri::AppHandle, file_key: String, yaml: Stri
     Ok(())
 }
 
+/// Export annotations to an "exports" directory in app data, returning the full path.
+#[tauri::command]
+fn export_annotations_file(app: tauri::AppHandle, filename: String, yaml: String) -> Result<String, String> {
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| e.to_string())?
+        .join("exports");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let path = dir.join(&filename);
+    std::fs::write(&path, &yaml).map_err(|e| format!("Failed to write export: {e}"))?;
+    Ok(path.to_string_lossy().to_string())
+}
+
 // ── Audio file decoding commands ─────────────────────────────────────
 
 #[tauri::command]
@@ -599,6 +613,7 @@ pub fn run() {
             write_sidecar,
             read_central_annotations,
             write_central_annotations,
+            export_annotations_file,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

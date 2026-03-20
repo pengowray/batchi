@@ -1138,19 +1138,37 @@ fn export_annotations(state: AppState) {
         Err(e) => { state.show_error_toast(format!("Serialize error: {e}")); return; }
     };
 
-    let arr = js_sys::Array::of1(&wasm_bindgen::JsValue::from_str(&yaml));
-    let Ok(blob) = web_sys::Blob::new_with_str_sequence(&arr) else { return };
-    let Ok(url) = web_sys::Url::create_object_url_with_blob(&blob) else { return };
-
-    let doc = web_sys::window().unwrap().document().unwrap();
-    let a: web_sys::HtmlAnchorElement = doc.create_element("a").unwrap().unchecked_into();
-    a.set_href(&url);
     let filename = format!("{}.batm", set.file_identity.filename);
-    a.set_download(&filename);
-    a.click();
-    let _ = web_sys::Url::revoke_object_url(&url);
 
-    state.show_info_toast("Annotations exported");
+    if state.is_tauri {
+        // Tauri: export via IPC command to app data exports directory
+        wasm_bindgen_futures::spawn_local(async move {
+            let args = js_sys::Object::new();
+            let _ = js_sys::Reflect::set(&args, &wasm_bindgen::JsValue::from_str("filename"), &wasm_bindgen::JsValue::from_str(&filename));
+            let _ = js_sys::Reflect::set(&args, &wasm_bindgen::JsValue::from_str("yaml"), &wasm_bindgen::JsValue::from_str(&yaml));
+            match crate::tauri_bridge::tauri_invoke("export_annotations_file", &args.into()).await {
+                Ok(path) => {
+                    let path_str = path.as_string().unwrap_or_default();
+                    state.show_info_toast(format!("Exported to {path_str}"));
+                }
+                Err(e) => state.show_error_toast(format!("Export failed: {e}")),
+            }
+        });
+    } else {
+        // Browser: download via blob URL
+        let arr = js_sys::Array::of1(&wasm_bindgen::JsValue::from_str(&yaml));
+        let Ok(blob) = web_sys::Blob::new_with_str_sequence(&arr) else { return };
+        let Ok(url) = web_sys::Url::create_object_url_with_blob(&blob) else { return };
+
+        let doc = web_sys::window().unwrap().document().unwrap();
+        let a: web_sys::HtmlAnchorElement = doc.create_element("a").unwrap().unchecked_into();
+        a.set_href(&url);
+        a.set_download(&filename);
+        a.click();
+        let _ = web_sys::Url::revoke_object_url(&url);
+
+        state.show_info_toast("Annotations exported");
+    }
 }
 
 fn import_annotations(state: AppState) {

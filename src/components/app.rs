@@ -538,11 +538,9 @@ pub fn App() -> impl IntoView {
             if old_idx != new_idx {
                 state.selected_annotation_ids.set(Vec::new());
                 state.pop_annotation_ff();
-                // Save outgoing file's annotations+NR to OPFS
+                // Save outgoing file's annotations
                 if let Some(oi) = old_idx {
-                    if !state.is_tauri {
-                        crate::opfs::save_annotations_to_opfs(state, oi);
-                    }
+                    crate::opfs::save_annotations(state, oi);
                 }
             }
 
@@ -566,19 +564,17 @@ pub fn App() -> impl IntoView {
         });
     }
 
-    // Auto-save annotations to OPFS (browser) or sidecar (Tauri) when dirty.
-    if !state.is_tauri {
-        Effect::new(move |_| {
-            let dirty = state.annotations_dirty.get();
-            if !dirty { return; }
-            state.annotations_dirty.set(false);
-            let idx = match state.current_file_index.get_untracked() {
-                Some(i) => i,
-                None => return,
-            };
-            crate::opfs::save_annotations_to_opfs(state, idx);
-        });
-    }
+    // Auto-save annotations to OPFS (browser) or central store (Tauri) when dirty.
+    Effect::new(move |_| {
+        let dirty = state.annotations_dirty.get();
+        if !dirty { return; }
+        state.annotations_dirty.set(false);
+        let idx = match state.current_file_index.get_untracked() {
+            Some(i) => i,
+            None => return,
+        };
+        crate::opfs::save_annotations(state, idx);
+    });
 
     // Global keyboard shortcut: Space = play/stop
     let state_kb = state.clone();

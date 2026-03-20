@@ -159,8 +159,8 @@ fn sync_noise_profile_from_state(state: crate::state::AppState) -> Option<crate:
     })
 }
 
-/// Save annotations for a specific file index to OPFS.
-pub fn save_annotations_to_opfs(state: crate::state::AppState, file_idx: usize) {
+/// Save annotations for a specific file index (OPFS on browser, central store on Tauri).
+pub fn save_annotations(state: crate::state::AppState, file_idx: usize) {
     use leptos::prelude::{GetUntracked, Update};
 
     // Sync noise profile and touch modified_at before saving
@@ -182,18 +182,43 @@ pub fn save_annotations_to_opfs(state: crate::state::AppState, file_idx: usize) 
     let yaml = match yaml_serde::to_string(&set) {
         Ok(y) => y,
         Err(e) => {
-            log::warn!("OPFS serialize error: {e}");
+            log::warn!("Annotation serialize error: {e}");
             return;
         }
     };
 
-    wasm_bindgen_futures::spawn_local(async move {
-        if let Err(e) = opfs_save(&key, &yaml).await {
-            log::warn!("OPFS save error: {e}");
-        } else {
-            log::debug!("OPFS saved annotations: {key}");
-        }
-    });
+    if state.is_tauri {
+        // Tauri: save to central annotations directory via IPC
+        wasm_bindgen_futures::spawn_local(async move {
+            if let Err(e) = tauri_save_central(&key, &yaml).await {
+                log::warn!("Tauri central save error: {e}");
+            } else {
+                log::debug!("Tauri saved annotations: {key}");
+            }
+            // Also save file-adjacent sidecar if we know the original path
+            if let Some(ref path) = set.file_identity.file_path {
+                if let Err(e) = tauri_save_sidecar(path, &yaml).await {
+                    log::debug!("Tauri sidecar save skipped for {path}: {e}");
+                } else {
+                    log::debug!("Tauri saved sidecar: {path}.batm");
+                }
+            }
+        });
+    } else {
+        // Browser: save to OPFS
+        wasm_bindgen_futures::spawn_local(async move {
+            if let Err(e) = opfs_save(&key, &yaml).await {
+                log::warn!("OPFS save error: {e}");
+            } else {
+                log::debug!("OPFS saved annotations: {key}");
+            }
+        });
+    }
+}
+
+/// Legacy alias — use `save_annotations` instead.
+pub fn save_annotations_to_opfs(state: crate::state::AppState, file_idx: usize) {
+    save_annotations(state, file_idx);
 }
 
 /// Apply a loaded sidecar to the annotation store and restore NR profile to file settings.
@@ -224,9 +249,23 @@ fn apply_loaded_sidecar(state: crate::state::AppState, file_idx: usize, loaded: 
     });
 }
 
-/// Try to load annotations from OPFS for a file with the given identity.
+/// Try to load annotations for a file (OPFS on browser, central store + sidecar on Tauri).
 /// If found, merges into the annotation store at the given index.
+pub fn load_annotations(state: crate::state::AppState, file_idx: usize, identity: crate::annotations::FileIdentity) {
+    if state.is_tauri {
+        load_annotations_tauri(state, file_idx, identity);
+    } else {
+        load_annotations_opfs(state, file_idx, identity);
+    }
+}
+
+/// Legacy alias — use `load_annotations` instead.
 pub fn load_annotations_from_opfs(state: crate::state::AppState, file_idx: usize, identity: crate::annotations::FileIdentity) {
+    load_annotations(state, file_idx, identity);
+}
+
+/// Browser: try OPFS with fallback key chain.
+fn load_annotations_opfs(state: crate::state::AppState, file_idx: usize, identity: crate::annotations::FileIdentity) {
     use leptos::prelude::GetUntracked;
 
     let key = opfs_key(&identity);
@@ -263,7 +302,7 @@ pub fn load_annotations_from_opfs(state: crate::state::AppState, file_idx: usize
                                 log::debug!("OPFS loaded annotations for file {file_idx}: {try_key}");
                                 // If found via fallback key, re-save under primary key
                                 if i > 0 {
-                                    save_annotations_to_opfs(state, file_idx);
+                                    save_annotations(state, file_idx);
                                 }
                             }
                         }
@@ -276,4 +315,122 @@ pub fn load_annotations_from_opfs(state: crate::state::AppState, file_idx: usize
             }
         }
     });
+}
+
+/// Tauri: try central annotations store, then file-adjacent sidecar.
+fn load_annotations_tauri(state: crate::state::AppState, file_idx: usize, identity: crate::annotations::FileIdentity) {
+    use leptos::prelude::GetUntracked;
+
+    let key = opfs_key(&identity);
+    let file_path = identity.file_path.clone();
+
+    wasm_bindgen_futures::spawn_local(async move {
+        // Try central annotations store first
+        let mut keys_to_try = vec![key.clone()];
+        let fallback = opfs_fallback_key(&identity.filename, identity.file_size);
+        if fallback != key {
+            keys_to_try.push(fallback);
+        }
+
+        for (i, try_key) in keys_to_try.iter().enumerate() {
+            match tauri_load_central(try_key).await {
+                Ok(Some(yaml)) => {
+                    match yaml_serde::from_str::<crate::annotations::AnnotationSet>(&yaml) {
+                        Ok(loaded) => {
+                            let already_has = state.annotation_store.get_untracked()
+                                .sets.get(file_idx)
+                                .and_then(|s| s.as_ref())
+                                .is_some();
+                            if !already_has {
+                                apply_loaded_sidecar(state, file_idx, loaded);
+                                log::debug!("Tauri loaded central annotations for file {file_idx}: {try_key}");
+                                if i > 0 {
+                                    save_annotations(state, file_idx);
+                                }
+                            }
+                        }
+                        Err(e) => log::warn!("Tauri central deserialize error for {try_key}: {e}"),
+                    }
+                    return;
+                }
+                Ok(None) => {}
+                Err(e) => log::warn!("Tauri central load error for {try_key}: {e}"),
+            }
+        }
+
+        // Fall back to file-adjacent sidecar if we have the path
+        if let Some(ref path) = file_path {
+            match tauri_load_sidecar(path).await {
+                Ok(Some(yaml)) => {
+                    match yaml_serde::from_str::<crate::annotations::AnnotationSet>(&yaml) {
+                        Ok(loaded) => {
+                            let already_has = state.annotation_store.get_untracked()
+                                .sets.get(file_idx)
+                                .and_then(|s| s.as_ref())
+                                .is_some();
+                            if !already_has {
+                                apply_loaded_sidecar(state, file_idx, loaded);
+                                log::debug!("Tauri loaded sidecar for file {file_idx}: {path}.batm");
+                                // Re-save to central store so it's found faster next time
+                                save_annotations(state, file_idx);
+                            }
+                        }
+                        Err(e) => log::warn!("Tauri sidecar deserialize error: {e}"),
+                    }
+                }
+                Ok(None) => {}
+                Err(e) => log::debug!("Tauri sidecar load skipped for {path}: {e}"),
+            }
+        }
+    });
+}
+
+// ── Tauri IPC helpers for annotation persistence ──────────────────────
+
+/// Save annotations to the Tauri central annotations directory.
+async fn tauri_save_central(file_key: &str, yaml: &str) -> Result<(), String> {
+    let args = js_sys::Object::new();
+    js_sys::Reflect::set(&args, &wasm_bindgen::JsValue::from_str("fileKey"), &wasm_bindgen::JsValue::from_str(file_key))
+        .map_err(|e| format!("set fileKey: {e:?}"))?;
+    js_sys::Reflect::set(&args, &wasm_bindgen::JsValue::from_str("yaml"), &wasm_bindgen::JsValue::from_str(yaml))
+        .map_err(|e| format!("set yaml: {e:?}"))?;
+    crate::tauri_bridge::tauri_invoke("write_central_annotations", &args.into()).await?;
+    Ok(())
+}
+
+/// Load annotations from the Tauri central annotations directory.
+async fn tauri_load_central(file_key: &str) -> Result<Option<String>, String> {
+    let args = js_sys::Object::new();
+    js_sys::Reflect::set(&args, &wasm_bindgen::JsValue::from_str("fileKey"), &wasm_bindgen::JsValue::from_str(file_key))
+        .map_err(|e| format!("set fileKey: {e:?}"))?;
+    let result = crate::tauri_bridge::tauri_invoke("read_central_annotations", &args.into()).await?;
+    if result.is_null() || result.is_undefined() {
+        Ok(None)
+    } else {
+        Ok(result.as_string())
+    }
+}
+
+/// Save a file-adjacent sidecar via Tauri IPC.
+async fn tauri_save_sidecar(path: &str, yaml: &str) -> Result<(), String> {
+    let args = js_sys::Object::new();
+    js_sys::Reflect::set(&args, &wasm_bindgen::JsValue::from_str("path"), &wasm_bindgen::JsValue::from_str(path))
+        .map_err(|e| format!("set path: {e:?}"))?;
+    js_sys::Reflect::set(&args, &wasm_bindgen::JsValue::from_str("yaml"), &wasm_bindgen::JsValue::from_str(yaml))
+        .map_err(|e| format!("set yaml: {e:?}"))?;
+    crate::tauri_bridge::tauri_invoke("write_sidecar", &args.into()).await?;
+    Ok(())
+}
+
+/// Load a file-adjacent sidecar via Tauri IPC.
+async fn tauri_load_sidecar(path: &str) -> Result<Option<String>, String> {
+    let args = js_sys::Object::new();
+    js_sys::Reflect::set(&args, &wasm_bindgen::JsValue::from_str("path"), &wasm_bindgen::JsValue::from_str(path))
+        .map_err(|e| format!("set path: {e:?}"))?;
+    let result = crate::tauri_bridge::tauri_invoke("read_sidecar", &args.into()).await?;
+    if result.is_null() || result.is_undefined() {
+        Ok(None)
+    } else {
+        Ok(result.as_string())
+    }
 }

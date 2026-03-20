@@ -255,14 +255,12 @@ pub fn start_identity_computation(
         files.get(file_index).map_or(false, |f| f.identity.is_some())
     });
     if already_has_identity {
-        // Still try OPFS load even if identity was already set
-        if !state.is_tauri {
-            let identity = state.files.with_untracked(|files| {
-                files.get(file_index).and_then(|f| f.identity.clone())
-            });
-            if let Some(id) = identity {
-                crate::opfs::load_annotations_from_opfs(state, file_index, id);
-            }
+        // Still try loading saved annotations even if identity was already set
+        let identity = state.files.with_untracked(|files| {
+            files.get(file_index).and_then(|f| f.identity.clone())
+        });
+        if let Some(id) = identity {
+            crate::opfs::load_annotations(state, file_index, id);
         }
         return;
     }
@@ -279,10 +277,8 @@ pub fn start_identity_computation(
         }
     });
 
-    // Try OPFS load with Layer 1 key (browser only)
-    if !state.is_tauri {
-        crate::opfs::load_annotations_from_opfs(state, file_index, identity);
-    }
+    // Try loading annotations with Layer 1 key
+    crate::opfs::load_annotations(state, file_index, identity);
 
     // Layer 2: compute BLAKE3 spot hash async
     wasm_bindgen_futures::spawn_local(async move {
@@ -311,14 +307,12 @@ pub fn start_identity_computation(
                 }
             });
 
-            // Try OPFS load again with the better spot_hash_b3 key
-            if !state.is_tauri {
-                let identity = state.files.with_untracked(|files| {
-                    files.get(file_index).and_then(|f| f.identity.clone())
-                });
-                if let Some(id) = identity {
-                    crate::opfs::load_annotations_from_opfs(state, file_index, id);
-                }
+            // Try loading annotations again with the better spot_hash_b3 key
+            let identity = state.files.with_untracked(|files| {
+                files.get(file_index).and_then(|f| f.identity.clone())
+            });
+            if let Some(id) = identity {
+                crate::opfs::load_annotations(state, file_index, id);
             }
         }
     });
