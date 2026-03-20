@@ -98,11 +98,11 @@ pub fn BottomToolbar() -> impl IntoView {
 
     let rec_left_class = Signal::derive(move || {
         if state.mic_recording.get() {
-            "layer-btn combo-btn-left mic-recording"
+            "layer-btn combo-btn-left rec-btn mic-recording"
         } else if state.record_mode.get() == RecordMode::ListenOnly {
-            "layer-btn combo-btn-left disabled"
+            "layer-btn combo-btn-left rec-btn disabled"
         } else {
-            "layer-btn combo-btn-left"
+            "layer-btn combo-btn-left rec-btn"
         }
     });
     let rec_right_class = Signal::derive(move || {
@@ -117,7 +117,7 @@ pub fn BottomToolbar() -> impl IntoView {
             let secs = (now - start) / 1000.0;
             format!("Rec {:.1}s", secs)
         } else {
-            "\u{23FA}".to_string() // ⏺
+            "\u{25CF}".to_string() // ●
         }
     });
     let rec_right_value = Signal::derive(move || {

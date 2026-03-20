@@ -2222,6 +2222,14 @@ body.sidebar-resizing {
     50% { border-color: rgba(220, 60, 60, 1.0); }
 }
 
+/* Record button circle — use text rendering so it looks consistent across platforms */
+.rec-btn .layer-btn-value {
+    color: #e44;
+}
+.rec-btn.mic-recording .layer-btn-value {
+    color: #f66;
+}
+
 .layer-btn.disabled {
     opacity: 0.35;
     cursor: default;
