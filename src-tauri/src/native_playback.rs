@@ -99,7 +99,7 @@ pub fn start(
     // Try to get a config matching our desired sample rate
     let config = cpal::StreamConfig {
         channels: 1,
-        sample_rate: cpal::SampleRate(output_rate),
+        sample_rate: output_rate,
         buffer_size: cpal::BufferSize::Default,
     };
 

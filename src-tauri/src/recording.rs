@@ -158,11 +158,11 @@ fn collect_supported_rates(device: &cpal::Device) -> Vec<u32> {
     if let Ok(configs) = device.supported_input_configs() {
         for cfg in configs {
             // Add the min and max of each range
-            rates.insert(cfg.min_sample_rate().0);
-            rates.insert(cfg.max_sample_rate().0);
+            rates.insert(cfg.min_sample_rate());
+            rates.insert(cfg.max_sample_rate());
             // Also add common rates that fall within the range
             for &r in &[44100, 48000, 96000, 192000, 256000, 384000, 500000] {
-                if r >= cfg.min_sample_rate().0 && r <= cfg.max_sample_rate().0 {
+                if r >= cfg.min_sample_rate() && r <= cfg.max_sample_rate() {
                     rates.insert(r);
                 }
             }
@@ -188,20 +188,20 @@ fn negotiate_sample_rate(
 
     // Try exact requested rate first — find a config range that contains it
     for cfg in &configs {
-        if requested_max_rate >= cfg.min_sample_rate().0
-            && requested_max_rate <= cfg.max_sample_rate().0
+        if requested_max_rate >= cfg.min_sample_rate()
+            && requested_max_rate <= cfg.max_sample_rate()
         {
-            return Some(cfg.clone().with_sample_rate(cpal::SampleRate(requested_max_rate)));
+            return Some(cfg.clone().with_sample_rate(requested_max_rate));
         }
     }
 
     // No exact match — find the config with the highest max_rate <= requested
     let mut best: Option<(u32, cpal::SupportedStreamConfig)> = None;
     for cfg in &configs {
-        let rate = cfg.max_sample_rate().0;
+        let rate = cfg.max_sample_rate();
         if rate <= requested_max_rate {
             if best.as_ref().map_or(true, |(b, _)| rate > *b) {
-                best = Some((rate, cfg.clone().with_sample_rate(cpal::SampleRate(rate))));
+                best = Some((rate, cfg.clone().with_sample_rate(rate)));
             }
         }
     }
@@ -214,13 +214,13 @@ pub fn list_input_devices() -> Vec<DeviceInfo> {
     let host = cpal::default_host();
     let default_name = host
         .default_input_device()
-        .and_then(|d| d.name().ok())
+        .and_then(|d| d.description().ok().map(|desc| desc.name().to_string()))
         .unwrap_or_default();
 
     let mut devices: Vec<DeviceInfo> = Vec::new();
     if let Ok(input_devices) = host.input_devices() {
         for device in input_devices {
-            let name = device.name().unwrap_or_else(|_| "Unknown".into());
+            let name = device.description().map(|d| d.name().to_string()).unwrap_or_else(|_| "Unknown".into());
             let is_default = name == default_name;
             let mut ranges = Vec::new();
             if let Ok(configs) = device.supported_input_configs() {
@@ -232,8 +232,8 @@ pub fn list_input_devices() -> Vec<DeviceInfo> {
                         _ => "Other",
                     };
                     ranges.push(SampleRateRange {
-                        min: cfg.min_sample_rate().0,
-                        max: cfg.max_sample_rate().0,
+                        min: cfg.min_sample_rate(),
+                        max: cfg.max_sample_rate(),
                         channels: cfg.channels(),
                         format: fmt.to_string(),
                     });
@@ -273,7 +273,7 @@ pub fn open_mic(requested_max_rate: u32, device_name: Option<&str>) -> Result<Mi
         let found = host
             .input_devices()
             .ok()
-            .and_then(|mut devs| devs.find(|d| d.name().ok().as_deref() == Some(name)));
+            .and_then(|mut devs| devs.find(|d| d.description().ok().map(|desc| desc.name() == name).unwrap_or(false)));
         match found {
             Some(d) => d,
             None => {
@@ -287,7 +287,7 @@ pub fn open_mic(requested_max_rate: u32, device_name: Option<&str>) -> Result<Mi
             .ok_or_else(|| "No microphone found. Check your audio settings.".to_string())?
     };
 
-    let device_name = device.name().unwrap_or_else(|_| "Unknown".into());
+    let device_name = device.description().map(|d| d.name().to_string()).unwrap_or_else(|_| "Unknown".into());
     let supported_rates = collect_supported_rates(&device);
 
     let config = if requested_max_rate == 0 {
@@ -299,7 +299,7 @@ pub fn open_mic(requested_max_rate: u32, device_name: Option<&str>) -> Result<Mi
             .map_err(|e| format!("Failed to get mic config: {}", e))?;
         eprintln!(
             "Mic rate negotiation: auto mode, using device default {}Hz (supported: {:?})",
-            default_cfg.sample_rate().0,
+            default_cfg.sample_rate(),
             supported_rates
         );
         default_cfg
@@ -310,7 +310,7 @@ pub fn open_mic(requested_max_rate: u32, device_name: Option<&str>) -> Result<Mi
                 eprintln!(
                     "Mic rate negotiation: requested max {}Hz, got {}Hz",
                     requested_max_rate,
-                    cfg.sample_rate().0
+                    cfg.sample_rate()
                 );
                 cfg
             }
@@ -327,7 +327,7 @@ pub fn open_mic(requested_max_rate: u32, device_name: Option<&str>) -> Result<Mi
     };
 
     let format = detect_format(&config);
-    let sample_rate = config.sample_rate().0;
+    let sample_rate = config.sample_rate();
     let stream_config: cpal::StreamConfig = config.into();
     let channels = stream_config.channels as usize;
 
