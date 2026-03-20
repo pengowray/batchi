@@ -159,6 +159,15 @@ fn sync_noise_profile_from_state(state: crate::state::AppState) -> Option<crate:
     })
 }
 
+/// Produce YAML for a file-adjacent sidecar with `file_path` stripped from the identity.
+/// The sidecar sits next to the audio file, so the full path is redundant (and `filename` already
+/// stores the basename). Central annotations keep the full path for re-finding.
+fn sidecar_yaml_without_full_path(set: &crate::annotations::AnnotationSet) -> String {
+    let mut sidecar_set = set.clone();
+    sidecar_set.file_identity.file_path = None;
+    yaml_serde::to_string(&sidecar_set).unwrap_or_default()
+}
+
 /// Save annotations for a specific file index (OPFS on browser, central store on Tauri).
 /// Respects read_only (skips all saves) and had_sidecar (only writes file-adjacent if it existed).
 pub fn save_annotations(state: crate::state::AppState, file_idx: usize) {
@@ -215,7 +224,8 @@ pub fn save_annotations(state: crate::state::AppState, file_idx: usize) {
             // Only auto-save file-adjacent sidecar if one already existed on load
             if had_sidecar {
                 if let Some(ref path) = set.file_identity.file_path {
-                    if let Err(e) = tauri_save_sidecar(path, &yaml).await {
+                    let sidecar_yaml = sidecar_yaml_without_full_path(&set);
+                    if let Err(e) = tauri_save_sidecar(path, &sidecar_yaml).await {
                         log::debug!("Tauri sidecar save skipped for {path}: {e}");
                     } else {
                         log::debug!("Tauri saved sidecar: {path}.batm");
@@ -283,10 +293,7 @@ pub fn save_sidecar_explicit(state: crate::state::AppState, file_idx: usize) {
         None => { state.show_error_toast("Failed to create annotation set"); return; }
     };
 
-    let yaml = match yaml_serde::to_string(&set) {
-        Ok(y) => y,
-        Err(e) => { state.show_error_toast(format!("Serialize error: {e}")); return; }
-    };
+    let sidecar_yaml = sidecar_yaml_without_full_path(&set);
 
     // Mark had_sidecar so future auto-saves keep updating it
     state.files.update(|files| {
@@ -296,7 +303,7 @@ pub fn save_sidecar_explicit(state: crate::state::AppState, file_idx: usize) {
     });
 
     wasm_bindgen_futures::spawn_local(async move {
-        match tauri_save_sidecar(&path, &yaml).await {
+        match tauri_save_sidecar(&path, &sidecar_yaml).await {
             Ok(()) => state.show_info_toast(format!("Saved {path}.batm")),
             Err(e) => state.show_error_toast(format!("Sidecar save failed: {e}")),
         }
