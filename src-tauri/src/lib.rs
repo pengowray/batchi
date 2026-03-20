@@ -338,6 +338,21 @@ fn export_annotations_file(app: tauri::AppHandle, filename: String, yaml: String
     Ok(path.to_string_lossy().to_string())
 }
 
+/// Show a native file-open dialog and return the selected paths.
+#[tauri::command]
+async fn open_file_dialog() -> Result<Vec<String>, String> {
+    let handle = rfd::AsyncFileDialog::new()
+        .add_filter("Audio files", &["wav", "flac", "ogg", "mp3"])
+        .add_filter("All files", &["*"])
+        .set_title("Open audio files")
+        .pick_files()
+        .await;
+    match handle {
+        Some(files) => Ok(files.iter().map(|f| f.path().to_string_lossy().to_string()).collect()),
+        None => Ok(Vec::new()), // cancelled
+    }
+}
+
 // ── Audio file decoding commands ─────────────────────────────────────
 
 #[tauri::command]
@@ -614,6 +629,7 @@ pub fn run() {
             read_central_annotations,
             write_central_annotations,
             export_annotations_file,
+            open_file_dialog,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

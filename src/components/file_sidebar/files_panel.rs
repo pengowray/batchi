@@ -12,7 +12,7 @@ use crate::types::PreviewImage;
 use super::file_groups;
 use crate::format_time::format_duration_compact;
 
-use super::loading::{read_and_load_file, DemoEntry, fetch_demo_index, load_single_demo};
+use super::loading::{read_and_load_file, load_native_file, DemoEntry, fetch_demo_index, load_single_demo};
 
 #[component]
 pub(super) fn FilesPanel() -> impl IntoView {
@@ -41,7 +41,34 @@ pub(super) fn FilesPanel() -> impl IntoView {
 
     let state_for_upload = state.clone();
     let on_upload_click = move |_: web_sys::MouseEvent| {
-        if let Some(input) = file_input_ref.get() {
+        if state.is_tauri {
+            // Tauri: use native file dialog to get real filesystem paths
+            let state = state_for_upload.clone();
+            spawn_local(async move {
+                let args = js_sys::Object::new();
+                match crate::tauri_bridge::tauri_invoke("open_file_dialog", &args.into()).await {
+                    Ok(result) => {
+                        let paths: Vec<String> = js_sys::Array::from(&result)
+                            .iter()
+                            .filter_map(|v| v.as_string())
+                            .collect();
+                        for path in paths {
+                            let name = path.rsplit(['/', '\\']).next().unwrap_or(&path).to_string();
+                            let state = state.clone();
+                            let load_id = state.loading_start(&name);
+                            spawn_local(async move {
+                                match load_native_file(path, state.clone(), load_id).await {
+                                    Ok(()) => {}
+                                    Err(e) => log::error!("Failed to load file: {e}"),
+                                }
+                                state.loading_done(load_id);
+                            });
+                        }
+                    }
+                    Err(e) => log::error!("File dialog error: {e}"),
+                }
+            });
+        } else if let Some(input) = file_input_ref.get() {
             let el: &HtmlInputElement = input.as_ref();
             el.click();
         }

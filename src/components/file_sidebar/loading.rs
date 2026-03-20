@@ -650,3 +650,50 @@ fn expanding_chunk_order(center: usize, total: usize) -> Vec<usize> {
     }
     order
 }
+
+/// Load a file from a native filesystem path (Tauri only).
+/// Reads bytes via IPC, decodes in WASM, and stores the original path in FileIdentity.
+pub(super) async fn load_native_file(path: String, state: AppState, load_id: u64) -> Result<(), String> {
+    // Extract filename from path
+    let name = path.rsplit(['/', '\\']).next().unwrap_or(&path).to_string();
+
+    // Read bytes via Tauri IPC
+    state.loading_update(load_id, crate::state::LoadingStage::Decoding);
+    let args = js_sys::Object::new();
+    let _ = js_sys::Reflect::set(&args, &wasm_bindgen::JsValue::from_str("path"), &wasm_bindgen::JsValue::from_str(&path));
+    let result = crate::tauri_bridge::tauri_invoke("read_file_bytes", &args.into()).await?;
+
+    // Convert ArrayBuffer to Vec<u8>
+    let array_buffer = result
+        .dyn_into::<js_sys::ArrayBuffer>()
+        .map_err(|_| "Expected ArrayBuffer from read_file_bytes".to_string())?;
+    let uint8 = js_sys::Uint8Array::new(&array_buffer);
+    let bytes = uint8.to_vec();
+
+    // Decode and add to state using existing pipeline
+    load_named_bytes(name.clone(), &bytes, None, state, load_id).await?;
+
+    // The file was just added — set the native path on identity
+    let file_index = state.files.get_untracked().len().saturating_sub(1);
+
+    // start_identity_computation was already called inside load_named_bytes.
+    // Set the native file_path on the identity so future saves write the sidecar.
+    state.files.update(|files| {
+        if let Some(f) = files.get_mut(file_index) {
+            if let Some(ref mut id) = f.identity {
+                id.file_path = Some(path.clone());
+            }
+        }
+    });
+
+    // Also try loading a file-adjacent sidecar (central store was already tried
+    // by start_identity_computation, but it didn't have the path at that point).
+    let identity = state.files.with_untracked(|files| {
+        files.get(file_index).and_then(|f| f.identity.clone())
+    });
+    if let Some(id) = identity {
+        crate::opfs::load_annotations(state, file_index, id);
+    }
+
+    Ok(())
+}
