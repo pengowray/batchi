@@ -2250,6 +2250,20 @@ body.sidebar-resizing {
     min-height: 48px;
     font-size: 13px;
     justify-content: center;
+    overflow: hidden;
+}
+
+/* Combo buttons share row space equally so text changes don't cause reflow */
+.bottom-toolbar.mobile .combo-btn-row {
+    flex: 1 1 0;
+    min-width: 80px;
+    max-width: 160px;
+}
+
+.bottom-toolbar.mobile .combo-btn-left {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
 }
 
 .bottom-toolbar.mobile .combo-btn-text {
@@ -2263,6 +2277,10 @@ body.sidebar-resizing {
 
 .bottom-toolbar.mobile .layer-btn-value {
     font-size: 19px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+    white-space: nowrap;
 }
 
 .bottom-toolbar.mobile .combo-btn-right {
