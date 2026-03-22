@@ -624,7 +624,6 @@ fn render_frame(
         mouse_freq: None,
         mouse_in_label_area: false,
         label_hover_opacity: 1.0,
-        has_selection: false,
         file_max_freq: r.file_max_freq,
         axis_drag_lo: None,
         axis_drag_hi: None,

@@ -36,23 +36,49 @@ pub fn db_to_greyscale(db: f32, floor_db: f32, range_db: f32, gamma: f32, gain_d
     }
 }
 
-/// Resistor color band colors for frequency markers at 10 kHz intervals.
-/// Repeats every 10 decades (0=black, 1=brown, ..., 9=white, 10=black, ...).
+/// Standard resistor color code bands (0=black, 1=brown, ..., 9=white).
+pub const RESISTOR_BANDS: [[u8; 3]; 10] = [
+    [40, 40, 40],      // 0 - black (lightened for visibility)
+    [139, 69, 19],     // 1 - brown
+    [255, 0, 0],       // 2 - red
+    [255, 165, 0],     // 3 - orange
+    [255, 255, 0],     // 4 - yellow
+    [0, 128, 0],       // 5 - green
+    [0, 0, 255],       // 6 - blue
+    [148, 0, 211],     // 7 - violet
+    [128, 128, 128],   // 8 - grey
+    [255, 255, 255],   // 9 - white
+];
+
+/// Resistor color band color for frequency markers (single digit based on 10 kHz).
 pub fn freq_marker_color(freq_hz: f64) -> [u8; 3] {
-    const BANDS: [[u8; 3]; 10] = [
-        [40, 40, 40],      // 0 - black (lightened for visibility)
-        [139, 69, 19],     // 1 - brown
-        [255, 0, 0],       // 2 - red
-        [255, 165, 0],     // 3 - orange
-        [255, 255, 0],     // 4 - yellow
-        [0, 128, 0],       // 5 - green
-        [0, 0, 255],       // 6 - blue
-        [148, 0, 211],     // 7 - violet
-        [128, 128, 128],   // 8 - grey
-        [255, 255, 255],   // 9 - white
-    ];
     let digit = (freq_hz / 10_000.0).round() as u32 % 10;
-    BANDS[digit as usize]
+    RESISTOR_BANDS[digit as usize]
+}
+
+/// Three-band resistor color encoding for a frequency in Hz.
+/// Returns [first_digit, second_digit, multiplier] colors.
+/// E.g. 40 kHz = 40×1k → [yellow(4), black(0), orange(×1k=10^3)]
+pub fn freq_resistor_bands(freq_hz: f64) -> [[u8; 3]; 3] {
+    let hz = freq_hz.round() as u64;
+    if hz == 0 {
+        return [RESISTOR_BANDS[0]; 3];
+    }
+    let mut val = hz;
+    let mut multiplier_exp: u32 = 0;
+    while val >= 100 {
+        val /= 10;
+        multiplier_exp += 1;
+    }
+    // val is now 1–99
+    let d1 = (val / 10) as usize; // first significant digit
+    let d2 = (val % 10) as usize; // second significant digit
+    let mult = multiplier_exp as usize; // multiplier = 10^mult
+    [
+        RESISTOR_BANDS[d1 % 10],
+        RESISTOR_BANDS[d2 % 10],
+        RESISTOR_BANDS[mult % 10],
+    ]
 }
 
 /// Hermite smoothstep: smooth transition from 0 to 1 between edge0 and edge1.

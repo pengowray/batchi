@@ -1,4 +1,4 @@
-use crate::canvas::colors::{freq_marker_color, freq_marker_label};
+use crate::canvas::colors::{freq_marker_color, freq_marker_label, freq_resistor_bands};
 use crate::canvas::spectrogram_renderer::freq_to_y;
 use crate::dsp::filters::harmonics_band_bounds;
 use crate::state::{SpectrogramHandle, Selection, ResizeHandlePosition};
@@ -25,7 +25,6 @@ pub struct FreqMarkerState {
     pub mouse_freq: Option<f64>,
     pub mouse_in_label_area: bool,
     pub label_hover_opacity: f64,
-    pub has_selection: bool,
     pub file_max_freq: f64,
     /// Axis drag range for lighting up color bars
     pub axis_drag_lo: Option<f64>,
@@ -103,19 +102,24 @@ pub fn draw_freq_markers(
         };
 
         // --- Color range bar (covering the interval above this division) ---
+        // Only show bands within: axis drag range, FF handle drag range, or active FF range.
         let bar_top_freq = (freq + div_interval).min(max_freq);
-        let mouse_in_range = ms.mouse_freq.is_some_and(|mf| mf >= freq && mf < bar_top_freq);
         let axis_drag_in_range = match (ms.axis_drag_lo, ms.axis_drag_hi) {
             (Some(lo), Some(hi)) => bar_top_freq > lo && freq < hi,
             _ => false,
         };
         let ff_drag_in_range = ms.ff_drag_active && ms.ff_hi > ms.ff_lo && bar_top_freq > ms.ff_lo && freq < ms.ff_hi;
-        if ms.has_selection || mouse_in_range || axis_drag_in_range || ff_drag_in_range {
-            let bar_alpha = if axis_drag_in_range || ff_drag_in_range { 0.8 } else if ms.has_selection { 0.6 } else { 0.8 };
+        let ff_active_in_range = !ms.ff_drag_active && ms.ff_hi > ms.ff_lo && bar_top_freq > ms.ff_lo && freq < ms.ff_hi;
+        if axis_drag_in_range || ff_drag_in_range || ff_active_in_range {
+            let bar_alpha = if axis_drag_in_range || ff_drag_in_range { 0.8 } else { 0.6 };
             let bar_y_top = freq_to_y(bar_top_freq, min_freq, max_freq, canvas_height);
             let bar_y_bot = freq_to_y(freq, min_freq, max_freq, canvas_height);
-            ctx.set_fill_style_str(&format!("rgba({},{},{},{:.2})", color[0], color[1], color[2], bar_alpha));
-            ctx.fill_rect(color_bar_x, bar_y_top, color_bar_w, bar_y_bot - bar_y_top);
+            let bands = freq_resistor_bands(freq);
+            let band_w = color_bar_w / 3.0;
+            for (i, band_color) in bands.iter().enumerate() {
+                ctx.set_fill_style_str(&format!("rgba({},{},{},{:.2})", band_color[0], band_color[1], band_color[2], bar_alpha));
+                ctx.fill_rect(color_bar_x + i as f64 * band_w, bar_y_top, band_w, bar_y_bot - bar_y_top);
+            }
         }
 
         // --- White text label (drawn ABOVE the division line) ---
@@ -238,6 +242,78 @@ pub fn draw_freq_markers(
             ctx.move_to(tick_len, y);
             ctx.line_to(canvas_width - right_tick_len, y);
             ctx.stroke();
+        }
+    }
+
+    // --- Sub-20kHz 1kHz minor dividers ---
+    if div_interval >= 5_000.0 {
+        let minor_interval = 1_000.0;
+        let minor_start = ((min_freq / minor_interval).ceil() * minor_interval).max(minor_interval);
+        let minor_end = max_freq.min(20_000.0);
+        let mut mf = minor_start;
+        while mf < minor_end {
+            // Skip if coincides with a main division
+            let ratio = mf / div_interval;
+            if (ratio - ratio.round()).abs() < 0.001 {
+                mf += minor_interval;
+                continue;
+            }
+            let y = freq_to_y(mf, min_freq, max_freq, canvas_height);
+            let minor_color = freq_marker_color(mf);
+            let minor_alpha = 0.3;
+
+            // Short left tick
+            let tr = minor_color[0]; let tg = minor_color[1]; let tb = minor_color[2];
+            ctx.set_stroke_style_str(&format!("rgba({},{},{},{:.2})", tr, tg, tb, minor_alpha));
+            ctx.set_line_width(1.0);
+            ctx.begin_path();
+            ctx.move_to(0.0, y);
+            ctx.line_to(tick_len * 0.5, y);
+            ctx.stroke();
+
+            // Short right tick
+            ctx.begin_path();
+            ctx.move_to(canvas_width - right_tick_len * 0.5, y);
+            ctx.line_to(canvas_width, y);
+            ctx.stroke();
+
+            // Minor color bar (only when within axis drag, FF drag, or active FF range)
+            let bar_top_freq_m = (mf + minor_interval).min(max_freq).min(20_000.0);
+            let axis_drag_in_m = match (ms.axis_drag_lo, ms.axis_drag_hi) {
+                (Some(lo), Some(hi)) => bar_top_freq_m > lo && mf < hi,
+                _ => false,
+            };
+            let ff_drag_in_m = ms.ff_drag_active && ms.ff_hi > ms.ff_lo && bar_top_freq_m > ms.ff_lo && mf < ms.ff_hi;
+            let ff_active_in_m = !ms.ff_drag_active && ms.ff_hi > ms.ff_lo && bar_top_freq_m > ms.ff_lo && mf < ms.ff_hi;
+            if axis_drag_in_m || ff_drag_in_m || ff_active_in_m {
+                let bar_alpha_m = if axis_drag_in_m || ff_drag_in_m { 0.6 } else { 0.4 };
+                let by_top = freq_to_y(bar_top_freq_m, min_freq, max_freq, canvas_height);
+                let by_bot = freq_to_y(mf, min_freq, max_freq, canvas_height);
+                let bands = freq_resistor_bands(mf);
+                let band_w = color_bar_w / 3.0;
+                for (i, band_color) in bands.iter().enumerate() {
+                    ctx.set_fill_style_str(&format!("rgba({},{},{},{:.2})", band_color[0], band_color[1], band_color[2], bar_alpha_m));
+                    ctx.fill_rect(color_bar_x + i as f64 * band_w, by_top, band_w, by_bot - by_top);
+                }
+            }
+
+            // Small label (only when hovering label area)
+            if ms.label_hover_opacity > 0.01 {
+                let mlabel = freq_marker_label(mf);
+                ctx.set_font("9px sans-serif");
+                ctx.set_text_baseline("bottom");
+                let label_alpha_m = 0.4 * ms.label_hover_opacity;
+                ctx.set_fill_style_str(&format!("rgba(255,255,255,{:.2})", label_alpha_m));
+                let text_x = if labels_on_right {
+                    let m = ctx.measure_text(&mlabel).unwrap();
+                    label_x - m.width()
+                } else {
+                    label_x
+                };
+                let _ = ctx.fill_text(&mlabel, text_x, y - 2.0);
+            }
+
+            mf += minor_interval;
         }
     }
 

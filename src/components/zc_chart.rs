@@ -302,7 +302,6 @@ pub fn ZcDotChart() -> impl IntoView {
             mouse_freq,
             mouse_in_label_area: in_label,
             label_hover_opacity: label_hover_op,
-            has_selection: selection.is_some(),
             file_max_freq,
             axis_drag_lo: adl,
             axis_drag_hi: adh,

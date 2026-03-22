@@ -613,17 +613,20 @@ pub fn Spectrogram() -> impl IntoView {
                 _ => (None, None),
             };
             let ff_drag_active2 = matches!(spec_drag, Some(SpectrogramHandle::FfUpper) | Some(SpectrogramHandle::FfLower) | Some(SpectrogramHandle::FfMiddle));
+            // Only pass FF range to markers when HFR is on (or during axis drag which is
+            // handled separately by axis_drag_lo/hi). This prevents color bands from showing
+            // for a hidden/inactive FF range.
+            let (marker_ff_lo, marker_ff_hi) = if hfr_enabled || ff_drag_active2 { (ff_lo, ff_hi) } else { (0.0, 0.0) };
             let marker_state = FreqMarkerState {
                 mouse_freq,
                 mouse_in_label_area: mouse_freq.is_some() && mouse_cx < LABEL_AREA_WIDTH,
                 label_hover_opacity: label_opacity,
-                has_selection: selection.is_some() || (dragging && axis_drag_start.is_none()),
                 file_max_freq,
                 axis_drag_lo: adl2,
                 axis_drag_hi: adh2,
                 ff_drag_active: ff_drag_active2,
-                ff_lo,
-                ff_hi,
+                ff_lo: marker_ff_lo,
+                ff_hi: marker_ff_hi,
                 ff_handles_active: spec_hover.is_some() || spec_drag.is_some(),
             };
 
