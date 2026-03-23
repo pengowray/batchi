@@ -1126,6 +1126,21 @@ fn finalize_recording_tauri(result: JsValue, state: AppState) {
         state.current_file_index.set(Some(file_index));
     }
 
+    // Set file handle to saved path for hash computation, and compute Layer 1 identity
+    if !saved_path.is_empty() {
+        state.files.update(|files| {
+            if let Some(f) = files.get_mut(file_index) {
+                f.file_handle = Some(crate::audio::streaming_source::FileHandle::TauriPath(saved_path.clone()));
+            }
+        });
+    }
+    let num_samples_est = (duration_secs * sample_rate as f64).ceil() as u64;
+    let estimated_size = 44 + num_samples_est * (bits_per_sample as u64 / 8);
+    crate::file_identity::start_identity_computation(
+        state, file_index, name_check.clone(), estimated_size, None,
+        None, None, None,
+    );
+
     // Async chunked spectrogram computation with final normalization
     spawn_spectrogram_computation(audio_for_stft, name_check, file_index, state);
 }

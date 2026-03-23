@@ -399,6 +399,15 @@ pub(crate) fn finalize_live_recording(samples: Vec<f32>, sample_rate: u32, state
     tile_cache::clear_file(file_index);
     spectral_store::clear_file(file_index);
 
+    // Set Layer 1 identity (estimated WAV size since file may not be on disk yet)
+    let bits_per_sample = state.mic_bits_per_sample.get_untracked();
+    let num_samples = (duration_secs * sample_rate as f64).ceil() as u64;
+    let estimated_size = 44 + num_samples * (bits_per_sample as u64 / 8);
+    crate::file_identity::start_identity_computation(
+        state, file_index, name_check.clone(), estimated_size, None,
+        None, None, None,
+    );
+
     // Try Tauri auto-save in background
     if is_tauri {
         let samples_ref = state.files.get_untracked();
@@ -528,6 +537,14 @@ fn finalize_recording(samples: Vec<f32>, sample_rate: u32, state: AppState) {
         file_index = idx;
     }
     state.current_file_index.set(Some(file_index));
+
+    // Set Layer 1 identity (estimated WAV size)
+    let num_samples_est = (duration_secs * sample_rate as f64).ceil() as u64;
+    let estimated_size = 44 + num_samples_est * (16 / 8); // bits_per_sample=16 for this path
+    crate::file_identity::start_identity_computation(
+        state, file_index, name_check.clone(), estimated_size, None,
+        None, None, None,
+    );
 
     // Try Tauri auto-save in background (web mode path for old save_recording command)
     if is_tauri {

@@ -57,6 +57,22 @@ fn format_file_size(bytes: usize) -> String {
     }
 }
 
+/// Look up a key in XC metadata pairs.
+fn xc_meta_get<'a>(xc: &'a Option<Vec<(String, String)>>, key: &str) -> Option<&'a str> {
+    xc.as_ref().and_then(|fields| {
+        fields.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str())
+    })
+}
+
+/// Match indicator: compare computed hash against a reference (sidecar or XC metadata).
+fn hash_match_indicator(computed: &str, reference: Option<&str>) -> &'static str {
+    match reference {
+        Some(expected) if expected == computed => " \u{2713}",  // checkmark
+        Some(_) => " \u{26A0}",                                // warning
+        None => "",
+    }
+}
+
 /// Render the file identity / hash section.
 fn file_identity_section(f: &crate::state::LoadedFile) -> impl IntoView {
     let state = expect_context::<AppState>();
@@ -72,6 +88,11 @@ fn file_identity_section(f: &crate::state::LoadedFile) -> impl IntoView {
                 .map(|set| set.file_identity.clone())
         })
     });
+
+    // XC metadata may contain hashes from the download sidecar
+    let xc_blake3 = xc_meta_get(&f.xc_metadata, "BLAKE3").map(|s| s.to_string());
+    let xc_sha256 = xc_meta_get(&f.xc_metadata, "SHA-256").map(|s| s.to_string());
+    let has_xc_hashes = xc_blake3.is_some() || xc_sha256.is_some();
 
     let mut items: Vec<leptos::tachys::view::any_view::AnyView> = Vec::new();
 
@@ -102,13 +123,14 @@ fn file_identity_section(f: &crate::state::LoadedFile) -> impl IntoView {
 
         // Full BLAKE3 (Layer 4)
         if let Some(ref hash) = id.full_blake3 {
-            let sidecar_match = sidecar_identity.as_ref()
-                .and_then(|sid| sid.full_blake3.as_ref())
-                .map(|sh| if sh == hash { " \u{2713}" } else { " \u{26A0}" }) // checkmark or warning
-                .unwrap_or("");
+            // Compare against sidecar first, then XC metadata
+            let reference = sidecar_identity.as_ref()
+                .and_then(|sid| sid.full_blake3.as_deref())
+                .or(xc_blake3.as_deref());
+            let indicator = hash_match_indicator(hash, reference);
             items.push(metadata_row(
                 "Full BLAKE3".into(),
-                format!("{}{}", hash, sidecar_match),
+                format!("{}{}", hash, indicator),
                 None,
             ).into_any());
         } else if has_file_handle {
@@ -118,10 +140,12 @@ fn file_identity_section(f: &crate::state::LoadedFile) -> impl IntoView {
                 }
             };
             let computing = state.hash_computing.get();
+            let has_reference = sidecar_identity.as_ref().and_then(|s| s.full_blake3.as_ref()).is_some()
+                || xc_blake3.is_some();
             let label = if computing {
                 "Computing..."
-            } else if sidecar_identity.as_ref().and_then(|s| s.full_blake3.as_ref()).is_some() {
-                "Check hash"
+            } else if has_reference {
+                "Verify"
             } else {
                 "Calculate hash"
             };
@@ -135,26 +159,29 @@ fn file_identity_section(f: &crate::state::LoadedFile) -> impl IntoView {
 
         // Full SHA-256 (Layer 4-alt)
         if let Some(ref hash) = id.full_sha256 {
-            let sidecar_match = sidecar_identity.as_ref()
-                .and_then(|sid| sid.full_sha256.as_ref())
-                .map(|sh| if sh == hash { " \u{2713}" } else { " \u{26A0}" })
-                .unwrap_or("");
+            let reference = sidecar_identity.as_ref()
+                .and_then(|sid| sid.full_sha256.as_deref())
+                .or(xc_sha256.as_deref());
+            let indicator = hash_match_indicator(hash, reference);
             items.push(metadata_row(
                 "Full SHA-256".into(),
-                format!("{}{}", hash, sidecar_match),
+                format!("{}{}", hash, indicator),
                 None,
             ).into_any());
         } else if has_file_handle {
+            let xc_sha256_for_btn = xc_sha256.clone();
             let on_calc_sha = move |_: web_sys::MouseEvent| {
                 if let Some(idx) = state.current_file_index.get_untracked() {
                     crate::file_identity::start_full_hash_computation(state, idx, true);
                 }
             };
             let computing = state.hash_computing.get();
+            let has_reference = sidecar_identity.as_ref().and_then(|s| s.full_sha256.as_ref()).is_some()
+                || xc_sha256_for_btn.is_some();
             let label = if computing {
                 "Computing..."
-            } else if sidecar_identity.as_ref().and_then(|s| s.full_sha256.as_ref()).is_some() {
-                "Check SHA-256"
+            } else if has_reference {
+                "Verify"
             } else {
                 "Calculate SHA-256"
             };
@@ -165,6 +192,21 @@ fn file_identity_section(f: &crate::state::LoadedFile) -> impl IntoView {
                 </div>
             }.into_any());
         }
+    } else if has_file_handle && has_xc_hashes {
+        // No identity yet but XC metadata has hashes — show verify button
+        let on_calc = move |_: web_sys::MouseEvent| {
+            if let Some(idx) = state.current_file_index.get_untracked() {
+                crate::file_identity::start_full_hash_computation(state, idx, xc_sha256.is_some());
+            }
+        };
+        let computing = state.hash_computing.get();
+        let label = if computing { "Computing..." } else { "Verify hashes" };
+        items.push(view! {
+            <div class="setting-row metadata-row">
+                <span class="setting-label">"File hashes"</span>
+                <button class="hash-calc-btn" on:click=on_calc disabled=computing>{label}</button>
+            </div>
+        }.into_any());
     }
 
     if items.is_empty() {
@@ -196,7 +238,17 @@ pub(crate) fn MetadataPanel() -> impl IntoView {
                     }.into_any(),
                     Some(f) => {
                         let meta = &f.audio.metadata;
-                        let size_str = format_file_size(meta.file_size);
+                        // File size: use actual if available, otherwise estimate WAV size from samples
+                        let (size_str, size_label) = if meta.file_size > 0 {
+                            (format_file_size(meta.file_size), "File size".to_string())
+                        } else if f.audio.duration_secs > 0.0 {
+                            let bytes_per_sample = (meta.bits_per_sample as usize).max(16) / 8;
+                            let num_samples = (f.audio.duration_secs * f.audio.sample_rate as f64).ceil() as usize;
+                            let estimated = 44 + num_samples * f.audio.channels as usize * bytes_per_sample;
+                            (format!("~{}", format_file_size(estimated)), "File size (est.)".to_string())
+                        } else {
+                            ("0 B".to_string(), "File size".to_string())
+                        };
                         let xc_fields: Vec<_> = f.xc_metadata.clone().unwrap_or_default();
                         let has_xc = !xc_fields.is_empty();
                         let guano_fields: Vec<_> = meta.guano.as_ref()
@@ -213,7 +265,7 @@ pub(crate) fn MetadataPanel() -> impl IntoView {
                                 {metadata_row("Sample rate".into(), format!("{} kHz", f.audio.sample_rate / 1000), None)}
                                 {metadata_row("Channels".into(), f.audio.channels.to_string(), None)}
                                 {metadata_row("Bit depth".into(), format!("{}-bit", meta.bits_per_sample), None)}
-                                {metadata_row("File size".into(), size_str, None)}
+                                {metadata_row(size_label, size_str, None)}
                             </div>
                             {if has_xc {
                                 let items: Vec<_> = xc_fields.into_iter().map(|(label, value)| {

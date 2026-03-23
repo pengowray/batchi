@@ -317,5 +317,17 @@ fn parse_xc_json_metadata(json: &serde_json::Value) -> Vec<(String, String)> {
             fields.push((label.into(), v));
         }
     }
+    // File hashes from XC sidecar (computed at download time by xc-lib)
+    if let Some(size) = json["file_size"].as_u64() {
+        fields.push(("File size (bytes)".into(), size.to_string()));
+    }
+    let blake3 = s("blake3");
+    if !blake3.is_empty() {
+        fields.push(("BLAKE3".into(), blake3));
+    }
+    let sha256 = s("sha256");
+    if !sha256.is_empty() {
+        fields.push(("SHA-256".into(), sha256));
+    }
     fields
 }
