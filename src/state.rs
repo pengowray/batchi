@@ -5,6 +5,23 @@ use crate::annotations::AnnotationKind;
 use crate::types::{AudioData, PreviewImage, SpectrogramData};
 use crate::annotations::{AnnotationId, AnnotationStore, FileIdentity};
 
+/// Hash data extracted from an XC sidecar JSON file.
+/// Mirrors `xc_lib::cache::SidecarHashes` but defined locally to avoid
+/// pulling xc-lib (which depends on reqwest) into the WASM frontend.
+#[derive(Clone, Debug, Default)]
+pub struct SidecarHashes {
+    pub blake3: Option<String>,
+    pub sha256: Option<String>,
+    pub file_size: Option<u64>,
+    pub spot_hash: Option<String>,
+}
+
+impl SidecarHashes {
+    pub fn is_empty(&self) -> bool {
+        self.blake3.is_none() && self.sha256.is_none() && self.file_size.is_none()
+    }
+}
+
 /// Per-file settings that persist when switching between files.
 /// Files in the same sequence group share settings.
 #[derive(Clone, Debug)]
@@ -49,6 +66,8 @@ pub struct LoadedFile {
     /// Falls back to `preview` when not yet available.
     pub overview_image: Option<PreviewImage>,
     pub xc_metadata: Option<Vec<(String, String)>>,
+    /// Hash data from XC sidecar (for verification against computed identity).
+    pub xc_hashes: Option<SidecarHashes>,
     pub is_recording: bool,  // true = unsaved recording (show indicator on web)
     /// Per-file gain and noise filter settings.
     pub settings: FileSettings,

@@ -100,14 +100,14 @@ pub(super) async fn read_and_load_file(file: File, state: AppState, load_id: u64
         return Err(msg);
     }
     let bytes = read_file_bytes(&file).await?;
-    let result = load_named_bytes(name, &bytes, None, state, load_id).await;
+    let result = load_named_bytes(name, &bytes, None, None, state, load_id).await;
     if result.is_ok() {
         finalize_loaded_file(state, last_modified_ms);
     }
     result
 }
 
-pub(crate) async fn load_named_bytes(name: String, bytes: &[u8], xc_metadata: Option<Vec<(String, String)>>, state: AppState, load_id: u64) -> Result<(), String> {
+pub(crate) async fn load_named_bytes(name: String, bytes: &[u8], xc_metadata: Option<Vec<(String, String)>>, xc_hashes: Option<crate::state::SidecarHashes>, state: AppState, load_id: u64) -> Result<(), String> {
     let audio = load_audio(bytes)?;
     log::info!(
         "Loaded {}: {} samples, {} Hz, {:.2}s",
@@ -175,6 +175,7 @@ pub(crate) async fn load_named_bytes(name: String, bytes: &[u8], xc_metadata: Op
                 preview: Some(preview),
                 overview_image: None,
                 xc_metadata,
+                xc_hashes,
                 is_recording: false,
                 settings: FileSettings::default(),
                 add_order: idx,
@@ -520,19 +521,19 @@ fn parse_xc_metadata(json: &serde_json::Value) -> Vec<(String, String)> {
             fields.push((label.into(), v));
         }
     }
-    // File hashes from XC sidecar (computed at download time by xc-lib)
-    if let Some(size) = json["file_size"].as_u64() {
-        fields.push(("File size (bytes)".into(), size.to_string()));
-    }
-    let blake3 = s("blake3");
-    if !blake3.is_empty() {
-        fields.push(("BLAKE3".into(), blake3));
-    }
-    let sha256 = s("sha256");
-    if !sha256.is_empty() {
-        fields.push(("SHA-256".into(), sha256));
-    }
     fields
+}
+
+/// Extract hash data from an XC sidecar JSON.
+/// Tries `json["_app"]` first (new format), then falls back to top-level keys (legacy).
+fn extract_sidecar_hashes(json: &serde_json::Value) -> crate::state::SidecarHashes {
+    let src = if json["_app"].is_object() { &json["_app"] } else { json };
+    crate::state::SidecarHashes {
+        blake3: src["blake3"].as_str().map(|s| s.to_string()),
+        sha256: src["sha256"].as_str().map(|s| s.to_string()),
+        file_size: src["file_size"].as_u64(),
+        spot_hash: src["spot_hash"].as_str().map(|s| s.to_string()),
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -609,7 +610,7 @@ pub(crate) async fn fetch_demo_index() -> Result<Vec<DemoEntry>, String> {
 
 pub(crate) async fn load_single_demo(entry: &DemoEntry, state: AppState, load_id: u64) -> Result<(), String> {
     // Fetch XC metadata sidecar if available
-    let xc_metadata = if let Some(meta_file) = &entry.metadata_file {
+    let (xc_metadata, xc_hashes) = if let Some(meta_file) = &entry.metadata_file {
         let encoded = js_sys::encode_uri_component(meta_file);
         let meta_url = format!(
             "{}/sounds/{}",
@@ -619,20 +620,24 @@ pub(crate) async fn load_single_demo(entry: &DemoEntry, state: AppState, load_id
         match fetch_text(&meta_url).await {
             Ok(text) => {
                 match serde_json::from_str::<serde_json::Value>(&text) {
-                    Ok(json) => Some(parse_xc_metadata(&json)),
+                    Ok(json) => {
+                        let hashes = extract_sidecar_hashes(&json);
+                        let hashes = if hashes.is_empty() { None } else { Some(hashes) };
+                        (Some(parse_xc_metadata(&json)), hashes)
+                    }
                     Err(e) => {
                         log::warn!("Failed to parse XC metadata for {}: {}", entry.filename, e);
-                        None
+                        (None, None)
                     }
                 }
             }
             Err(e) => {
                 log::warn!("Failed to fetch XC metadata for {}: {}", entry.filename, e);
-                None
+                (None, None)
             }
         }
     } else {
-        None
+        (None, None)
     };
 
     let encoded = js_sys::encode_uri_component(&entry.filename);
@@ -643,7 +648,7 @@ pub(crate) async fn load_single_demo(entry: &DemoEntry, state: AppState, load_id
     );
     log::info!("Fetching demo: {}", entry.filename);
     let bytes = fetch_bytes(&audio_url).await?;
-    load_named_bytes(entry.filename.clone(), &bytes, xc_metadata, state, load_id).await
+    load_named_bytes(entry.filename.clone(), &bytes, xc_metadata, xc_hashes, state, load_id).await
 }
 
 async fn read_file_bytes(file: &File) -> Result<Vec<u8>, String> {
@@ -734,7 +739,7 @@ pub(crate) async fn load_native_file(path: String, state: AppState, load_id: u64
     let bytes = uint8.to_vec();
 
     // Decode and add to state using existing pipeline
-    load_named_bytes(name.clone(), &bytes, None, state, load_id).await?;
+    load_named_bytes(name.clone(), &bytes, None, None, state, load_id).await?;
 
     // The file was just added — set the native path on identity
     let file_index = state.files.get_untracked().len().saturating_sub(1);

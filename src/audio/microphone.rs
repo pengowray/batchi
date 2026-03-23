@@ -1110,6 +1110,7 @@ fn finalize_recording_tauri(result: JsValue, state: AppState) {
                 preview: Some(preview),
                 overview_image: None,
                 xc_metadata: None,
+                xc_hashes: None,
                 is_recording: false, // Already saved by backend
                 settings: FileSettings::default(),
                 add_order: idx,

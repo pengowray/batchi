@@ -47,6 +47,31 @@ fn metadata_row(label: String, value: String, label_title: Option<String>) -> im
     }
 }
 
+/// Metadata row for hash values with a match/mismatch indicator next to the copy button.
+fn hash_row(label: &str, hash: &str, reference: Option<&str>) -> impl IntoView {
+    let hash_for_copy = hash.to_string();
+    let hash_for_title = hash.to_string();
+    let hash_display = hash.to_string();
+    let label = label.to_string();
+    let on_copy = move |ev: web_sys::MouseEvent| {
+        ev.stop_propagation();
+        super::copy_to_clipboard(&hash_for_copy);
+    };
+    let (indicator, indicator_class) = match reference {
+        Some(expected) if expected == hash => ("\u{2713}", "hash-indicator match"),
+        Some(_) => ("\u{26A0}", "hash-indicator mismatch"),
+        None => ("", "hash-indicator"),
+    };
+    view! {
+        <div class="setting-row metadata-row">
+            <span class="setting-label">{label}</span>
+            <span class="setting-value metadata-value" title=hash_for_title>{hash_display}</span>
+            <span class=indicator_class>{indicator}</span>
+            <button class="copy-btn" on:click=on_copy title="Copy">{"\u{2398}"}</button>
+        </div>
+    }
+}
+
 fn format_file_size(bytes: usize) -> String {
     if bytes < 1024 {
         format!("{} B", bytes)
@@ -54,22 +79,6 @@ fn format_file_size(bytes: usize) -> String {
         format!("{:.1} KB", bytes as f64 / 1024.0)
     } else {
         format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
-    }
-}
-
-/// Look up a key in XC metadata pairs.
-fn xc_meta_get<'a>(xc: &'a Option<Vec<(String, String)>>, key: &str) -> Option<&'a str> {
-    xc.as_ref().and_then(|fields| {
-        fields.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str())
-    })
-}
-
-/// Match indicator: compare computed hash against a reference (sidecar or XC metadata).
-fn hash_match_indicator(computed: &str, reference: Option<&str>) -> &'static str {
-    match reference {
-        Some(expected) if expected == computed => " \u{2713}",  // checkmark
-        Some(_) => " \u{26A0}",                                // warning
-        None => "",
     }
 }
 
@@ -89,12 +98,25 @@ fn file_identity_section(f: &crate::state::LoadedFile) -> impl IntoView {
         })
     });
 
-    // XC metadata may contain hashes from the download sidecar
-    let xc_blake3 = xc_meta_get(&f.xc_metadata, "BLAKE3").map(|s| s.to_string());
-    let xc_sha256 = xc_meta_get(&f.xc_metadata, "SHA-256").map(|s| s.to_string());
+    // XC sidecar hashes (structured data, separate from display metadata)
+    let xc_blake3 = f.xc_hashes.as_ref().and_then(|h| h.blake3.clone());
+    let xc_sha256 = f.xc_hashes.as_ref().and_then(|h| h.sha256.clone());
+    let xc_file_size = f.xc_hashes.as_ref().and_then(|h| h.file_size);
     let has_xc_hashes = xc_blake3.is_some() || xc_sha256.is_some();
 
     let mut items: Vec<leptos::tachys::view::any_view::AnyView> = Vec::new();
+
+    // File size in bytes (from identity or XC sidecar)
+    let size_bytes = identity.as_ref().map(|id| id.file_size).or(xc_file_size);
+    if let Some(size) = size_bytes {
+        if size > 0 {
+            items.push(metadata_row(
+                "File size (bytes)".into(),
+                size.to_string(),
+                None,
+            ).into_any());
+        }
+    }
 
     if let Some(ref id) = identity {
         // Spot hash (Layer 2)
@@ -123,16 +145,10 @@ fn file_identity_section(f: &crate::state::LoadedFile) -> impl IntoView {
 
         // Full BLAKE3 (Layer 4)
         if let Some(ref hash) = id.full_blake3 {
-            // Compare against sidecar first, then XC metadata
             let reference = sidecar_identity.as_ref()
                 .and_then(|sid| sid.full_blake3.as_deref())
                 .or(xc_blake3.as_deref());
-            let indicator = hash_match_indicator(hash, reference);
-            items.push(metadata_row(
-                "Full BLAKE3".into(),
-                format!("{}{}", hash, indicator),
-                None,
-            ).into_any());
+            items.push(hash_row("Full BLAKE3", hash, reference).into_any());
         } else if has_file_handle {
             let on_calc = move |_: web_sys::MouseEvent| {
                 if let Some(idx) = state.current_file_index.get_untracked() {
@@ -147,7 +163,7 @@ fn file_identity_section(f: &crate::state::LoadedFile) -> impl IntoView {
             } else if has_reference {
                 "Verify"
             } else {
-                "Calculate hash"
+                "Compute"
             };
             items.push(view! {
                 <div class="setting-row metadata-row">
@@ -162,12 +178,7 @@ fn file_identity_section(f: &crate::state::LoadedFile) -> impl IntoView {
             let reference = sidecar_identity.as_ref()
                 .and_then(|sid| sid.full_sha256.as_deref())
                 .or(xc_sha256.as_deref());
-            let indicator = hash_match_indicator(hash, reference);
-            items.push(metadata_row(
-                "Full SHA-256".into(),
-                format!("{}{}", hash, indicator),
-                None,
-            ).into_any());
+            items.push(hash_row("Full SHA-256", hash, reference).into_any());
         } else if has_file_handle {
             let xc_sha256_for_btn = xc_sha256.clone();
             let on_calc_sha = move |_: web_sys::MouseEvent| {
@@ -183,7 +194,7 @@ fn file_identity_section(f: &crate::state::LoadedFile) -> impl IntoView {
             } else if has_reference {
                 "Verify"
             } else {
-                "Calculate SHA-256"
+                "Compute"
             };
             items.push(view! {
                 <div class="setting-row metadata-row">
@@ -193,10 +204,11 @@ fn file_identity_section(f: &crate::state::LoadedFile) -> impl IntoView {
             }.into_any());
         }
     } else if has_file_handle && has_xc_hashes {
-        // No identity yet but XC metadata has hashes — show verify button
+        // No identity yet but XC sidecar has hashes — show verify button
+        let has_sha = xc_sha256.is_some();
         let on_calc = move |_: web_sys::MouseEvent| {
             if let Some(idx) = state.current_file_index.get_untracked() {
-                crate::file_identity::start_full_hash_computation(state, idx, xc_sha256.is_some());
+                crate::file_identity::start_full_hash_computation(state, idx, has_sha);
             }
         };
         let computing = state.hash_computing.get();

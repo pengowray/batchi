@@ -13,6 +13,78 @@ pub struct FileHashes {
     pub spot_hash: String,
 }
 
+/// Hash data extracted from an XC sidecar JSON (stored under "_app" key,
+/// with fallback to legacy top-level keys).
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
+pub struct SidecarHashes {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub blake3: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sha256: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub file_size: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub spot_hash: Option<String>,
+}
+
+impl SidecarHashes {
+    pub fn is_empty(&self) -> bool {
+        self.blake3.is_none() && self.sha256.is_none() && self.file_size.is_none()
+    }
+}
+
+/// Extract hash data from an XC sidecar JSON.
+/// Tries `json["_app"]` first (new format), then falls back to top-level keys (legacy).
+pub fn extract_sidecar_hashes(json: &serde_json::Value) -> SidecarHashes {
+    let src = if json["_app"].is_object() {
+        &json["_app"]
+    } else {
+        json
+    };
+    SidecarHashes {
+        blake3: src["blake3"].as_str().map(|s| s.to_string()),
+        sha256: src["sha256"].as_str().map(|s| s.to_string()),
+        file_size: src["file_size"].as_u64(),
+        spot_hash: src["spot_hash"].as_str().map(|s| s.to_string()),
+    }
+}
+
+/// Migrate a sidecar JSON from legacy format (hashes at top level) to new format
+/// (hashes nested under "_app"). Returns true if migration was performed.
+pub fn migrate_sidecar_json(json: &mut serde_json::Value) -> bool {
+    // Already migrated?
+    if json["_app"].is_object() {
+        return false;
+    }
+    let obj = match json.as_object_mut() {
+        Some(o) => o,
+        None => return false,
+    };
+
+    let hash_keys = ["blake3", "sha256", "file_size", "spot_hash"];
+    let mut batmonic = serde_json::Map::new();
+    let mut found_any = false;
+
+    for key in &hash_keys {
+        if let Some(val) = obj.remove(*key) {
+            batmonic.insert((*key).to_string(), val);
+            found_any = true;
+        }
+    }
+
+    // Also move "retrieved" into the batmonic sub-object (it's our metadata, not XC's)
+    if let Some(val) = obj.remove("retrieved") {
+        batmonic.insert("retrieved".to_string(), val);
+    }
+
+    if found_any || !batmonic.is_empty() {
+        obj.insert("_app".to_string(), serde_json::Value::Object(batmonic));
+        true
+    } else {
+        false
+    }
+}
+
 /// Sanitize a string for use in filenames.
 pub fn sanitize_filename(name: &str) -> String {
     name.chars()
@@ -189,13 +261,21 @@ pub fn build_metadata_json(rec: &XcRecording) -> serde_json::Value {
 }
 
 /// Build the XC metadata sidecar JSON for a recording, including file hashes.
+/// Hashes are nested under a `"_app"` key to distinguish from XC API fields.
 pub fn build_metadata_json_with_hashes(rec: &XcRecording, hashes: &FileHashes) -> serde_json::Value {
     let mut json = build_metadata_json(rec);
     if let Some(obj) = json.as_object_mut() {
-        obj.insert("file_size".into(), serde_json::json!(hashes.size_bytes));
-        obj.insert("sha256".into(), serde_json::json!(hashes.sha256));
-        obj.insert("blake3".into(), serde_json::json!(hashes.blake3));
-        obj.insert("spot_hash".into(), serde_json::json!(hashes.spot_hash));
+        // Remove top-level "retrieved" — it goes under batmonic
+        let retrieved = obj.remove("retrieved");
+        let mut bm = serde_json::Map::new();
+        bm.insert("file_size".into(), serde_json::json!(hashes.size_bytes));
+        bm.insert("sha256".into(), serde_json::json!(hashes.sha256));
+        bm.insert("blake3".into(), serde_json::json!(hashes.blake3));
+        bm.insert("spot_hash".into(), serde_json::json!(hashes.spot_hash));
+        if let Some(r) = retrieved {
+            bm.insert("retrieved".into(), r);
+        }
+        obj.insert("_app".into(), serde_json::Value::Object(bm));
     }
     json
 }

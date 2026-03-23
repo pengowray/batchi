@@ -93,6 +93,16 @@ enum Commands {
     ShowKey,
     /// Remove the stored API key
     ClearKey,
+    /// Migrate .xc.json files to new format (hashes nested under "_app")
+    Migrate {
+        /// Directory containing sounds/ with .xc.json files (default: current directory)
+        #[arg(long)]
+        cache_dir: Option<PathBuf>,
+
+        /// Dry run — show what would change without modifying files
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
 fn require_api_key(explicit: &Option<String>) -> String {
@@ -439,6 +449,75 @@ async fn main() {
             eprintln!();
             println!(
                 "Done. Downloaded: {total_downloaded}, Skipped: {total_skipped}, Errors: {total_errors}"
+            );
+        }
+
+        Commands::Migrate { cache_dir, dry_run } => {
+            let root = cache_dir.unwrap_or_else(|| PathBuf::from("."));
+            let sounds_dir = root.join("sounds");
+            if !sounds_dir.exists() {
+                eprintln!("No sounds/ directory found at {}", root.display());
+                std::process::exit(1);
+            }
+
+            let mut migrated = 0u32;
+            let mut skipped = 0u32;
+            let mut errors = 0u32;
+
+            let entries: Vec<_> = std::fs::read_dir(&sounds_dir)
+                .unwrap_or_else(|e| {
+                    eprintln!("Error reading {}: {e}", sounds_dir.display());
+                    std::process::exit(1);
+                })
+                .flatten()
+                .filter(|e| e.file_name().to_string_lossy().ends_with(".xc.json"))
+                .collect();
+
+            eprintln!("Found {} .xc.json files", entries.len());
+
+            for entry in &entries {
+                let path = entry.path();
+                let name = entry.file_name().to_string_lossy().to_string();
+
+                let content = match std::fs::read_to_string(&path) {
+                    Ok(c) => c,
+                    Err(e) => {
+                        eprintln!("  Error reading {name}: {e}");
+                        errors += 1;
+                        continue;
+                    }
+                };
+
+                let mut json: serde_json::Value = match serde_json::from_str(&content) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        eprintln!("  Error parsing {name}: {e}");
+                        errors += 1;
+                        continue;
+                    }
+                };
+
+                if cache::migrate_sidecar_json(&mut json) {
+                    if dry_run {
+                        eprintln!("  Would migrate: {name}");
+                    } else {
+                        let json_str = serde_json::to_string_pretty(&json).unwrap();
+                        if let Err(e) = std::fs::write(&path, format!("{json_str}\n")) {
+                            eprintln!("  Error writing {name}: {e}");
+                            errors += 1;
+                            continue;
+                        }
+                        eprintln!("  Migrated: {name}");
+                    }
+                    migrated += 1;
+                } else {
+                    skipped += 1;
+                }
+            }
+
+            println!(
+                "Done. Migrated: {migrated}, Already current: {skipped}, Errors: {errors}{}",
+                if dry_run { " (dry run)" } else { "" }
             );
         }
 

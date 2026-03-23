@@ -316,6 +316,16 @@ pub fn start_identity_computation(
             }
         }
 
+        // For small files with file handles but no in-memory bytes, auto-compute full hashes
+        if file_bytes.is_none() && file_size < 10_000_000 {
+            let has_handle = state.files.with_untracked(|files| {
+                files.get(file_index).is_some_and(|f| f.file_handle.is_some())
+            });
+            if has_handle {
+                start_full_hash_computation(state, file_index, true);
+            }
+        }
+
         // When we have in-memory bytes, also compute full BLAKE3 + SHA-256 (Layers 3+4)
         if let Some(bytes) = file_bytes {
             yield_now().await; // yield before heavy computation

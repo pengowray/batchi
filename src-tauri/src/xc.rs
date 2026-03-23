@@ -148,6 +148,8 @@ pub struct XcCachedFile {
     pub filename: String,
     pub xc_id: u64,
     pub metadata: Vec<(String, String)>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hashes: Option<xc_lib::cache::SidecarHashes>,
 }
 
 #[tauri::command]
@@ -167,13 +169,14 @@ pub async fn xc_download(
             .file_name()
             .map(|f| f.to_string_lossy().to_string())
             .unwrap_or_default();
-        // Load metadata from sidecar
-        let metadata = load_sidecar_metadata(&cache_root, id);
+        // Load metadata and hashes from sidecar
+        let (metadata, hashes) = load_sidecar_metadata_and_hashes(&cache_root, id);
         return Ok(XcCachedFile {
             path: audio_path.to_string_lossy().to_string(),
             filename,
             xc_id: id,
             metadata,
+            hashes,
         });
     }
 
@@ -186,6 +189,15 @@ pub async fn xc_download(
     let audio_bytes = api::download_audio(&client, &rec.file_url)
         .await
         .map_err(|e| format!("XC{id}: {e}"))?;
+
+    // Compute hashes before saving (save_recording also computes them internally)
+    let file_hashes = cache::compute_file_hashes(&audio_bytes);
+    let hashes = Some(xc_lib::cache::SidecarHashes {
+        blake3: Some(file_hashes.blake3.clone()),
+        sha256: Some(file_hashes.sha256.clone()),
+        file_size: Some(file_hashes.size_bytes),
+        spot_hash: Some(file_hashes.spot_hash.clone()),
+    });
 
     // Save to cache
     let audio_path = cache::save_recording(&cache_root, &rec, &audio_bytes)
@@ -202,6 +214,7 @@ pub async fn xc_download(
         filename,
         xc_id: id,
         metadata,
+        hashes,
     })
 }
 
@@ -258,7 +271,7 @@ fn recording_to_metadata(rec: &XcRecording) -> Vec<(String, String)> {
     fields
 }
 
-fn load_sidecar_metadata(cache_root: &std::path::Path, id: u64) -> Vec<(String, String)> {
+fn load_sidecar_metadata_and_hashes(cache_root: &std::path::Path, id: u64) -> (Vec<(String, String)>, Option<xc_lib::cache::SidecarHashes>) {
     let sounds_dir = cache_root.join("sounds");
     let prefix = format!("XC{id} -");
     if let Ok(entries) = std::fs::read_dir(&sounds_dir) {
@@ -267,13 +280,15 @@ fn load_sidecar_metadata(cache_root: &std::path::Path, id: u64) -> Vec<(String, 
             if name.starts_with(&prefix) && name.ends_with(".xc.json") {
                 if let Ok(content) = std::fs::read_to_string(entry.path()) {
                     if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
-                        return parse_xc_json_metadata(&json);
+                        let hashes = cache::extract_sidecar_hashes(&json);
+                        let hashes = if hashes.is_empty() { None } else { Some(hashes) };
+                        return (parse_xc_json_metadata(&json), hashes);
                     }
                 }
             }
         }
     }
-    Vec::new()
+    (Vec::new(), None)
 }
 
 fn parse_xc_json_metadata(json: &serde_json::Value) -> Vec<(String, String)> {
@@ -316,18 +331,6 @@ fn parse_xc_json_metadata(json: &serde_json::Value) -> Vec<(String, String)> {
         if !v.is_empty() {
             fields.push((label.into(), v));
         }
-    }
-    // File hashes from XC sidecar (computed at download time by xc-lib)
-    if let Some(size) = json["file_size"].as_u64() {
-        fields.push(("File size (bytes)".into(), size.to_string()));
-    }
-    let blake3 = s("blake3");
-    if !blake3.is_empty() {
-        fields.push(("BLAKE3".into(), blake3));
-    }
-    let sha256 = s("sha256");
-    if !sha256.is_empty() {
-        fields.push(("SHA-256".into(), sha256));
     }
     fields
 }

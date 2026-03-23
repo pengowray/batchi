@@ -1154,6 +1154,27 @@ body.sidebar-resizing {
     cursor: default;
 }
 
+.hash-indicator {
+    display: none;
+    position: absolute;
+    right: 4px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 13px;
+    line-height: 1;
+}
+.hash-indicator.match {
+    display: block;
+    color: #4caf50;
+}
+.hash-indicator.mismatch {
+    display: block;
+    color: #ff9800;
+}
+.metadata-row:hover .hash-indicator {
+    right: 28px;
+}
+
 .copy-report-row {
     display: flex;
     justify-content: flex-end;

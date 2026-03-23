@@ -77,6 +77,7 @@ struct CachedFile {
     filename: String,
     _xc_id: u64,
     metadata: Vec<(String, String)>,
+    hashes: Option<crate::state::SidecarHashes>,
 }
 
 // ── Parse helpers ────────────────────────────────────────────────────
@@ -191,7 +192,23 @@ fn parse_cached_file(val: &JsValue) -> Option<CachedFile> {
         }
         pairs
     }).unwrap_or_default();
-    Some(CachedFile { path, filename, _xc_id: xc_id, metadata })
+    // Parse optional hashes object
+    let hashes = js_sys::Reflect::get(val, &"hashes".into()).ok().and_then(|h| {
+        if h.is_null() || h.is_undefined() {
+            return None;
+        }
+        let s = |k: &str| js_sys::Reflect::get(&h, &k.into()).ok().and_then(|v| v.as_string());
+        let blake3 = s("blake3");
+        let sha256 = s("sha256");
+        let file_size = js_sys::Reflect::get(&h, &"file_size".into()).ok().and_then(|v| v.as_f64()).map(|v| v as u64);
+        let spot_hash = s("spot_hash");
+        if blake3.is_none() && sha256.is_none() && file_size.is_none() {
+            None
+        } else {
+            Some(crate::state::SidecarHashes { blake3, sha256, file_size, spot_hash })
+        }
+    });
+    Some(CachedFile { path, filename, _xc_id: xc_id, metadata, hashes })
 }
 
 // ── View states ──────────────────────────────────────────────────────
@@ -546,6 +563,7 @@ pub fn XcBrowser() -> impl IntoView {
                     cached.filename.clone(),
                     &bytes,
                     Some(cached.metadata),
+                    cached.hashes,
                     state,
                     load_id,
                 ).await;
