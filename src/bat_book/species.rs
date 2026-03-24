@@ -2131,3 +2131,441 @@ pub const MURINA_RYUKYUANA: BatSpecies = BatSpecies {
     description: "Broadband FM calls typical of Murina. Endemic to the Ryukyu Islands. Recently described species from Okinawa. Forest-dwelling.",
     echolocates: true,
 };
+
+// ══════════════════════════════════════════════════════════════════════════════
+// North America species (USA + Canada)
+// ══════════════════════════════════════════════════════════════════════════════
+//
+// Sources:
+// - Fenton & Bell (1981): Echolocation calls of NA bats
+// - O'Farrell et al. (1999): Acoustic identification of NA insectivorous bats
+// - Szewczak (2004): Advanced analysis techniques for bat echolocation calls
+// - Various state acoustic ID guides (e.g. Bat Call ID project, SonoBat)
+// - Holroyd et al. (2014): Canadian bat species & echolocation
+// - Kunz & Fenton (2003): Bat Ecology
+
+// ── Vespertilionidae ─────────────────────────────────────────────────────────
+
+pub const MYOTIS_LUCIFUGUS: BatSpecies = BatSpecies {
+    id: "myotis_lucifugus",
+    name: "Little Brown Myotis",
+    scientific_name: "Myotis lucifugus",
+    family: "Vespertilionidae",
+    call_type: "FM",
+    freq_lo_hz: 40_000.0,
+    freq_hi_hz: 80_000.0,
+    description: "Historically North America's most common bat, now severely impacted by White-nose Syndrome. FM sweep ~80\u{2013}40 kHz, characteristic frequency ~45 kHz. Forages over water and forest edges.",
+    echolocates: true,
+};
+
+pub const MYOTIS_SEPTENTRIONALIS: BatSpecies = BatSpecies {
+    id: "myotis_septentrionalis",
+    name: "Northern Long-eared Myotis",
+    scientific_name: "Myotis septentrionalis",
+    family: "Vespertilionidae",
+    call_type: "FM",
+    freq_lo_hz: 60_000.0,
+    freq_hi_hz: 115_000.0,
+    description: "Steep broadband FM sweeps, short duration. Characteristic frequency ~55 kHz. Gleaning forager in forest understory. Federally endangered due to White-nose Syndrome.",
+    echolocates: true,
+};
+
+pub const MYOTIS_SODALIS: BatSpecies = BatSpecies {
+    id: "myotis_sodalis",
+    name: "Indiana Bat",
+    scientific_name: "Myotis sodalis",
+    family: "Vespertilionidae",
+    call_type: "FM",
+    freq_lo_hz: 35_000.0,
+    freq_hi_hz: 80_000.0,
+    description: "Calls very similar to Little Brown Myotis; characteristic frequency ~45 kHz. Hibernates in dense clusters in limestone caves. Federally endangered.",
+    echolocates: true,
+};
+
+pub const MYOTIS_GRISESCENS: BatSpecies = BatSpecies {
+    id: "myotis_grisescens",
+    name: "Gray Myotis",
+    scientific_name: "Myotis grisescens",
+    family: "Vespertilionidae",
+    call_type: "FM",
+    freq_lo_hz: 35_000.0,
+    freq_hi_hz: 70_000.0,
+    description: "Largest eastern Myotis. FM sweep ~70\u{2013}35 kHz, characteristic frequency ~45 kHz. Obligate cave bat year-round. Federally endangered but populations recovering.",
+    echolocates: true,
+};
+
+pub const MYOTIS_LEIBII: BatSpecies = BatSpecies {
+    id: "myotis_leibii",
+    name: "Eastern Small-footed Myotis",
+    scientific_name: "Myotis leibii",
+    family: "Vespertilionidae",
+    call_type: "FM",
+    freq_lo_hz: 40_000.0,
+    freq_hi_hz: 90_000.0,
+    description: "One of North America's smallest bats (~5 g). FM sweep with characteristic frequency ~50\u{2013}55 kHz. Roosts in rock crevices and talus slopes. Appears somewhat resistant to White-nose Syndrome.",
+    echolocates: true,
+};
+
+pub const MYOTIS_VOLANS: BatSpecies = BatSpecies {
+    id: "myotis_volans",
+    name: "Long-legged Myotis",
+    scientific_name: "Myotis volans",
+    family: "Vespertilionidae",
+    call_type: "FM",
+    freq_lo_hz: 35_000.0,
+    freq_hi_hz: 80_000.0,
+    description: "Western species found in coniferous forests. FM sweep with characteristic frequency ~40 kHz. Keeled calcar and furred underwing membrane diagnostic. Fast, direct flight.",
+    echolocates: true,
+};
+
+pub const MYOTIS_THYSANODES: BatSpecies = BatSpecies {
+    id: "myotis_thysanodes",
+    name: "Fringed Myotis",
+    scientific_name: "Myotis thysanodes",
+    family: "Vespertilionidae",
+    call_type: "FM",
+    freq_lo_hz: 25_000.0,
+    freq_hi_hz: 55_000.0,
+    description: "Named for the fringe of stiff hairs along the tail membrane. FM sweep with characteristic frequency ~40 kHz. Roosts in caves, mines, and buildings in western mountains.",
+    echolocates: true,
+};
+
+pub const MYOTIS_EVOTIS: BatSpecies = BatSpecies {
+    id: "myotis_evotis",
+    name: "Long-eared Myotis",
+    scientific_name: "Myotis evotis",
+    family: "Vespertilionidae",
+    call_type: "FM",
+    freq_lo_hz: 30_000.0,
+    freq_hi_hz: 75_000.0,
+    description: "Very quiet, short FM calls typical of a gleaning forager. Characteristic frequency ~40 kHz. Large ears extend well beyond nose when laid forward. Western forests and woodlands.",
+    echolocates: true,
+};
+
+pub const MYOTIS_CALIFORNICUS: BatSpecies = BatSpecies {
+    id: "myotis_californicus",
+    name: "California Myotis",
+    scientific_name: "Myotis californicus",
+    family: "Vespertilionidae",
+    call_type: "FM",
+    freq_lo_hz: 45_000.0,
+    freq_hi_hz: 90_000.0,
+    description: "Small western Myotis, highly adaptable. FM sweep with characteristic frequency ~50 kHz. Difficult to distinguish acoustically from Western Small-footed Myotis. Often the most common bat at western sites.",
+    echolocates: true,
+};
+
+pub const MYOTIS_CILIOLABRUM: BatSpecies = BatSpecies {
+    id: "myotis_ciliolabrum",
+    name: "Western Small-footed Myotis",
+    scientific_name: "Myotis ciliolabrum",
+    family: "Vespertilionidae",
+    call_type: "FM",
+    freq_lo_hz: 40_000.0,
+    freq_hi_hz: 90_000.0,
+    description: "Tiny bat (~5 g) of western arid lands. FM sweep with characteristic frequency ~50 kHz. Calls nearly identical to California Myotis. Roosts in rock crevices, cliff faces, and badlands.",
+    echolocates: true,
+};
+
+pub const MYOTIS_AUSTRORIPARIUS: BatSpecies = BatSpecies {
+    id: "myotis_austroriparius",
+    name: "Southeastern Myotis",
+    scientific_name: "Myotis austroriparius",
+    family: "Vespertilionidae",
+    call_type: "FM",
+    freq_lo_hz: 40_000.0,
+    freq_hi_hz: 80_000.0,
+    description: "Southeastern US cave bat, often found near water. FM sweep with characteristic frequency ~50 kHz. Forms large maternity colonies in caves, sometimes with thousands of individuals.",
+    echolocates: true,
+};
+
+pub const MYOTIS_YUMANENSIS: BatSpecies = BatSpecies {
+    id: "myotis_yumanensis",
+    name: "Yuma Myotis",
+    scientific_name: "Myotis yumanensis",
+    family: "Vespertilionidae",
+    call_type: "FM",
+    freq_lo_hz: 45_000.0,
+    freq_hi_hz: 80_000.0,
+    description: "Western water-foraging specialist. FM sweep with characteristic frequency ~50 kHz. Trawls insects from water surfaces with large feet. Common near rivers and lakes.",
+    echolocates: true,
+};
+
+pub const MYOTIS_VELIFER: BatSpecies = BatSpecies {
+    id: "myotis_velifer",
+    name: "Cave Myotis",
+    scientific_name: "Myotis velifer",
+    family: "Vespertilionidae",
+    call_type: "FM",
+    freq_lo_hz: 35_000.0,
+    freq_hi_hz: 70_000.0,
+    description: "Large Myotis of the south-central US and Mexico. FM sweep with characteristic frequency ~45 kHz. Forms large cave colonies. Bare patches on back between shoulder blades diagnostic.",
+    echolocates: true,
+};
+
+pub const LASIURUS_BOREALIS: BatSpecies = BatSpecies {
+    id: "lasiurus_borealis",
+    name: "Eastern Red Bat",
+    scientific_name: "Lasiurus borealis",
+    family: "Vespertilionidae",
+    call_type: "FM",
+    freq_lo_hz: 30_000.0,
+    freq_hi_hz: 55_000.0,
+    description: "Distinctive reddish fur. Solitary foliage-roosting tree bat. FM sweep with characteristic frequency ~40 kHz. Long-distance migrant. One of the most common bats in eastern North America.",
+    echolocates: true,
+};
+
+pub const LASIURUS_CINEREUS: BatSpecies = BatSpecies {
+    id: "lasiurus_cinereus",
+    name: "Hoary Bat",
+    scientific_name: "Lasiurus cinereus",
+    family: "Vespertilionidae",
+    call_type: "QCF",
+    freq_lo_hz: 18_000.0,
+    freq_hi_hz: 28_000.0,
+    description: "North America's largest bat (~30 g). Distinctive low-frequency QCF calls ~20\u{2013}25 kHz, easily identified on spectrograms. Long-distance migrant, solitary foliage rooster. Frosted brown fur with white-tipped hairs.",
+    echolocates: true,
+};
+
+pub const LASIURUS_SEMINOLUS: BatSpecies = BatSpecies {
+    id: "lasiurus_seminolus",
+    name: "Seminole Bat",
+    scientific_name: "Lasiurus seminolus",
+    family: "Vespertilionidae",
+    call_type: "FM",
+    freq_lo_hz: 35_000.0,
+    freq_hi_hz: 50_000.0,
+    description: "Southeastern counterpart of the Eastern Red Bat with deep mahogany fur. FM sweep with characteristic frequency ~40 kHz. Roosts in Spanish moss and pine foliage.",
+    echolocates: true,
+};
+
+pub const LASIURUS_INTERMEDIUS: BatSpecies = BatSpecies {
+    id: "lasiurus_intermedius",
+    name: "Northern Yellow Bat",
+    scientific_name: "Lasiurus intermedius",
+    family: "Vespertilionidae",
+    call_type: "QCF",
+    freq_lo_hz: 25_000.0,
+    freq_hi_hz: 40_000.0,
+    description: "Large yellowish tree bat of the southeastern coastal plain. FM-QCF calls with characteristic frequency ~30 kHz. Roosts in dead palm fronds and Spanish moss.",
+    echolocates: true,
+};
+
+pub const LASIURUS_XANTHINUS: BatSpecies = BatSpecies {
+    id: "lasiurus_xanthinus",
+    name: "Western Yellow Bat",
+    scientific_name: "Lasiurus xanthinus",
+    family: "Vespertilionidae",
+    call_type: "QCF",
+    freq_lo_hz: 25_000.0,
+    freq_hi_hz: 40_000.0,
+    description: "Southwestern desert species. FM-QCF calls with characteristic frequency ~30 kHz. Roosts in palm fronds. Range expanding northward with ornamental palm plantings.",
+    echolocates: true,
+};
+
+pub const LASIONYCTERIS_NOCTIVAGANS: BatSpecies = BatSpecies {
+    id: "lasionycteris_noctivagans",
+    name: "Silver-haired Bat",
+    scientific_name: "Lasionycteris noctivagans",
+    family: "Vespertilionidae",
+    call_type: "QCF",
+    freq_lo_hz: 25_000.0,
+    freq_hi_hz: 35_000.0,
+    description: "Medium-sized bat with distinctive silver-tipped dark fur. Low-frequency QCF calls ~25\u{2013}27 kHz characteristic frequency. Slow, maneuverable flight. Solitary tree-roosting migrant. One of the most frequently killed bats at wind turbines.",
+    echolocates: true,
+};
+
+pub const PERIMYOTIS_SUBFLAVUS: BatSpecies = BatSpecies {
+    id: "perimyotis_subflavus",
+    name: "Tricolored Bat",
+    scientific_name: "Perimyotis subflavus",
+    family: "Vespertilionidae",
+    call_type: "FM",
+    freq_lo_hz: 40_000.0,
+    freq_hi_hz: 55_000.0,
+    description: "Tiny bat (~6 g) formerly called Eastern Pipistrelle. FM sweep with characteristic frequency ~45 kHz. Distinctive tricolored fur bands. Severely affected by White-nose Syndrome; proposed for ESA listing.",
+    echolocates: true,
+};
+
+pub const PARASTRELLUS_HESPERUS: BatSpecies = BatSpecies {
+    id: "parastrellus_hesperus",
+    name: "Canyon Bat",
+    scientific_name: "Parastrellus hesperus",
+    family: "Vespertilionidae",
+    call_type: "FM",
+    freq_lo_hz: 43_000.0,
+    freq_hi_hz: 70_000.0,
+    description: "Smallest bat in North America (~3.5 g), formerly called Western Pipistrelle. FM sweep with characteristic frequency ~50 kHz. Common in desert canyons and rock outcrops. Often the first bat seen at dusk.",
+    echolocates: true,
+};
+
+pub const NYCTICEIUS_HUMERALIS: BatSpecies = BatSpecies {
+    id: "nycticeius_humeralis",
+    name: "Evening Bat",
+    scientific_name: "Nycticeius humeralis",
+    family: "Vespertilionidae",
+    call_type: "FM",
+    freq_lo_hz: 30_000.0,
+    freq_hi_hz: 45_000.0,
+    description: "Medium-sized bat of the eastern US. FM-QCF calls with characteristic frequency ~35 kHz. Resembles Big Brown Bat but smaller. Roosts in tree cavities and buildings. Does not use caves.",
+    echolocates: true,
+};
+
+pub const CORYNORHINUS_TOWNSENDII: BatSpecies = BatSpecies {
+    id: "corynorhinus_townsendii",
+    name: "Townsend's Big-eared Bat",
+    scientific_name: "Corynorhinus townsendii",
+    family: "Vespertilionidae",
+    call_type: "FM",
+    freq_lo_hz: 20_000.0,
+    freq_hi_hz: 50_000.0,
+    description: "Enormous ears (~35 mm). Very quiet, short FM calls for gleaning moths from foliage. Characteristic frequency ~25\u{2013}40 kHz. Highly sensitive to roost disturbance. Several subspecies are endangered.",
+    echolocates: true,
+};
+
+pub const CORYNORHINUS_RAFINESQUII: BatSpecies = BatSpecies {
+    id: "corynorhinus_rafinesquii",
+    name: "Rafinesque's Big-eared Bat",
+    scientific_name: "Corynorhinus rafinesquii",
+    family: "Vespertilionidae",
+    call_type: "FM",
+    freq_lo_hz: 20_000.0,
+    freq_hi_hz: 50_000.0,
+    description: "Southeastern counterpart of Townsend's Big-eared Bat. Very quiet gleaning calls, characteristic frequency ~25\u{2013}40 kHz. Roosts in abandoned buildings, hollow trees, and under bridges. White belly fur distinctive.",
+    echolocates: true,
+};
+
+pub const IDIONYCTERIS_PHYLLOTIS: BatSpecies = BatSpecies {
+    id: "idionycteris_phyllotis",
+    name: "Allen's Big-eared Bat",
+    scientific_name: "Idionycteris phyllotis",
+    family: "Vespertilionidae",
+    call_type: "FM",
+    freq_lo_hz: 9_000.0,
+    freq_hi_hz: 25_000.0,
+    description: "Distinctive low-frequency calls ~12\u{2013}15 kHz, often audible to humans. Large lappets projecting from base of ears. Southwestern pine and oak forests. Calls unlike any other NA Myotis-sized bat.",
+    echolocates: true,
+};
+
+pub const EUDERMA_MACULATUM: BatSpecies = BatSpecies {
+    id: "euderma_maculatum",
+    name: "Spotted Bat",
+    scientific_name: "Euderma maculatum",
+    family: "Vespertilionidae",
+    call_type: "FM",
+    freq_lo_hz: 8_000.0,
+    freq_hi_hz: 15_000.0,
+    description: "Lowest echolocation frequency of any North American bat (~10\u{2013}12 kHz), audible to humans. Unmistakable: three large white spots on black dorsal fur, enormous pink ears. Rare but widespread in western arid lands.",
+    echolocates: true,
+};
+
+pub const ANTROZOUS_PALLIDUS: BatSpecies = BatSpecies {
+    id: "antrozous_pallidus",
+    name: "Pallid Bat",
+    scientific_name: "Antrozous pallidus",
+    family: "Vespertilionidae",
+    call_type: "FM",
+    freq_lo_hz: 28_000.0,
+    freq_hi_hz: 55_000.0,
+    description: "Unique dual foraging strategy: echolocates for aerial prey and uses passive listening to glean scorpions and large insects from the ground. FM calls ~30 kHz characteristic. Large ears, pale fur. Immune to scorpion venom.",
+    echolocates: true,
+};
+
+// ── Molossidae ───────────────────────────────────────────────────────────────
+
+pub const NYCTINOMOPS_MACROTIS: BatSpecies = BatSpecies {
+    id: "nyctinomops_macrotis",
+    name: "Big Free-tailed Bat",
+    scientific_name: "Nyctinomops macrotis",
+    family: "Molossidae",
+    call_type: "QCF",
+    freq_lo_hz: 10_000.0,
+    freq_hi_hz: 20_000.0,
+    description: "Large molossid with low-frequency QCF calls ~14\u{2013}17 kHz, often audible. Roosts in high cliff crevices. Southwestern US. Loud, piercing social calls can be heard from considerable distance.",
+    echolocates: true,
+};
+
+pub const NYCTINOMOPS_FEMOROSACCUS: BatSpecies = BatSpecies {
+    id: "nyctinomops_femorosaccus",
+    name: "Pocketed Free-tailed Bat",
+    scientific_name: "Nyctinomops femorosaccus",
+    family: "Molossidae",
+    call_type: "QCF",
+    freq_lo_hz: 16_000.0,
+    freq_hi_hz: 25_000.0,
+    description: "Medium-sized free-tailed bat of the southwestern deserts. QCF calls ~22 kHz characteristic frequency. Named for the pocket-like fold on the tail membrane. Roosts in rock crevices.",
+    echolocates: true,
+};
+
+pub const EUMOPS_PEROTIS: BatSpecies = BatSpecies {
+    id: "eumops_perotis",
+    name: "Western Mastiff Bat",
+    scientific_name: "Eumops perotis",
+    family: "Molossidae",
+    call_type: "QCF",
+    freq_lo_hz: 7_000.0,
+    freq_hi_hz: 18_000.0,
+    description: "Largest bat in North America (wingspan ~56 cm). Very low-frequency QCF calls ~10\u{2013}12 kHz, easily audible to humans. Needs vertical drop to launch into flight. Roosts in tall cliff faces and buildings.",
+    echolocates: true,
+};
+
+pub const EUMOPS_FLORIDANUS: BatSpecies = BatSpecies {
+    id: "eumops_floridanus",
+    name: "Florida Bonneted Bat",
+    scientific_name: "Eumops floridanus",
+    family: "Molossidae",
+    call_type: "QCF",
+    freq_lo_hz: 8_000.0,
+    freq_hi_hz: 20_000.0,
+    description: "Federally endangered, restricted to southern Florida. Low-frequency QCF calls ~14\u{2013}16 kHz. One of the rarest bats in North America. Roosts in tree cavities and bat houses. Occasionally audible to humans.",
+    echolocates: true,
+};
+
+// ── Phyllostomidae ───────────────────────────────────────────────────────────
+
+pub const MACROTUS_CALIFORNICUS: BatSpecies = BatSpecies {
+    id: "macrotus_californicus",
+    name: "California Leaf-nosed Bat",
+    scientific_name: "Macrotus californicus",
+    family: "Phyllostomidae",
+    call_type: "FM",
+    freq_lo_hz: 40_000.0,
+    freq_hi_hz: 90_000.0,
+    description: "Low-intensity gleaning calls ~50 kHz, difficult to detect with bat detectors. Large ears and prominent nose leaf. Non-migratory desert species of AZ and southern CA. Cannot hibernate; relies on warm roost sites year-round.",
+    echolocates: true,
+};
+
+pub const CHOERONYCTERIS_MEXICANA: BatSpecies = BatSpecies {
+    id: "choeronycteris_mexicana",
+    name: "Mexican Long-tongued Bat",
+    scientific_name: "Choeronycteris mexicana",
+    family: "Phyllostomidae",
+    call_type: "FM",
+    freq_lo_hz: 60_000.0,
+    freq_hi_hz: 90_000.0,
+    description: "Nectar-feeding bat with elongated snout and long tongue. Very quiet FM calls ~75 kHz. Seasonal migrant to southern AZ. Pollinates agave and columnar cacti. Low-intensity echolocation typical of phyllostomids.",
+    echolocates: true,
+};
+
+pub const LEPTONYCTERIS_YERBABUENAE: BatSpecies = BatSpecies {
+    id: "leptonycteris_yerbabuenae",
+    name: "Lesser Long-nosed Bat",
+    scientific_name: "Leptonycteris yerbabuenae",
+    family: "Phyllostomidae",
+    call_type: "FM",
+    freq_lo_hz: 60_000.0,
+    freq_hi_hz: 90_000.0,
+    description: "Nectar bat, major pollinator of saguaro and organ pipe cacti. Quiet FM calls ~75 kHz. Migrates to southern AZ in summer. Formerly endangered, delisted in 2018 \u{2014} a conservation success story.",
+    echolocates: true,
+};
+
+pub const LEPTONYCTERIS_NIVALIS: BatSpecies = BatSpecies {
+    id: "leptonycteris_nivalis",
+    name: "Mexican Long-nosed Bat",
+    scientific_name: "Leptonycteris nivalis",
+    family: "Phyllostomidae",
+    call_type: "FM",
+    freq_lo_hz: 65_000.0,
+    freq_hi_hz: 85_000.0,
+    description: "Federally endangered nectar bat. Migrates to Big Bend region of Texas in summer. Pollinates agave plants. Quiet FM calls ~75 kHz. Only known US roost in a single cave in the Chisos Mountains.",
+    echolocates: true,
+};

@@ -1185,6 +1185,259 @@ const UK_BOOK: &[BookEntryDef] = &[
     },
 ];
 
+// ══════════════════════════════════════════════════════════════════════════════
+// North America (USA + Canada) — species-level entries sorted by commonness
+// ══════════════════════════════════════════════════════════════════════════════
+//
+// Sources:
+// - Fenton & Bell (1981), O'Farrell et al. (1999), Szewczak (2004)
+// - Holroyd et al. (2014): Canadian bat species
+// - Kunz & Fenton (2003): Bat Ecology
+// - Harvey et al. (2011): Bats of the United States and Canada
+// - Various state acoustic ID guides (SonoBat, Bat Call ID)
+
+const NORTH_AMERICA_BOOK: &[BookEntryDef] = &[
+    // ── Very Common ──────────────────────────────────────────────
+    BookEntryDef {
+        species: &species::EPTESICUS_FUSCUS,
+        commonness: Some(Commonness::VeryCommon),
+        description: Some("North America's most frequently encountered bat in buildings. FM-QCF calls with characteristic frequency ~30 kHz are loud and distinctive on spectrograms. Tolerates cold well; one of few species active in winter."),
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::TADARIDA_BRASILIENSIS,
+        commonness: Some(Commonness::VeryCommon),
+        description: Some("Forms the largest bat colonies on Earth — Bracken Cave, TX holds ~20 million. Flexible QCF acoustics: 49–70 kHz in open space, drops to 25–40 kHz near clutter. Long narrow wings for fast, high flight."),
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::MYOTIS_LUCIFUGUS,
+        commonness: Some(Commonness::VeryCommon),
+        description: Some("Historically the most commonly encountered bat across northern North America. FM sweep ~80–40 kHz, characteristic frequency ~45 kHz. Populations have crashed >90% in eastern range due to White-nose Syndrome since 2006."),
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::LASIURUS_BOREALIS,
+        commonness: Some(Commonness::VeryCommon),
+        description: Some("Solitary foliage-roosting tree bat with distinctive reddish fur. FM sweep with characteristic frequency ~40 kHz. Long-distance migrant. One of the most common bats in eastern forests and suburbs."),
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::LASIURUS_CINEREUS,
+        commonness: Some(Commonness::VeryCommon),
+        description: Some("North America's largest bat (~30 g) with frosted brown fur. Distinctive low-frequency QCF calls ~20–25 kHz, unmistakable on spectrograms. Solitary, migratory. Most frequently killed bat at wind energy facilities."),
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::LASIONYCTERIS_NOCTIVAGANS,
+        commonness: Some(Commonness::VeryCommon),
+        description: Some("Medium-sized bat with silver-tipped dark fur. Low-frequency QCF calls ~25–27 kHz. Slow, maneuverable flight over water and forest clearings. Solitary tree-roosting migrant. Second most common wind turbine fatality."),
+        name: None,
+    },
+    // ── Common ───────────────────────────────────────────────────
+    BookEntryDef {
+        species: &species::PERIMYOTIS_SUBFLAVUS,
+        commonness: Some(Commonness::Common),
+        description: Some("Tiny bat (~6 g) formerly called Eastern Pipistrelle. FM sweep ~40–55 kHz, characteristic frequency ~45 kHz. Distinctive slow, erratic fluttery flight. Tricolored fur bands. Severely impacted by White-nose Syndrome."),
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::PARASTRELLUS_HESPERUS,
+        commonness: Some(Commonness::Common),
+        description: Some("Smallest North American bat (~3.5 g), formerly Western Pipistrelle. FM sweep with characteristic frequency ~50 kHz. Common in desert canyons. Often the first bat flying at dusk, sometimes before sunset."),
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::NYCTICEIUS_HUMERALIS,
+        commonness: Some(Commonness::Common),
+        description: Some("Medium-sized bat of the eastern US. FM-QCF calls ~35 kHz characteristic frequency. Resembles a small Big Brown Bat. Roosts in tree cavities and buildings; does not use caves."),
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::MYOTIS_CALIFORNICUS,
+        commonness: Some(Commonness::Common),
+        description: Some("Small, adaptable western Myotis. FM sweep with characteristic frequency ~50 kHz. Often the most common bat detected at western sites. Difficult to distinguish acoustically from Western Small-footed Myotis."),
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::MYOTIS_YUMANENSIS,
+        commonness: Some(Commonness::Common),
+        description: Some("Western water-foraging specialist that trawls insects from the surface with oversized feet. FM sweep with characteristic frequency ~50 kHz. Common near rivers, lakes, and stock tanks."),
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::MYOTIS_VOLANS,
+        commonness: Some(Commonness::Common),
+        description: Some("Western coniferous forest bat. FM sweep with characteristic frequency ~40 kHz. Keeled calcar and furred underwing membrane are diagnostic in hand. Fast, direct flight through forest canopy."),
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::MYOTIS_VELIFER,
+        commonness: Some(Commonness::Common),
+        description: Some("Large Myotis of the south-central US. FM sweep with characteristic frequency ~45 kHz. Forms large cave colonies. Bare patches on back between shoulder blades are diagnostic in hand."),
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::ANTROZOUS_PALLIDUS,
+        commonness: Some(Commonness::Common),
+        description: Some("Unique dual forager: echolocates for aerial prey and passively listens to glean scorpions and large insects from the ground. FM calls ~30 kHz. Large ears, pale fur. Immune to scorpion venom. Western deserts and grasslands."),
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::LASIURUS_SEMINOLUS,
+        commonness: Some(Commonness::Common),
+        description: Some("Southeastern counterpart of the Eastern Red Bat with deep mahogany fur. FM sweep ~35–50 kHz, characteristic frequency ~40 kHz. Roosts in Spanish moss and pine needle clusters."),
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::LASIURUS_BLOSSEVILLII,
+        commonness: Some(Commonness::Common),
+        description: Some("Western counterpart of the Eastern Red Bat. FM-QCF calls with characteristic frequency ~42 kHz. Solitary foliage-roosting migrant. Found from British Columbia to Argentina. Reddish fur similar to Eastern Red Bat."),
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::CORYNORHINUS_TOWNSENDII,
+        commonness: Some(Commonness::Common),
+        description: Some("Enormous ears (~35 mm). Very quiet, short FM calls ~25–40 kHz for gleaning moths. Highly sensitive to roost disturbance. Found across the western US; several isolated eastern subspecies are endangered."),
+        name: None,
+    },
+    // ── Uncommon ─────────────────────────────────────────────────
+    BookEntryDef {
+        species: &species::MYOTIS_THYSANODES,
+        commonness: Some(Commonness::Uncommon),
+        description: Some("Named for the distinctive fringe of stiff hairs along the tail membrane. FM sweep ~25–55 kHz, characteristic frequency ~40 kHz. Western mountains; roosts in caves, mines, and buildings."),
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::MYOTIS_EVOTIS,
+        commonness: Some(Commonness::Uncommon),
+        description: Some("Very quiet, short FM calls typical of a gleaning forager, characteristic frequency ~40 kHz. Large ears extend well beyond the nose when laid forward. Western forests and woodlands."),
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::MYOTIS_CILIOLABRUM,
+        commonness: Some(Commonness::Uncommon),
+        description: Some("Tiny bat (~5 g) of western arid lands. FM sweep with characteristic frequency ~50 kHz. Calls nearly identical to California Myotis. Roosts in rock crevices, cliff faces, and eroded badlands."),
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::MYOTIS_LEIBII,
+        commonness: Some(Commonness::Uncommon),
+        description: Some("One of North America's smallest bats (~5 g). FM sweep with characteristic frequency ~50–55 kHz. Roosts in rock crevices and talus slopes. Appears somewhat resistant to White-nose Syndrome."),
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::MYOTIS_AUSTRORIPARIUS,
+        commonness: Some(Commonness::Uncommon),
+        description: Some("Southeastern US cave bat often found near water. FM sweep with characteristic frequency ~50 kHz. Forms large maternity colonies; Florida cave colonies can number in the tens of thousands."),
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::LASIURUS_INTERMEDIUS,
+        commonness: Some(Commonness::Uncommon),
+        description: Some("Large yellowish tree bat of the southeastern coastal plain. FM-QCF calls ~30 kHz characteristic frequency. Roosts in dead palm fronds and Spanish moss along the Gulf and Atlantic coasts."),
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::LASIURUS_XANTHINUS,
+        commonness: Some(Commonness::Uncommon),
+        description: Some("Southwestern desert species with yellowish fur. FM-QCF calls ~30 kHz characteristic frequency. Roosts in palm fronds. Range expanding northward with ornamental palm plantings in urban areas."),
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::CORYNORHINUS_RAFINESQUII,
+        commonness: Some(Commonness::Uncommon),
+        description: Some("Southeastern big-eared bat with white belly fur. Very quiet gleaning calls ~25–40 kHz. Roosts in abandoned buildings, hollow trees, and under bridges. State-listed in many southeastern states."),
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::NYCTINOMOPS_MACROTIS,
+        commonness: Some(Commonness::Uncommon),
+        description: Some("Large free-tailed bat with low QCF calls ~14–17 kHz, often audible to humans. Roosts in high cliff crevices in the Southwest. Loud piercing social calls carry long distances."),
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::NYCTINOMOPS_FEMOROSACCUS,
+        commonness: Some(Commonness::Uncommon),
+        description: Some("Medium-sized free-tailed bat of the southwestern deserts. QCF calls ~22 kHz. Named for the pocket-like fold on the tail membrane. Roosts in rock crevices in desert canyon country."),
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::EUMOPS_PEROTIS,
+        commonness: Some(Commonness::Uncommon),
+        description: Some("Largest bat in North America by wingspan (~56 cm). Very low QCF calls ~10–12 kHz, easily audible. Needs a vertical drop to launch into flight; roosts on tall cliff faces and high buildings."),
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::MACROTUS_CALIFORNICUS,
+        commonness: Some(Commonness::Uncommon),
+        description: Some("Low-intensity gleaning FM calls ~50 kHz, hard to detect. Large ears and prominent nose leaf. Non-migratory desert species in AZ and southern CA. Cannot hibernate; depends on warm mines and caves year-round."),
+        name: None,
+    },
+    // ── Rare ─────────────────────────────────────────────────────
+    BookEntryDef {
+        species: &species::EUDERMA_MACULATUM,
+        commonness: Some(Commonness::Rare),
+        description: Some("Lowest echolocation frequency of any North American bat (~10–12 kHz), easily audible. Unmistakable appearance: three large white spots on jet-black fur, enormous pink ears. Sparse but widespread across western arid lands."),
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::IDIONYCTERIS_PHYLLOTIS,
+        commonness: Some(Commonness::Rare),
+        description: Some("Low-frequency calls ~12–15 kHz, often audible. Distinctive lappets project from base of oversized ears. Southwestern pine-oak forests. Calls unlike any other North American bat of similar size."),
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::MORMOOPS_MEGALOPHYLLA,
+        commonness: Some(Commonness::Rare),
+        description: Some("Range barely enters southern Texas at a single cave. CF-FM calls ~53–63 kHz. Bizarre facial features with leaf-like skin flaps. Tropical species at the extreme northern edge of its range in the US."),
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::CHOERONYCTERIS_MEXICANA,
+        commonness: Some(Commonness::Rare),
+        description: Some("Nectar-feeding bat with elongated snout. Very quiet FM calls ~75 kHz. Seasonal migrant to southern Arizona. Visits hummingbird feeders. Low-intensity echolocation typical of phyllostomids."),
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::LEPTONYCTERIS_YERBABUENAE,
+        commonness: Some(Commonness::Rare),
+        description: Some("Major pollinator of saguaro and organ pipe cacti. Quiet FM calls ~75 kHz. Migrates to southern Arizona in summer. Formerly endangered, delisted in 2018 — a conservation success story."),
+        name: None,
+    },
+    // ── Endangered ───────────────────────────────────────────────
+    BookEntryDef {
+        species: &species::MYOTIS_SEPTENTRIONALIS,
+        commonness: Some(Commonness::Endangered),
+        description: Some("Steep broadband FM sweeps ~60–115 kHz. Gleaning forager in forest understory. Populations have declined >99% in parts of the eastern range due to White-nose Syndrome. Federally endangered since 2023."),
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::MYOTIS_SODALIS,
+        commonness: Some(Commonness::Endangered),
+        description: Some("Calls nearly identical to Little Brown Myotis, characteristic frequency ~45 kHz. Hibernates in dense clusters in limestone caves; a single cave may hold thousands. Federally endangered since 1967."),
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::MYOTIS_GRISESCENS,
+        commonness: Some(Commonness::Endangered),
+        description: Some("Largest eastern Myotis. FM sweep ~70–35 kHz, characteristic frequency ~45 kHz. Obligate cave bat year-round. Populations recovering under federal protection; some colonies now exceed historic numbers."),
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::EUMOPS_FLORIDANUS,
+        commonness: Some(Commonness::Endangered),
+        description: Some("Restricted to southern Florida. Low QCF calls ~14–16 kHz, occasionally audible. One of the rarest bats in North America. Roosts in tree cavities and bat houses. Federally endangered."),
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::LEPTONYCTERIS_NIVALIS,
+        commonness: Some(Commonness::Endangered),
+        description: Some("Nectar bat that migrates to the Big Bend region of Texas in summer. Quiet FM calls ~75 kHz. Pollinates agave. Only known US roost is a single cave in the Chisos Mountains. Federally endangered."),
+        name: None,
+    },
+];
+
 /// Get the bat book manifest for a given region.
 ///
 /// Non-echolocating species are always sorted to the end (stable sort preserves
@@ -1196,6 +1449,7 @@ pub fn get_manifest(region: BatBookRegion) -> BatBookManifest {
         BatBookRegion::CostaRica => COSTA_RICA_BOOK,
         BatBookRegion::Japan => JAPAN_BOOK,
         BatBookRegion::UK => UK_BOOK,
+        BatBookRegion::NorthAmerica => NORTH_AMERICA_BOOK,
         _ => GLOBAL_BOOK,
     };
     let mut entries: Vec<_> = book.iter().map(|e| e.materialize()).collect();

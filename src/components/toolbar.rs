@@ -309,7 +309,7 @@ pub fn Toolbar() -> impl IntoView {
                                 <div><a href="https://crates.io/crates/wasm-bindgen" target="_blank" style="color: #8cf; text-decoration: none;">"wasm-bindgen"</a></div>
                                 <div><a href="https://crates.io/crates/web-sys" target="_blank" style="color: #8cf; text-decoration: none;">"web-sys"</a></div>
                             </div>
-                            <div style="margin-top: 8px;">"and "<a href="https://github.com/jmears63/batgizmo-app-public" target="_blank" style="color: #8cf; text-decoration: none;">"batgizmo-app"</a>" for USB microphone code and inspiration."</div>
+                            <div style="margin-top: 8px;">"and "<a href="https://github.com/jmears63/batgizmo-app-public" target="_blank" style="color: #8cf; text-decoration: none;">"batgizmo-app"</a>" for inspiration."</div>
                         </div>
                         <button class="about-close" on:click=move |_| show_about.set(false)>"Close"</button>
                     </div>
