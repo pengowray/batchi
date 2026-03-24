@@ -3794,3 +3794,1008 @@ pub const EPOMOPS_FRANQUETI: BatSpecies = BatSpecies {
     description: "Central and West Africa tropical forests. Males produce repetitive metallic calls during display. Important pollinator and seed disperser.",
     echolocates: false,
 };
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Asia & Middle East — species used across Southeast Asia, South Asia,
+// East Asia, and Middle East bat books
+// ══════════════════════════════════════════════════════════════════════════════
+//
+// Sources:
+// - Francis (2008) A Field Guide to the Mammals of South-east Asia
+// - Kingston et al. (2006) Acoustic diversity of SE Asian bats; Bioacoustics
+// - Bates & Harrison (1997) Bats of the Indian Subcontinent
+// - Wordley et al. (2014) Acoustic ID of bats in southern Western Ghats; Acta Chiropt.
+// - Shi et al. (2009) Echolocation calls of Chinese bats; Mammalia
+// - Benda et al. (2006, 2012) Bats of the eastern Mediterranean and Middle East
+// - Korine & Pinshow (2004) Guild structure in a Negev desert bat community
+// - Struebig et al. (2006) Borneo bat community acoustics
+
+// ── Rhinolophidae ──
+
+pub const RHINOLOPHUS_AFFINIS: BatSpecies = BatSpecies {
+    id: "rhinolophus_affinis",
+    name: "Intermediate Horseshoe Bat",
+    scientific_name: "Rhinolophus affinis",
+    family: "Rhinolophidae",
+    call_type: "CF",
+    freq_lo_hz: 68_000.0,
+    freq_hi_hz: 90_000.0,
+    description: "CF ~74\u{2013}87 kHz (varies geographically). One of the most widespread horseshoe bats from South Asia through China and SE Asia. Common in forests, caves, and forest edges.",
+    echolocates: true,
+};
+
+pub const RHINOLOPHUS_LUCTUS: BatSpecies = BatSpecies {
+    id: "rhinolophus_luctus",
+    name: "Woolly Horseshoe Bat",
+    scientific_name: "Rhinolophus luctus",
+    family: "Rhinolophidae",
+    call_type: "CF",
+    freq_lo_hz: 27_000.0,
+    freq_hi_hz: 40_000.0,
+    description: "Largest horseshoe bat in Asia (~35 g). Unusually low CF ~28\u{2013}35 kHz due to large body size. Dense woolly fur. Primary forests from Nepal through China to Borneo.",
+    echolocates: true,
+};
+
+pub const RHINOLOPHUS_PUSILLUS: BatSpecies = BatSpecies {
+    id: "rhinolophus_pusillus",
+    name: "Least Horseshoe Bat",
+    scientific_name: "Rhinolophus pusillus",
+    family: "Rhinolophidae",
+    call_type: "CF",
+    freq_lo_hz: 100_000.0,
+    freq_hi_hz: 120_000.0,
+    description: "Very small horseshoe bat (~3 g). High CF ~103\u{2013}115 kHz. Widespread across southern China, Taiwan, and SE Asia in forest and scrub habitats.",
+    echolocates: true,
+};
+
+pub const RHINOLOPHUS_MALAYANUS: BatSpecies = BatSpecies {
+    id: "rhinolophus_malayanus",
+    name: "Malayan Horseshoe Bat",
+    scientific_name: "Rhinolophus malayanus",
+    family: "Rhinolophidae",
+    call_type: "CF",
+    freq_lo_hz: 90_000.0,
+    freq_hi_hz: 105_000.0,
+    description: "CF ~95\u{2013}100 kHz. Widespread in mainland SE Asia (Thailand, Vietnam, Myanmar, Laos, Cambodia). Roosts in caves and tunnels; forages in and near forest.",
+    echolocates: true,
+};
+
+pub const RHINOLOPHUS_BORNEENSIS: BatSpecies = BatSpecies {
+    id: "rhinolophus_borneensis",
+    name: "Bornean Horseshoe Bat",
+    scientific_name: "Rhinolophus borneensis",
+    family: "Rhinolophidae",
+    call_type: "CF",
+    freq_lo_hz: 72_000.0,
+    freq_hi_hz: 86_000.0,
+    description: "CF ~80\u{2013}83 kHz. Endemic to Borneo and Palawan (Philippines). Similar frequency to R. affinis; distinguished by morphology. Forest-dependent.",
+    echolocates: true,
+};
+
+pub const RHINOLOPHUS_TRIFOLIATUS: BatSpecies = BatSpecies {
+    id: "rhinolophus_trifoliatus",
+    name: "Trefoil Horseshoe Bat",
+    scientific_name: "Rhinolophus trifoliatus",
+    family: "Rhinolophidae",
+    call_type: "CF",
+    freq_lo_hz: 55_000.0,
+    freq_hi_hz: 70_000.0,
+    description: "Distinctive three-leafed noseleaf. CF ~60\u{2013}64 kHz. Sundaic lowland forest (Malaysia, Indonesia, Brunei). Found in both primary and disturbed forest.",
+    echolocates: true,
+};
+
+pub const RHINOLOPHUS_ACUMINATUS: BatSpecies = BatSpecies {
+    id: "rhinolophus_acuminatus",
+    name: "Acuminate Horseshoe Bat",
+    scientific_name: "Rhinolophus acuminatus",
+    family: "Rhinolophidae",
+    call_type: "CF",
+    freq_lo_hz: 58_000.0,
+    freq_hi_hz: 74_000.0,
+    description: "CF ~63\u{2013}68 kHz. Philippines and Sunda shelf islands (Indonesia). Forest interior species. Closely related to R. stheno.",
+    echolocates: true,
+};
+
+pub const RHINOLOPHUS_PEARSONII: BatSpecies = BatSpecies {
+    id: "rhinolophus_pearsonii",
+    name: "Pearson's Horseshoe Bat",
+    scientific_name: "Rhinolophus pearsonii",
+    family: "Rhinolophidae",
+    call_type: "CF",
+    freq_lo_hz: 55_000.0,
+    freq_hi_hz: 72_000.0,
+    description: "CF ~58\u{2013}70 kHz (varies across range). Hilly and montane forests of mainland SE Asia and south China. Distinctive large ears. Often found alongside R. affinis.",
+    echolocates: true,
+};
+
+pub const RHINOLOPHUS_ROUXII: BatSpecies = BatSpecies {
+    id: "rhinolophus_rouxii",
+    name: "Rufous Horseshoe Bat",
+    scientific_name: "Rhinolophus rouxii",
+    family: "Rhinolophidae",
+    call_type: "CF",
+    freq_lo_hz: 74_000.0,
+    freq_hi_hz: 86_000.0,
+    description: "CF ~78\u{2013}85 kHz; higher in south Indian populations. Widespread across the Indian subcontinent and Sri Lanka. Common in forests and caves.",
+    echolocates: true,
+};
+
+pub const RHINOLOPHUS_INDOROUXII: BatSpecies = BatSpecies {
+    id: "rhinolophus_indorouxii",
+    name: "Indian Rufous Horseshoe Bat",
+    scientific_name: "Rhinolophus indorouxii",
+    family: "Rhinolophidae",
+    call_type: "CF",
+    freq_lo_hz: 87_000.0,
+    freq_hi_hz: 95_000.0,
+    description: "CF ~87\u{2013}95 kHz (mean ~92 kHz). Recently split from R. rouxii; endemic to the southern Western Ghats and Sri Lanka. Caves and tunnels in humid forests.",
+    echolocates: true,
+};
+
+pub const RHINOLOPHUS_LEPIDUS: BatSpecies = BatSpecies {
+    id: "rhinolophus_lepidus",
+    name: "Blyth's Horseshoe Bat",
+    scientific_name: "Rhinolophus lepidus",
+    family: "Rhinolophidae",
+    call_type: "CF",
+    freq_lo_hz: 100_000.0,
+    freq_hi_hz: 112_000.0,
+    description: "CF ~104\u{2013}110 kHz. One of the most widespread horseshoe bats in South Asia, from Pakistan through India to Nepal. Caves, rock crevices, and buildings.",
+    echolocates: true,
+};
+
+pub const RHINOLOPHUS_BEDDOMEI: BatSpecies = BatSpecies {
+    id: "rhinolophus_beddomei",
+    name: "Lesser Woolly Horseshoe Bat",
+    scientific_name: "Rhinolophus beddomei",
+    family: "Rhinolophidae",
+    call_type: "CF",
+    freq_lo_hz: 46_000.0,
+    freq_hi_hz: 52_000.0,
+    description: "CF ~47\u{2013}50 kHz. Endemic to peninsular India and Sri Lanka; Western and Eastern Ghats moist forests. Cave-roosting.",
+    echolocates: true,
+};
+
+pub const RHINOLOPHUS_SINICUS: BatSpecies = BatSpecies {
+    id: "rhinolophus_sinicus",
+    name: "Chinese Rufous Horseshoe Bat",
+    scientific_name: "Rhinolophus sinicus",
+    family: "Rhinolophidae",
+    call_type: "CF",
+    freq_lo_hz: 73_000.0,
+    freq_hi_hz: 89_000.0,
+    description: "CF ~73\u{2013}89 kHz (mean ~82\u{2013}85 kHz; females higher). Widespread in southern and central China. Cave-roosting, often sympatric with R. affinis. Important SARS-CoV host species.",
+    echolocates: true,
+};
+
+pub const RHINOLOPHUS_MACROTIS: BatSpecies = BatSpecies {
+    id: "rhinolophus_macrotis",
+    name: "Big-eared Horseshoe Bat",
+    scientific_name: "Rhinolophus macrotis",
+    family: "Rhinolophidae",
+    call_type: "CF",
+    freq_lo_hz: 42_000.0,
+    freq_hi_hz: 66_000.0,
+    description: "CF ~42\u{2013}58 kHz (large and small cryptic forms). Distinctive very large ears. Widespread in southern and central China in karst terrain. May represent distinct species.",
+    echolocates: true,
+};
+
+pub const RHINOLOPHUS_MONOCEROS: BatSpecies = BatSpecies {
+    id: "rhinolophus_monoceros",
+    name: "Formosan Lesser Horseshoe Bat",
+    scientific_name: "Rhinolophus monoceros",
+    family: "Rhinolophidae",
+    call_type: "CF",
+    freq_lo_hz: 107_000.0,
+    freq_hi_hz: 118_000.0,
+    description: "CF ~108\u{2013}117 kHz. Endemic to Taiwan. Geographic variation up to 6 kHz across populations. Cave-roosting; widespread in forested mountains.",
+    echolocates: true,
+};
+
+pub const RHINOLOPHUS_MEHELYI: BatSpecies = BatSpecies {
+    id: "rhinolophus_mehelyi",
+    name: "Mehely's Horseshoe Bat",
+    scientific_name: "Rhinolophus mehelyi",
+    family: "Rhinolophidae",
+    call_type: "CF",
+    freq_lo_hz: 103_000.0,
+    freq_hi_hz: 113_000.0,
+    description: "CF ~107\u{2013}111 kHz; closely overlaps R. euryale in frequency. Mediterranean and Middle East (Turkey, Israel, Jordan, Iran). Cave-roosting, often with R. euryale and R. blasii.",
+    echolocates: true,
+};
+
+// ── Hipposideridae ──
+
+pub const HIPPOSIDEROS_ARMIGER: BatSpecies = BatSpecies {
+    id: "hipposideros_armiger",
+    name: "Great Roundleaf Bat",
+    scientific_name: "Hipposideros armiger",
+    family: "Hipposideridae",
+    call_type: "CF",
+    freq_lo_hz: 55_000.0,
+    freq_hi_hz: 80_000.0,
+    description: "Largest Hipposideros in Asia (~35 g). CF ~60\u{2013}75 kHz. Widespread from India through China to SE Asia. Cave-roosting, often in large colonies. Doppler-shift compensation.",
+    echolocates: true,
+};
+
+pub const HIPPOSIDEROS_LARVATUS: BatSpecies = BatSpecies {
+    id: "hipposideros_larvatus",
+    name: "Intermediate Roundleaf Bat",
+    scientific_name: "Hipposideros larvatus",
+    family: "Hipposideridae",
+    call_type: "CF",
+    freq_lo_hz: 68_000.0,
+    freq_hi_hz: 102_000.0,
+    description: "Very common medium-sized roundleaf bat. CF ~77\u{2013}98 kHz (cryptic species complex with two phonic types). Throughout SE Asia and southern China. Caves, gardens, and forest.",
+    echolocates: true,
+};
+
+pub const HIPPOSIDEROS_BICOLOR: BatSpecies = BatSpecies {
+    id: "hipposideros_bicolor",
+    name: "Bicolored Roundleaf Bat",
+    scientific_name: "Hipposideros bicolor",
+    family: "Hipposideridae",
+    call_type: "CF",
+    freq_lo_hz: 96_000.0,
+    freq_hi_hz: 161_000.0,
+    description: "Small roundleaf bat. High CF varies greatly by region (~106\u{2013}110 kHz in SE Asia, ~147\u{2013}161 kHz in South Asia). Species complex. Extremely widespread from India to the Philippines. Caves and forest edge.",
+    echolocates: true,
+};
+
+pub const HIPPOSIDEROS_GALERITUS: BatSpecies = BatSpecies {
+    id: "hipposideros_galeritus",
+    name: "Cantor's Roundleaf Bat",
+    scientific_name: "Hipposideros galeritus",
+    family: "Hipposideridae",
+    call_type: "CF",
+    freq_lo_hz: 88_000.0,
+    freq_hi_hz: 106_000.0,
+    description: "CF ~94\u{2013}100 kHz. Sundaland (Malaysia, Indonesia, Borneo) in lowland dipterocarp forest. Small caves and rock shelters.",
+    echolocates: true,
+};
+
+pub const HIPPOSIDEROS_DIADEMA: BatSpecies = BatSpecies {
+    id: "hipposideros_diadema",
+    name: "Diadem Roundleaf Bat",
+    scientific_name: "Hipposideros diadema",
+    family: "Hipposideridae",
+    call_type: "CF",
+    freq_lo_hz: 52_000.0,
+    freq_hi_hz: 68_000.0,
+    description: "Large roundleaf bat with striking pale shoulder markings. CF ~58\u{2013}63 kHz. Mainland SE Asia to Indonesia and the Philippines. Large cave colonies; long-distance forager.",
+    echolocates: true,
+};
+
+pub const HIPPOSIDEROS_POMONA: BatSpecies = BatSpecies {
+    id: "hipposideros_pomona",
+    name: "Pomona Roundleaf Bat",
+    scientific_name: "Hipposideros pomona",
+    family: "Hipposideridae",
+    call_type: "CF",
+    freq_lo_hz: 134_000.0,
+    freq_hi_hz: 160_000.0,
+    description: "Very high CF ~140\u{2013}156 kHz, highest of any mainland SE Asian hipposiderid. Vietnam, Thailand, Laos, Myanmar, and India. Small cave groups in dense forest.",
+    echolocates: true,
+};
+
+pub const COELOPS_FRITHII: BatSpecies = BatSpecies {
+    id: "coelops_frithii",
+    name: "Tail-less Roundleaf Bat",
+    scientific_name: "Coelops frithii",
+    family: "Hipposideridae",
+    call_type: "CF",
+    freq_lo_hz: 100_000.0,
+    freq_hi_hz: 130_000.0,
+    description: "Tiny tail-less roundleaf bat. CF ~110\u{2013}120 kHz. Mainland SE Asia and Sundaland. Unusual for foraging in open grass habitats rather than forest interior.",
+    echolocates: true,
+};
+
+pub const HIPPOSIDEROS_SPEORIS: BatSpecies = BatSpecies {
+    id: "hipposideros_speoris",
+    name: "Schneider's Leaf-nosed Bat",
+    scientific_name: "Hipposideros speoris",
+    family: "Hipposideridae",
+    call_type: "CF",
+    freq_lo_hz: 127_000.0,
+    freq_hi_hz: 138_000.0,
+    description: "CF ~127\u{2013}138 kHz. One of the most studied South Asian hipposiderids. Widespread across peninsular India and Sri Lanka; caves, temples, and old buildings.",
+    echolocates: true,
+};
+
+pub const HIPPOSIDEROS_LANKADIVA: BatSpecies = BatSpecies {
+    id: "hipposideros_lankadiva",
+    name: "Kolar Leaf-nosed Bat",
+    scientific_name: "Hipposideros lankadiva",
+    family: "Hipposideridae",
+    call_type: "CF",
+    freq_lo_hz: 60_000.0,
+    freq_hi_hz: 70_000.0,
+    description: "CF ~65\u{2013}70 kHz; unusually low for a hipposiderid due to large body size. Endemic to peninsular India and Sri Lanka. Caves and old mines. IUCN Near Threatened.",
+    echolocates: true,
+};
+
+pub const HIPPOSIDEROS_DURGADASI: BatSpecies = BatSpecies {
+    id: "hipposideros_durgadasi",
+    name: "Durgadas's Leaf-nosed Bat",
+    scientific_name: "Hipposideros durgadasi",
+    family: "Hipposideridae",
+    call_type: "CF",
+    freq_lo_hz: 163_000.0,
+    freq_hi_hz: 178_000.0,
+    description: "CF ~163\u{2013}176 kHz; among the highest-frequency bats in South Asia. Endemic to peninsular India cave systems. Poorly studied; IUCN Vulnerable.",
+    echolocates: true,
+};
+
+pub const HIPPOSIDEROS_PRATTI: BatSpecies = BatSpecies {
+    id: "hipposideros_pratti",
+    name: "Pratt's Leaf-nosed Bat",
+    scientific_name: "Hipposideros pratti",
+    family: "Hipposideridae",
+    call_type: "CF",
+    freq_lo_hz: 52_000.0,
+    freq_hi_hz: 70_000.0,
+    description: "CF 2nd harmonic ~59\u{2013}60 kHz; 1st harmonic ~29 kHz. Large species endemic to China. Cave-roosting in central and southern China (Hubei, Sichuan, Guizhou). Well-studied for auditory neuroscience.",
+    echolocates: true,
+};
+
+pub const ASELLISCUS_STOLICZKANUS: BatSpecies = BatSpecies {
+    id: "aselliscus_stoliczkanus",
+    name: "Stoliczka's Trident Bat",
+    scientific_name: "Aselliscus stoliczkanus",
+    family: "Hipposideridae",
+    call_type: "CF",
+    freq_lo_hz: 100_000.0,
+    freq_hi_hz: 125_000.0,
+    description: "CF ~119\u{2013}120 kHz with terminal FM sweep. Distinctive trident nose-leaf. Southeast China (Yunnan, Guizhou, Guangxi) in karst limestone. Cave-roosting.",
+    echolocates: true,
+};
+
+pub const ASELLIA_TRIDENS: BatSpecies = BatSpecies {
+    id: "asellia_tridens",
+    name: "Trident Leaf-nosed Bat",
+    scientific_name: "Asellia tridens",
+    family: "Hipposideridae",
+    call_type: "CF",
+    freq_lo_hz: 96_000.0,
+    freq_hi_hz: 108_000.0,
+    description: "CF ~98\u{2013}104 kHz. Most widespread hipposiderid in the Middle East and North Africa. Trident-shaped noseleaf. Highly colonial; desert-adapted. Morocco to Pakistan.",
+    echolocates: true,
+};
+
+// ── Rhinopomatidae ──
+
+pub const RHINOPOMA_MICROPHYLLUM: BatSpecies = BatSpecies {
+    id: "rhinopoma_microphyllum",
+    name: "Greater Mouse-tailed Bat",
+    scientific_name: "Rhinopoma microphyllum",
+    family: "Rhinopomatidae",
+    call_type: "FM-QCF",
+    freq_lo_hz: 18_000.0,
+    freq_hi_hz: 40_000.0,
+    description: "QCF search phase ~20\u{2013}22 kHz with short FM onset. The largest Rhinopoma. Widespread from Morocco to South Asia. Desert-adapted; roosts in ruins, caves, and rock crevices. Family Rhinopomatidae is endemic to the Old World arid zone.",
+    echolocates: true,
+};
+
+pub const RHINOPOMA_HARDWICKII: BatSpecies = BatSpecies {
+    id: "rhinopoma_hardwickii",
+    name: "Lesser Mouse-tailed Bat",
+    scientific_name: "Rhinopoma hardwickii",
+    family: "Rhinopomatidae",
+    call_type: "FM-QCF",
+    freq_lo_hz: 22_000.0,
+    freq_hi_hz: 50_000.0,
+    description: "Search-phase QCF ~22\u{2013}28 kHz with FM onset. Widespread in arid zones from North Africa through Iran and Pakistan to India. Often syntopic with R. microphyllum; separated by smaller size and higher frequency.",
+    echolocates: true,
+};
+
+pub const RHINOPOMA_CYSTOPS: BatSpecies = BatSpecies {
+    id: "rhinopoma_cystops",
+    name: "Small Mouse-tailed Bat",
+    scientific_name: "Rhinopoma cystops",
+    family: "Rhinopomatidae",
+    call_type: "FM-QCF",
+    freq_lo_hz: 28_000.0,
+    freq_hi_hz: 55_000.0,
+    description: "Smallest Rhinopoma; higher frequency than congeners (peak ~35\u{2013}40 kHz). Northeast Africa (Egypt, Sudan) and the Levant (Israel, Jordan, Syria). Rocky desert habitats.",
+    echolocates: true,
+};
+
+// ── Megadermatidae ──
+
+pub const MEGADERMA_LYRA: BatSpecies = BatSpecies {
+    id: "megaderma_lyra",
+    name: "Greater False Vampire Bat",
+    scientific_name: "Megaderma lyra",
+    family: "Megadermatidae",
+    call_type: "FM",
+    freq_lo_hz: 19_000.0,
+    freq_hi_hz: 100_000.0,
+    description: "Low-intensity multiharmonic FM calls (~19\u{2013}100 kHz). Large carnivorous bat preying on frogs, lizards, and other bats. Locates prey mainly by passive listening. South and mainland SE Asia; caves, ruins, and culverts.",
+    echolocates: true,
+};
+
+pub const MEGADERMA_SPASMA: BatSpecies = BatSpecies {
+    id: "megaderma_spasma",
+    name: "Lesser False Vampire Bat",
+    scientific_name: "Megaderma spasma",
+    family: "Megadermatidae",
+    call_type: "FM",
+    freq_lo_hz: 40_000.0,
+    freq_hi_hz: 120_000.0,
+    description: "Low-intensity broadband FM calls. Smaller than M. lyra. Primarily insectivorous. Mainland SE Asia through Sundaland to the Philippines. Caves, hollow trees, and buildings.",
+    echolocates: true,
+};
+
+// ── Emballonuridae ──
+
+pub const TAPHOZOUS_LONGIMANUS: BatSpecies = BatSpecies {
+    id: "taphozous_longimanus",
+    name: "Long-winged Tomb Bat",
+    scientific_name: "Taphozous longimanus",
+    family: "Emballonuridae",
+    call_type: "QCF",
+    freq_lo_hz: 24_000.0,
+    freq_hi_hz: 45_000.0,
+    description: "QCF calls ~28\u{2013}35 kHz. Fast direct flight in open areas. South and SE Asia from India to Indonesia. Roosts on exposed surfaces of buildings and rock faces.",
+    echolocates: true,
+};
+
+pub const TAPHOZOUS_THEOBALDI: BatSpecies = BatSpecies {
+    id: "taphozous_theobaldi",
+    name: "Theobald's Tomb Bat",
+    scientific_name: "Taphozous theobaldi",
+    family: "Emballonuridae",
+    call_type: "QCF",
+    freq_lo_hz: 22_000.0,
+    freq_hi_hz: 35_000.0,
+    description: "Large tomb bat. QCF ~25\u{2013}30 kHz. Mainland SE Asia (Myanmar, Thailand, Vietnam, Cambodia). Obligate cave-roosting, often in large limestone cave colonies.",
+    echolocates: true,
+};
+
+pub const EMBALLONURA_MONTICOLA: BatSpecies = BatSpecies {
+    id: "emballonura_monticola",
+    name: "Lesser Sheath-tailed Bat",
+    scientific_name: "Emballonura monticola",
+    family: "Emballonuridae",
+    call_type: "FM-QCF",
+    freq_lo_hz: 45_000.0,
+    freq_hi_hz: 80_000.0,
+    description: "FM-QCF calls ~55\u{2013}65 kHz. Small sheath-tailed bat. Lowland forest of Sundaland (Malaysia, Indonesia, Brunei). Small groups on cave walls; forest interior forager.",
+    echolocates: true,
+};
+
+pub const TAPHOZOUS_NUDIVENTRIS: BatSpecies = BatSpecies {
+    id: "taphozous_nudiventris",
+    name: "Naked-rumped Tomb Bat",
+    scientific_name: "Taphozous nudiventris",
+    family: "Emballonuridae",
+    call_type: "QCF",
+    freq_lo_hz: 22_000.0,
+    freq_hi_hz: 40_000.0,
+    description: "QCF ~25\u{2013}30 kHz. Bare rump patch. Most commonly encountered tomb bat in the Middle East. Egypt, Levant, Iraq, Iran, Saudi Arabia, Yemen. Ruins, tombs, and rock fissures; often large colonies.",
+    echolocates: true,
+};
+
+// ── Molossidae ──
+
+pub const CHAEREPHON_PLICATUS: BatSpecies = BatSpecies {
+    id: "chaerephon_plicatus",
+    name: "Wrinkle-lipped Free-tailed Bat",
+    scientific_name: "Chaerephon plicatus",
+    family: "Molossidae",
+    call_type: "QCF",
+    freq_lo_hz: 13_000.0,
+    freq_hi_hz: 32_000.0,
+    description: "Narrowband QCF ~16\u{2013}30 kHz. Forms some of the world\u{2019}s largest bat colonies (millions). Fast high-altitude open-air forager. Widespread across South and SE Asia. Spectacular synchronous dusk emergence columns.",
+    echolocates: true,
+};
+
+pub const OTOMOPS_FORMOSUS: BatSpecies = BatSpecies {
+    id: "otomops_formosus",
+    name: "Javan Mastiff Bat",
+    scientific_name: "Otomops formosus",
+    family: "Molossidae",
+    call_type: "QCF",
+    freq_lo_hz: 10_000.0,
+    freq_hi_hz: 18_000.0,
+    description: "Very large molossid with long ears. Very low QCF ~12\u{2013}16 kHz. Rare; primarily Java and Borneo. High-altitude open-air forager.",
+    echolocates: true,
+};
+
+pub const MOPS_MOPS: BatSpecies = BatSpecies {
+    id: "mops_mops",
+    name: "Malayan Free-tailed Bat",
+    scientific_name: "Mops mops",
+    family: "Molossidae",
+    call_type: "QCF",
+    freq_lo_hz: 18_000.0,
+    freq_hi_hz: 30_000.0,
+    description: "QCF ~22\u{2013}28 kHz. Sundaland (Malaysia, Indonesia, Brunei, Singapore). Hollow trees and buildings. Forages high above canopy.",
+    echolocates: true,
+};
+
+pub const OTOMOPS_WROUGHTONI: BatSpecies = BatSpecies {
+    id: "otomops_wroughtoni",
+    name: "Wroughton's Free-tailed Bat",
+    scientific_name: "Otomops wroughtoni",
+    family: "Molossidae",
+    call_type: "QCF",
+    freq_lo_hz: 12_000.0,
+    freq_hi_hz: 18_000.0,
+    description: "Very low frequency QCF ~14\u{2013}17 kHz; among the lowest of any bat. Rare; known from a few cave sites in peninsular India (Karnataka, Goa) and Meghalaya. IUCN Data Deficient.",
+    echolocates: true,
+};
+
+// ── Miniopteridae ──
+
+pub const MINIOPTERUS_MAGNATER: BatSpecies = BatSpecies {
+    id: "miniopterus_magnater",
+    name: "Greater Bent-wing Bat",
+    scientific_name: "Miniopterus magnater",
+    family: "Miniopteridae",
+    call_type: "FM",
+    freq_lo_hz: 42_000.0,
+    freq_hi_hz: 100_000.0,
+    description: "FM sweeps, terminal frequency ~44\u{2013}55 kHz. Largest Miniopterus in South and SE Asia. Large cave colonies. Fast agile flight. Previously misidentified as M. schreibersii.",
+    echolocates: true,
+};
+
+pub const MINIOPTERUS_PUSILLUS: BatSpecies = BatSpecies {
+    id: "miniopterus_pusillus",
+    name: "Small Bent-wing Bat",
+    scientific_name: "Miniopterus pusillus",
+    family: "Miniopteridae",
+    call_type: "FM",
+    freq_lo_hz: 50_000.0,
+    freq_hi_hz: 100_000.0,
+    description: "FM calls, terminal frequency ~52\u{2013}58 kHz (higher than M. magnater). Widespread in SE Asia. Often co-roosts with M. magnater in large limestone caves.",
+    echolocates: true,
+};
+
+pub const MINIOPTERUS_PALLIDUS: BatSpecies = BatSpecies {
+    id: "miniopterus_pallidus",
+    name: "Pale Bent-wing Bat",
+    scientific_name: "Miniopterus pallidus",
+    family: "Miniopteridae",
+    call_type: "FM",
+    freq_lo_hz: 45_000.0,
+    freq_hi_hz: 65_000.0,
+    description: "FM ~47\u{2013}62 kHz, acoustically indistinguishable from M. schreibersii. Central Asian and Middle Eastern distribution (Kazakhstan, Uzbekistan, Iran, Afghanistan). Recently split from M. schreibersii. Large cave colonies; migratory.",
+    echolocates: true,
+};
+
+// ── Vespertilionidae ──
+
+pub const MYOTIS_HORSFIELDII: BatSpecies = BatSpecies {
+    id: "myotis_horsfieldii",
+    name: "Horsfield's Myotis",
+    scientific_name: "Myotis horsfieldii",
+    family: "Vespertilionidae",
+    call_type: "FM",
+    freq_lo_hz: 35_000.0,
+    freq_hi_hz: 100_000.0,
+    description: "Broadband FM, peak ~45\u{2013}55 kHz. Trawling insectivore catching prey from water surfaces using large hind feet. Widespread across South and SE Asia in forested lowlands near streams.",
+    echolocates: true,
+};
+
+pub const MYOTIS_MURICOLA: BatSpecies = BatSpecies {
+    id: "myotis_muricola",
+    name: "Wall-roosting Myotis",
+    scientific_name: "Myotis muricola",
+    family: "Vespertilionidae",
+    call_type: "FM",
+    freq_lo_hz: 45_000.0,
+    freq_hi_hz: 115_000.0,
+    description: "Broadband FM, peak ~65\u{2013}80 kHz. Very widespread and commonly recorded in SE Asia. Roosts on vertical surfaces (rock faces, buildings, dead fronds). Forest understory and edge forager.",
+    echolocates: true,
+};
+
+pub const MYOTIS_HASSELTII: BatSpecies = BatSpecies {
+    id: "myotis_hasseltii",
+    name: "Lesser Large-footed Myotis",
+    scientific_name: "Myotis hasseltii",
+    family: "Vespertilionidae",
+    call_type: "FM",
+    freq_lo_hz: 40_000.0,
+    freq_hi_hz: 100_000.0,
+    description: "FM, peak ~50\u{2013}60 kHz. Large-footed trawling bat capturing prey from water surfaces. Sundaland and mainland SE Asia; almost always near still or slow-moving water.",
+    echolocates: true,
+};
+
+pub const KERIVOULA_HARDWICKII: BatSpecies = BatSpecies {
+    id: "kerivoula_hardwickii",
+    name: "Hardwicke's Woolly Bat",
+    scientific_name: "Kerivoula hardwickii",
+    family: "Vespertilionidae",
+    call_type: "FM",
+    freq_lo_hz: 100_000.0,
+    freq_hi_hz: 160_000.0,
+    description: "Very high-frequency FM, peak ~120\u{2013}140 kHz. Tiny orange-furred bat foraging in dense forest understory. One of the highest-frequency vespertilionids. Sundaland; often roosts in pitcher plants.",
+    echolocates: true,
+};
+
+pub const KERIVOULA_PELLUCIDA: BatSpecies = BatSpecies {
+    id: "kerivoula_pellucida",
+    name: "Clear-winged Woolly Bat",
+    scientific_name: "Kerivoula pellucida",
+    family: "Vespertilionidae",
+    call_type: "FM",
+    freq_lo_hz: 90_000.0,
+    freq_hi_hz: 145_000.0,
+    description: "Very high-frequency FM, peak ~115\u{2013}130 kHz. Partially transparent wing membranes. Lowland forest of Sundaland. Gleans insects from foliage.",
+    echolocates: true,
+};
+
+pub const KERIVOULA_PICTA: BatSpecies = BatSpecies {
+    id: "kerivoula_picta",
+    name: "Painted Bat",
+    scientific_name: "Kerivoula picta",
+    family: "Vespertilionidae",
+    call_type: "FM",
+    freq_lo_hz: 41_000.0,
+    freq_hi_hz: 157_000.0,
+    description: "Steep broadband FM ~157\u{2013}41 kHz; very low-intensity whisper echolocator. Striking orange-and-black wing membranes. South and SE Asian lowland forests. Roosts in dead bamboo and banana flowers.",
+    echolocates: true,
+};
+
+pub const MURINA_CYCLOTIS: BatSpecies = BatSpecies {
+    id: "murina_cyclotis",
+    name: "Round-eared Tube-nosed Bat",
+    scientific_name: "Murina cyclotis",
+    family: "Vespertilionidae",
+    call_type: "FM",
+    freq_lo_hz: 43_000.0,
+    freq_hi_hz: 152_000.0,
+    description: "Very broadband FM ~152\u{2013}43 kHz. Tubular nostrils; extreme-clutter specialist. Widespread across South and SE Asia in forests. Slow-flying gleaner; roosts in leaves and dead fronds.",
+    echolocates: true,
+};
+
+pub const TYLONYCTERIS_PACHYPUS: BatSpecies = BatSpecies {
+    id: "tylonycteris_pachypus",
+    name: "Lesser Bamboo Bat",
+    scientific_name: "Tylonycteris pachypus",
+    family: "Vespertilionidae",
+    call_type: "FM",
+    freq_lo_hz: 50_000.0,
+    freq_hi_hz: 90_000.0,
+    description: "FM, peak ~65\u{2013}75 kHz. One of the world\u{2019}s smallest bats (~2 g). Flattened skull and adhesive pads for roosting inside bamboo internodes. Widespread in bamboo forests across SE Asia.",
+    echolocates: true,
+};
+
+pub const TYLONYCTERIS_ROBUSTULA: BatSpecies = BatSpecies {
+    id: "tylonycteris_robustula",
+    name: "Greater Bamboo Bat",
+    scientific_name: "Tylonycteris robustula",
+    family: "Vespertilionidae",
+    call_type: "FM",
+    freq_lo_hz: 45_000.0,
+    freq_hi_hz: 82_000.0,
+    description: "FM, peak ~55\u{2013}65 kHz (lower than T. pachypus). Same bamboo-roosting ecology. Widespread in SE Asian bamboo forests. Often co-roosts with T. pachypus.",
+    echolocates: true,
+};
+
+pub const SCOTOPHILUS_KUHLII: BatSpecies = BatSpecies {
+    id: "scotophilus_kuhlii",
+    name: "Lesser Asiatic Yellow Bat",
+    scientific_name: "Scotophilus kuhlii",
+    family: "Vespertilionidae",
+    call_type: "QCF",
+    freq_lo_hz: 30_000.0,
+    freq_hi_hz: 58_000.0,
+    description: "QCF, peak ~40\u{2013}47 kHz. One of the most commonly recorded bats in SE Asian urban and agricultural areas. Bright yellow-orange undersides. Buildings and palm crowns. Highly synanthropic.",
+    echolocates: true,
+};
+
+pub const SCOTOPHILUS_HEATHII: BatSpecies = BatSpecies {
+    id: "scotophilus_heathii",
+    name: "Greater Asiatic Yellow Bat",
+    scientific_name: "Scotophilus heathii",
+    family: "Vespertilionidae",
+    call_type: "FM-QCF",
+    freq_lo_hz: 24_000.0,
+    freq_hi_hz: 45_000.0,
+    description: "FM-QCF, peak ~28\u{2013}32 kHz; low frequency for its size. One of the most common bats across the Indian subcontinent. Buildings, hollow trees, and roof spaces. Open and edge habitat forager.",
+    echolocates: true,
+};
+
+pub const PIPISTRELLUS_JAVANICUS: BatSpecies = BatSpecies {
+    id: "pipistrellus_javanicus",
+    name: "Javan Pipistrelle",
+    scientific_name: "Pipistrellus javanicus",
+    family: "Vespertilionidae",
+    call_type: "FM-QCF",
+    freq_lo_hz: 38_000.0,
+    freq_hi_hz: 75_000.0,
+    description: "FM-QCF, peak ~50\u{2013}55 kHz. Common urban pipistrelle. South Asia through mainland SE Asia to the Greater Sundas. Buildings; gardens, parks, and agricultural areas.",
+    echolocates: true,
+};
+
+pub const PIPISTRELLUS_CEYLONICUS: BatSpecies = BatSpecies {
+    id: "pipistrellus_ceylonicus",
+    name: "Kelaart's Pipistrelle",
+    scientific_name: "Pipistrellus ceylonicus",
+    family: "Vespertilionidae",
+    call_type: "FM-QCF",
+    freq_lo_hz: 30_000.0,
+    freq_hi_hz: 76_000.0,
+    description: "FM-QCF, peak ~36\u{2013}38 kHz. One of the most commonly detected bat species acoustically in South Asian surveys. Widespread across the Indian subcontinent and Sri Lanka. Water and forest edges.",
+    echolocates: true,
+};
+
+pub const PIPISTRELLUS_COROMANDRA: BatSpecies = BatSpecies {
+    id: "pipistrellus_coromandra",
+    name: "Indian Pipistrelle",
+    scientific_name: "Pipistrellus coromandra",
+    family: "Vespertilionidae",
+    call_type: "FM-QCF",
+    freq_lo_hz: 36_000.0,
+    freq_hi_hz: 70_000.0,
+    description: "FM-QCF, end frequency ~40\u{2013}42 kHz. Very common and widespread across South Asia. Closely associated with human settlements. Often the first bat to emerge at dusk.",
+    echolocates: true,
+};
+
+pub const HESPEROPTENUS_BLANFORDI: BatSpecies = BatSpecies {
+    id: "hesperoptenus_blanfordi",
+    name: "Blanford's Bat",
+    scientific_name: "Hesperoptenus blanfordi",
+    family: "Vespertilionidae",
+    call_type: "FM-QCF",
+    freq_lo_hz: 25_000.0,
+    freq_hi_hz: 50_000.0,
+    description: "FM-QCF, peak ~32\u{2013}40 kHz. Mainland SE Asia (Myanmar, Thailand, Vietnam). Open forest and over water. Poorly studied acoustically.",
+    echolocates: true,
+};
+
+pub const IA_IO: BatSpecies = BatSpecies {
+    id: "ia_io",
+    name: "Great Evening Bat",
+    scientific_name: "Ia io",
+    family: "Vespertilionidae",
+    call_type: "FM-QCF",
+    freq_lo_hz: 11_000.0,
+    freq_hi_hz: 32_000.0,
+    description: "Very low FM-QCF ~12\u{2013}27 kHz. One of the world\u{2019}s largest vespertilionids (~60 g). Carnivorous aerial hawker preying on large moths and occasionally small birds. South and central China, extending into montane SE Asia.",
+    echolocates: true,
+};
+
+pub const MYOTIS_MONTIVAGUS: BatSpecies = BatSpecies {
+    id: "myotis_montivagus",
+    name: "Burmese Whiskered Bat",
+    scientific_name: "Myotis montivagus",
+    family: "Vespertilionidae",
+    call_type: "FM",
+    freq_lo_hz: 35_000.0,
+    freq_hi_hz: 100_000.0,
+    description: "Broadband FM sweeps, peak ~40\u{2013}55 kHz. Southern Western Ghats and northeastern India. Clutter-adapted gleaning forager of forested hill slopes.",
+    echolocates: true,
+};
+
+pub const MYOTIS_PILOSUS: BatSpecies = BatSpecies {
+    id: "myotis_pilosus",
+    name: "Rickett's Big-footed Bat",
+    scientific_name: "Myotis pilosus",
+    family: "Vespertilionidae",
+    call_type: "FM",
+    freq_lo_hz: 27_000.0,
+    freq_hi_hz: 75_000.0,
+    description: "FM ~71\u{2013}28 kHz, peak ~38\u{2013}41 kHz. East Asia\u{2019}s only confirmed piscivorous bat; trawls rivers using large feet. Endemic to China, also recorded in Korea. Cave roosts near rivers.",
+    echolocates: true,
+};
+
+pub const MYOTIS_CHINENSIS: BatSpecies = BatSpecies {
+    id: "myotis_chinensis",
+    name: "Large Myotis",
+    scientific_name: "Myotis chinensis",
+    family: "Vespertilionidae",
+    call_type: "FM",
+    freq_lo_hz: 25_000.0,
+    freq_hi_hz: 100_000.0,
+    description: "Broadband FM. Largest Myotis in China (forearm ~65\u{2013}70 mm). Cave-roosting, large maternity colonies in southern and central China.",
+    echolocates: true,
+};
+
+pub const MYOTIS_DAVIDII: BatSpecies = BatSpecies {
+    id: "myotis_davidii",
+    name: "David's Myotis",
+    scientific_name: "Myotis davidii",
+    family: "Vespertilionidae",
+    call_type: "FM",
+    freq_lo_hz: 40_000.0,
+    freq_hi_hz: 100_000.0,
+    description: "FM sweeps, peak ~45\u{2013}55 kHz with geographic variation. Endemic to China. Forest bat. Well-studied for genome analysis of bat-specific adaptations.",
+    echolocates: true,
+};
+
+pub const HYPSUGO_ALASCHANICUS: BatSpecies = BatSpecies {
+    id: "hypsugo_alaschanicus",
+    name: "Alashanian Pipistrelle",
+    scientific_name: "Hypsugo alaschanicus",
+    family: "Vespertilionidae",
+    call_type: "FM-QCF",
+    freq_lo_hz: 25_000.0,
+    freq_hi_hz: 55_000.0,
+    description: "FM-QCF, peak ~34\u{2013}37 kHz. Previously a subspecies of Savi\u{2019}s Pipistrelle (H. savii). Northern and central China, Korea, Mongolia, Russia. Crevices and buildings.",
+    echolocates: true,
+};
+
+pub const NYCTALUS_PLANCYI: BatSpecies = BatSpecies {
+    id: "nyctalus_plancyi",
+    name: "Chinese Noctule",
+    scientific_name: "Nyctalus plancyi",
+    family: "Vespertilionidae",
+    call_type: "FM-QCF",
+    freq_lo_hz: 20_000.0,
+    freq_hi_hz: 55_000.0,
+    description: "FM-QCF, peak ~25\u{2013}34 kHz. Fast high-altitude aerial forager. Endemic to China and Taiwan. Tree hollows. Closely related to N. aviator and N. noctula.",
+    echolocates: true,
+};
+
+pub const MURINA_LEUCOGASTER: BatSpecies = BatSpecies {
+    id: "murina_leucogaster",
+    name: "Greater Tube-nosed Bat",
+    scientific_name: "Murina leucogaster",
+    family: "Vespertilionidae",
+    call_type: "FM",
+    freq_lo_hz: 45_000.0,
+    freq_hi_hz: 110_000.0,
+    description: "Broadband FM, peak ~45\u{2013}68 kHz. Forest gleaner. Widespread in northern and central China, Korea, Russia, and Japan. Tree hollows and bark.",
+    echolocates: true,
+};
+
+pub const SCOTOMANES_ORNATUS: BatSpecies = BatSpecies {
+    id: "scotomanes_ornatus",
+    name: "Harlequin Bat",
+    scientific_name: "Scotomanes ornatus",
+    family: "Vespertilionidae",
+    call_type: "FM-QCF",
+    freq_lo_hz: 18_000.0,
+    freq_hi_hz: 62_000.0,
+    description: "FM-QCF ~43\u{2013}62 kHz start, ~18\u{2013}23 kHz end, peak ~29\u{2013}35 kHz. Large, strikingly patterned bat (black, white, chestnut). Southern and central China. Forested hillsides; rarely encountered.",
+    echolocates: true,
+};
+
+pub const OTONYCTERIS_HEMPRICHII: BatSpecies = BatSpecies {
+    id: "otonycteris_hemprichii",
+    name: "Desert Long-eared Bat",
+    scientific_name: "Otonycteris hemprichii",
+    family: "Vespertilionidae",
+    call_type: "FM",
+    freq_lo_hz: 18_000.0,
+    freq_hi_hz: 55_000.0,
+    description: "Very low-intensity broadband FM ~18\u{2013}55 kHz, peak ~30 kHz; almost undetectable on bat detectors. Specialist scorpion predator using passive listening. Enormous ears (38\u{2013}45 mm). Sahara through Arabia to Central Asia.",
+    echolocates: true,
+};
+
+pub const PLECOTUS_CHRISTII: BatSpecies = BatSpecies {
+    id: "plecotus_christii",
+    name: "Christie's Long-eared Bat",
+    scientific_name: "Plecotus christii",
+    family: "Vespertilionidae",
+    call_type: "FM",
+    freq_lo_hz: 22_000.0,
+    freq_hi_hz: 60_000.0,
+    description: "Very quiet broadband FM, similar to other Plecotus. Gleaning specialist replacing P. auritus in arid Middle Eastern and North African habitats. Ruins and rock crevices in desert environments.",
+    echolocates: true,
+};
+
+pub const MYOTIS_BLYTHII: BatSpecies = BatSpecies {
+    id: "myotis_blythii",
+    name: "Lesser Mouse-eared Bat",
+    scientific_name: "Myotis blythii",
+    family: "Vespertilionidae",
+    call_type: "FM",
+    freq_lo_hz: 25_000.0,
+    freq_hi_hz: 85_000.0,
+    description: "FM ~25\u{2013}85 kHz, very similar to M. myotis but smaller with slightly higher peak frequency. Widespread from Europe through Turkey, the Levant, Iran, and Central Asia. Key cave bat of the Middle East.",
+    echolocates: true,
+};
+
+pub const MYOTIS_EMARGINATUS: BatSpecies = BatSpecies {
+    id: "myotis_emarginatus",
+    name: "Geoffroy's Bat",
+    scientific_name: "Myotis emarginatus",
+    family: "Vespertilionidae",
+    call_type: "FM",
+    freq_lo_hz: 35_000.0,
+    freq_hi_hz: 115_000.0,
+    description: "Broadband FM sweep >100\u{2013}35 kHz. Distinctive notched ear margin. Gleaner specialist. Europe across Turkey, the Levant, Iran, and into Central Asia. Cave-roosting.",
+    echolocates: true,
+};
+
+pub const EPTESICUS_BOTTAE: BatSpecies = BatSpecies {
+    id: "eptesicus_bottae",
+    name: "Botta's Serotine",
+    scientific_name: "Eptesicus bottae",
+    family: "Vespertilionidae",
+    call_type: "FM-QCF",
+    freq_lo_hz: 25_000.0,
+    freq_hi_hz: 50_000.0,
+    description: "FM-QCF, peak ~30\u{2013}35 kHz. Arid Middle Eastern and Central Asian habitats. Arabian Peninsula through Iran and Afghanistan. Rocky desert; buildings and rock crevices.",
+    echolocates: true,
+};
+
+pub const EPTESICUS_ISABELLINUS: BatSpecies = BatSpecies {
+    id: "eptesicus_isabellinus",
+    name: "Isabelline Serotine",
+    scientific_name: "Eptesicus isabellinus",
+    family: "Vespertilionidae",
+    call_type: "FM-QCF",
+    freq_lo_hz: 22_000.0,
+    freq_hi_hz: 45_000.0,
+    description: "FM-QCF, peak ~28\u{2013}32 kHz. Pale sandy serotine of arid North Africa and the Middle East; recently separated from E. serotinus by molecular work. Open landscapes and towns.",
+    echolocates: true,
+};
+
+pub const PIPISTRELLUS_DESERTI: BatSpecies = BatSpecies {
+    id: "pipistrellus_deserti",
+    name: "Desert Pipistrelle",
+    scientific_name: "Pipistrellus deserti",
+    family: "Vespertilionidae",
+    call_type: "FM-QCF",
+    freq_lo_hz: 38_000.0,
+    freq_hi_hz: 55_000.0,
+    description: "FM-QCF, peak ~44\u{2013}48 kHz. Small pale pipistrelle of Saharan and Arabian desert margins. Separated from P. kuhlii by slightly higher frequency. Egypt, Israel, Jordan, Saudi Arabia, Yemen.",
+    echolocates: true,
+};
+
+// ── Pteropodidae ──
+
+pub const ROUSETTUS_AMPLEXICAUDATUS: BatSpecies = BatSpecies {
+    id: "rousettus_amplexicaudatus",
+    name: "Geoffroy's Rousette",
+    scientific_name: "Rousettus amplexicaudatus",
+    family: "Pteropodidae",
+    call_type: "clicks",
+    freq_lo_hz: 10_000.0,
+    freq_hi_hz: 70_000.0,
+    description: "Tongue-click echolocation for cave navigation. Enormous cave colonies (millions). Widespread across SE Asia. Important seed disperser.",
+    echolocates: true,
+};
+
+pub const ROUSETTUS_LESCHENAULTII: BatSpecies = BatSpecies {
+    id: "rousettus_leschenaultii",
+    name: "Leschenault's Rousette",
+    scientific_name: "Rousettus leschenaultii",
+    family: "Pteropodidae",
+    call_type: "clicks",
+    freq_lo_hz: 18_000.0,
+    freq_hi_hz: 32_000.0,
+    description: "Tongue-click echolocation ~18\u{2013}32 kHz. The only South Asian pteropodid with confirmed echolocation. Cave-roosting across India, Sri Lanka, and southern China. Large colonies.",
+    echolocates: true,
+};
+
+pub const CYNOPTERUS_SPHINX: BatSpecies = BatSpecies {
+    id: "cynopterus_sphinx",
+    name: "Greater Short-nosed Fruit Bat",
+    scientific_name: "Cynopterus sphinx",
+    family: "Pteropodidae",
+    call_type: "none",
+    freq_lo_hz: 0.0,
+    freq_hi_hz: 0.0,
+    description: "No echolocation; navigates by vision and smell. Tent-roosting in modified palm and screwpine leaves. Important pollinator and seed disperser across South and SE Asia.",
+    echolocates: false,
+};
+
+pub const EONYCTERIS_SPELAEA: BatSpecies = BatSpecies {
+    id: "eonycteris_spelaea",
+    name: "Cave Nectar Bat",
+    scientific_name: "Eonycteris spelaea",
+    family: "Pteropodidae",
+    call_type: "none",
+    freq_lo_hz: 0.0,
+    freq_hi_hz: 0.0,
+    description: "No echolocation. Key pollinator of durian, banana, and petai in SE Asia. Cave-roosting; large colonies. Long tongue for probing flowers. India to the Philippines.",
+    echolocates: false,
+};
+
+pub const PTEROPUS_GIGANTEUS: BatSpecies = BatSpecies {
+    id: "pteropus_giganteus",
+    name: "Indian Flying Fox",
+    scientific_name: "Pteropus giganteus",
+    family: "Pteropodidae",
+    call_type: "none",
+    freq_lo_hz: 0.0,
+    freq_hi_hz: 0.0,
+    description: "No echolocation. Largest bat in South Asia (wingspan up to 1.5 m). Large noisy roost camps in tall trees. Pakistan, India, Nepal, Bangladesh, Sri Lanka. Important pollinator and seed disperser.",
+    echolocates: false,
+};

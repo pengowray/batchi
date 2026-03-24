@@ -2441,6 +2441,216 @@ const AFRICA_BOOK: &[BookEntryDef] = &[
     },
 ];
 
+// ══════════════════════════════════════════════════════════════════════════════
+// Southeast Asia — species-level entries
+// ══════════════════════════════════════════════════════════════════════════════
+
+const SOUTHEAST_ASIA_BOOK: &[BookEntryDef] = &[
+    // ── Rhinolophidae ──
+    BookEntryDef { species: &species::RHINOLOPHUS_AFFINIS, commonness: None, description: None, name: None },
+    BookEntryDef { species: &species::RHINOLOPHUS_LUCTUS, commonness: None, description: None, name: None },
+    BookEntryDef { species: &species::RHINOLOPHUS_PUSILLUS, commonness: None, description: None, name: None },
+    BookEntryDef { species: &species::RHINOLOPHUS_MALAYANUS, commonness: None, description: None, name: None },
+    BookEntryDef { species: &species::RHINOLOPHUS_BORNEENSIS, commonness: None, description: None, name: None },
+    BookEntryDef { species: &species::RHINOLOPHUS_TRIFOLIATUS, commonness: None, description: None, name: None },
+    BookEntryDef { species: &species::RHINOLOPHUS_ACUMINATUS, commonness: None, description: None, name: None },
+    BookEntryDef { species: &species::RHINOLOPHUS_PEARSONII, commonness: None, description: None, name: None },
+    // ── Hipposideridae ──
+    BookEntryDef { species: &species::HIPPOSIDEROS_ARMIGER, commonness: None, description: None, name: None },
+    BookEntryDef { species: &species::HIPPOSIDEROS_LARVATUS, commonness: None, description: None, name: None },
+    BookEntryDef { species: &species::HIPPOSIDEROS_BICOLOR, commonness: None, description: None, name: None },
+    BookEntryDef { species: &species::HIPPOSIDEROS_GALERITUS, commonness: None, description: None, name: None },
+    BookEntryDef { species: &species::HIPPOSIDEROS_DIADEMA, commonness: None, description: None, name: None },
+    BookEntryDef { species: &species::HIPPOSIDEROS_POMONA, commonness: None, description: None, name: None },
+    BookEntryDef { species: &species::COELOPS_FRITHII, commonness: None, description: None, name: None },
+    // ── Megadermatidae ──
+    BookEntryDef { species: &species::MEGADERMA_LYRA, commonness: None, description: None, name: None },
+    BookEntryDef { species: &species::MEGADERMA_SPASMA, commonness: None, description: None, name: None },
+    // ── Emballonuridae ──
+    BookEntryDef { species: &species::TAPHOZOUS_LONGIMANUS, commonness: None, description: None, name: None },
+    BookEntryDef { species: &species::TAPHOZOUS_THEOBALDI, commonness: None, description: None, name: None },
+    BookEntryDef { species: &species::EMBALLONURA_MONTICOLA, commonness: None, description: None, name: None },
+    // ── Molossidae ──
+    BookEntryDef { species: &species::CHAEREPHON_PLICATUS, commonness: None, description: None, name: None },
+    BookEntryDef { species: &species::OTOMOPS_FORMOSUS, commonness: None, description: None, name: None },
+    BookEntryDef { species: &species::MOPS_MOPS, commonness: None, description: None, name: None },
+    // ── Vespertilionidae ──
+    BookEntryDef { species: &species::MYOTIS_HORSFIELDII, commonness: None, description: None, name: None },
+    BookEntryDef { species: &species::MYOTIS_MURICOLA, commonness: None, description: None, name: None },
+    BookEntryDef { species: &species::MYOTIS_HASSELTII, commonness: None, description: None, name: None },
+    BookEntryDef { species: &species::KERIVOULA_HARDWICKII, commonness: None, description: None, name: None },
+    BookEntryDef { species: &species::KERIVOULA_PELLUCIDA, commonness: None, description: None, name: None },
+    BookEntryDef { species: &species::MURINA_CYCLOTIS, commonness: None, description: None, name: None },
+    BookEntryDef { species: &species::TYLONYCTERIS_PACHYPUS, commonness: None, description: None, name: None },
+    BookEntryDef { species: &species::TYLONYCTERIS_ROBUSTULA, commonness: None, description: None, name: None },
+    BookEntryDef { species: &species::SCOTOPHILUS_KUHLII, commonness: None, description: None, name: None },
+    BookEntryDef { species: &species::PIPISTRELLUS_JAVANICUS, commonness: None, description: None, name: None },
+    BookEntryDef { species: &species::HESPEROPTENUS_BLANFORDI, commonness: None, description: None, name: None },
+    BookEntryDef { species: &species::IA_IO, commonness: None, description: None, name: None },
+    // ── Miniopteridae ──
+    BookEntryDef { species: &species::MINIOPTERUS_MAGNATER, commonness: None, description: None, name: None },
+    BookEntryDef { species: &species::MINIOPTERUS_PUSILLUS, commonness: None, description: None, name: None },
+    // ── Pteropodidae (non-echolocating except Rousettus) ──
+    BookEntryDef { species: &species::ROUSETTUS_AMPLEXICAUDATUS, commonness: None, description: None, name: None },
+    BookEntryDef { species: &species::CYNOPTERUS_SPHINX, commonness: None, description: None, name: None },
+    BookEntryDef { species: &species::EONYCTERIS_SPELAEA, commonness: None, description: None, name: None },
+];
+
+// ══════════════════════════════════════════════════════════════════════════════
+// South Asia — species-level entries
+// ══════════════════════════════════════════════════════════════════════════════
+
+const SOUTH_ASIA_BOOK: &[BookEntryDef] = &[
+    // ── Rhinolophidae ──
+    BookEntryDef { species: &species::RHINOLOPHUS_ROUXII, commonness: None, description: None, name: None },
+    BookEntryDef { species: &species::RHINOLOPHUS_INDOROUXII, commonness: None, description: None, name: None },
+    BookEntryDef { species: &species::RHINOLOPHUS_LEPIDUS, commonness: None, description: None, name: None },
+    BookEntryDef { species: &species::RHINOLOPHUS_BEDDOMEI, commonness: None, description: None, name: None },
+    BookEntryDef { species: &species::RHINOLOPHUS_AFFINIS, commonness: None, description: Some("NE India, Nepal, Bhutan. CF ~69\u{2013}84 kHz (varies). Often sympatric with R. rouxii."), name: None },
+    BookEntryDef { species: &species::RHINOLOPHUS_LUCTUS, commonness: None, description: Some("Forested hills of northern and NE India, Nepal, Bhutan. CF ~32\u{2013}43 kHz. Cave-roosting."), name: None },
+    BookEntryDef { species: &species::RHINOLOPHUS_FERRUMEQUINUM, commonness: None, description: Some("Northern India, Nepal, Pakistan, Bhutan. CF ~70\u{2013}83 kHz. Caves and mines; hunts large insects over open ground."), name: None },
+    BookEntryDef { species: &species::RHINOLOPHUS_HIPPOSIDEROS, commonness: None, description: Some("Pakistan, northern India, Nepal. CF ~108\u{2013}112 kHz. Eastern edge of range. Caves and buildings near dense vegetation."), name: None },
+    // ── Hipposideridae ──
+    BookEntryDef { species: &species::HIPPOSIDEROS_SPEORIS, commonness: None, description: None, name: None },
+    BookEntryDef { species: &species::HIPPOSIDEROS_BICOLOR, commonness: None, description: Some("CF ~147\u{2013}161 kHz in South Asia. Peninsular India and Sri Lanka. Caves and rock shelters in forests."), name: None },
+    BookEntryDef { species: &species::HIPPOSIDEROS_POMONA, commonness: None, description: Some("CF ~145\u{2013}157 kHz. Western Ghats and NE India. Small bat in caves and rock crevices."), name: None },
+    BookEntryDef { species: &species::HIPPOSIDEROS_LANKADIVA, commonness: None, description: None, name: None },
+    BookEntryDef { species: &species::HIPPOSIDEROS_DURGADASI, commonness: None, description: None, name: None },
+    // ── Megadermatidae ──
+    BookEntryDef { species: &species::MEGADERMA_LYRA, commonness: None, description: None, name: None },
+    BookEntryDef { species: &species::MEGADERMA_SPASMA, commonness: None, description: Some("NE India, Bangladesh, Sri Lanka. Low-intensity FM. Moist lowland forests. Caves, hollow trees."), name: None },
+    // ── Rhinopomatidae ──
+    BookEntryDef { species: &species::RHINOPOMA_HARDWICKII, commonness: None, description: Some("Widespread in Pakistan and NW/central India. QCF ~30\u{2013}35 kHz. Arid and semi-arid zones; ruins and rock crevices."), name: None },
+    // ── Emballonuridae ──
+    BookEntryDef { species: &species::TAPHOZOUS_MELANOPOGON, commonness: None, description: Some("FM ~28\u{2013}35 kHz. Very widespread; often the most abundant bat at study sites in Sri Lanka. Rock walls, cliffs, cave ceilings."), name: None },
+    BookEntryDef { species: &species::TAPHOZOUS_LONGIMANUS, commonness: None, description: Some("Common across peninsular India and Sri Lanka. FM-QCF ~28\u{2013}35 kHz. Exposed surfaces of buildings and rock faces."), name: None },
+    BookEntryDef { species: &species::TAPHOZOUS_PERFORATUS, commonness: None, description: Some("Pakistan and NW India arid zones. FM ~25\u{2013}35 kHz. Ruins, rock crevices, old temples."), name: None },
+    // ── Molossidae ──
+    BookEntryDef { species: &species::CHAEREPHON_PLICATUS, commonness: None, description: Some("QCF ~25\u{2013}30 kHz. Large cave colonies across South Asia. Fast high-altitude forager."), name: None },
+    BookEntryDef { species: &species::TADARIDA_AEGYPTIACA, commonness: None, description: Some("Pakistan through India and Sri Lanka. QCF ~18\u{2013}23 kHz. High-flying open-air forager in arid and urban habitats."), name: None },
+    BookEntryDef { species: &species::OTOMOPS_WROUGHTONI, commonness: None, description: None, name: None },
+    // ── Vespertilionidae ──
+    BookEntryDef { species: &species::SCOTOPHILUS_HEATHII, commonness: None, description: None, name: None },
+    BookEntryDef { species: &species::SCOTOPHILUS_KUHLII, commonness: None, description: Some("FM-QCF ~44\u{2013}50 kHz. Common across South Asia. Smaller than S. heathii. Urban areas."), name: None },
+    BookEntryDef { species: &species::PIPISTRELLUS_CEYLONICUS, commonness: None, description: None, name: None },
+    BookEntryDef { species: &species::PIPISTRELLUS_COROMANDRA, commonness: None, description: None, name: None },
+    BookEntryDef { species: &species::MYOTIS_HORSFIELDII, commonness: None, description: Some("Western Ghats and Sri Lanka. FM ~100\u{2013}35 kHz. Trawls for invertebrates near water."), name: None },
+    BookEntryDef { species: &species::MYOTIS_MONTIVAGUS, commonness: None, description: None, name: None },
+    BookEntryDef { species: &species::IA_IO, commonness: None, description: Some("NE India (Meghalaya). FM-QCF ~24\u{2013}30 kHz. Among the world\u{2019}s largest insectivorous bats. Hill forest caves."), name: None },
+    BookEntryDef { species: &species::KERIVOULA_PICTA, commonness: None, description: None, name: None },
+    BookEntryDef { species: &species::MURINA_CYCLOTIS, commonness: None, description: None, name: None },
+    // ── Miniopteridae ──
+    BookEntryDef { species: &species::MINIOPTERUS_MAGNATER, commonness: None, description: Some("FM ~44\u{2013}55 kHz. Largest Miniopterus in South Asia. Previously misidentified as M. schreibersii. Large cave colonies across India and Sri Lanka."), name: None },
+    // ── Pteropodidae ──
+    BookEntryDef { species: &species::ROUSETTUS_LESCHENAULTII, commonness: None, description: None, name: None },
+    BookEntryDef { species: &species::CYNOPTERUS_SPHINX, commonness: None, description: None, name: None },
+    BookEntryDef { species: &species::PTEROPUS_GIGANTEUS, commonness: None, description: None, name: None },
+];
+
+// ══════════════════════════════════════════════════════════════════════════════
+// East Asia — species-level entries (China, Korea, Taiwan, Mongolia)
+// ══════════════════════════════════════════════════════════════════════════════
+
+const EAST_ASIA_BOOK: &[BookEntryDef] = &[
+    // ── Rhinolophidae ──
+    BookEntryDef { species: &species::RHINOLOPHUS_FERRUMEQUINUM, commonness: None, description: Some("Very common across China and Korea. CF ~67\u{2013}84 kHz (varies by population). Caves and mines."), name: None },
+    BookEntryDef { species: &species::RHINOLOPHUS_AFFINIS, commonness: None, description: Some("South and central China. CF varies by subspecies: ~87 kHz (Yunnan) to ~74 kHz (eastern China). Reservoir host of SARS-like coronaviruses."), name: None },
+    BookEntryDef { species: &species::RHINOLOPHUS_SINICUS, commonness: None, description: None, name: None },
+    BookEntryDef { species: &species::RHINOLOPHUS_PUSILLUS, commonness: None, description: Some("Southern China and Taiwan. CF ~103\u{2013}108 kHz. Caves and rock crevices."), name: None },
+    BookEntryDef { species: &species::RHINOLOPHUS_PEARSONII, commonness: None, description: Some("South and central China. CF ~58\u{2013}70 kHz (higher in eastern China). Hilly and montane forest."), name: None },
+    BookEntryDef { species: &species::RHINOLOPHUS_LUCTUS, commonness: None, description: Some("South China (Yunnan, Guangxi, Sichuan). CF ~30\u{2013}35 kHz. Primary forest. Solitary roosts in caves and tree hollows."), name: None },
+    BookEntryDef { species: &species::RHINOLOPHUS_MACROTIS, commonness: None, description: None, name: None },
+    BookEntryDef { species: &species::RHINOLOPHUS_MONOCEROS, commonness: None, description: None, name: None },
+    // ── Hipposideridae ──
+    BookEntryDef { species: &species::HIPPOSIDEROS_ARMIGER, commonness: None, description: Some("South and central China and Taiwan. CF ~65\u{2013}75 kHz. Performs Doppler-shift compensation. Large cave colonies."), name: None },
+    BookEntryDef { species: &species::HIPPOSIDEROS_PRATTI, commonness: None, description: None, name: None },
+    BookEntryDef { species: &species::HIPPOSIDEROS_LARVATUS, commonness: None, description: Some("Southern China. CF ~83\u{2013}98 kHz (cryptic species complex, two phonic types). Caves."), name: None },
+    BookEntryDef { species: &species::ASELLISCUS_STOLICZKANUS, commonness: None, description: None, name: None },
+    // ── Megadermatidae ──
+    BookEntryDef { species: &species::MEGADERMA_LYRA, commonness: None, description: Some("South China (Yunnan, Guangxi, Guangdong, Hainan). Carnivorous gleaner; locates prey by passive listening."), name: None },
+    // ── Emballonuridae ──
+    BookEntryDef { species: &species::TAPHOZOUS_MELANOPOGON, commonness: None, description: Some("SW China (Guangxi, Yunnan, Hainan). FM ~25\u{2013}40 kHz. Rock walls and cave ceilings."), name: None },
+    // ── Molossidae ──
+    BookEntryDef { species: &species::TADARIDA_INSIGNIS, commonness: None, description: Some("China (Hebei, Beijing, Heilongjiang), Korea, Russia. FM-QCF ~18\u{2013}25 kHz. Fast high-altitude forager."), name: None },
+    BookEntryDef { species: &species::CHAEREPHON_PLICATUS, commonness: None, description: Some("Southern China (Yunnan, Guangxi, Guangdong). QCF ~25\u{2013}30 kHz. Enormous cave colonies."), name: None },
+    // ── Miniopteridae ──
+    BookEntryDef { species: &species::MINIOPTERUS_FULIGINOSUS, commonness: None, description: Some("Widespread in China, Korea, Taiwan. FM ~44\u{2013}50 kHz. Fast agile flier. Cave-roosting."), name: None },
+    // ── Vespertilionidae ──
+    BookEntryDef { species: &species::MYOTIS_PILOSUS, commonness: None, description: None, name: None },
+    BookEntryDef { species: &species::MYOTIS_CHINENSIS, commonness: None, description: None, name: None },
+    BookEntryDef { species: &species::MYOTIS_DAVIDII, commonness: None, description: None, name: None },
+    BookEntryDef { species: &species::MYOTIS_FORMOSUS, commonness: None, description: Some("Widespread across China, Taiwan, and Korea. FM ~35\u{2013}95 kHz. Distinctive orange-brown coloring. Forest insectivore."), name: None },
+    BookEntryDef { species: &species::MYOTIS_FRATER, commonness: None, description: Some("China and Korea. FM ~110\u{2013}50 kHz. Edge-space forager near cliffs and caves."), name: None },
+    BookEntryDef { species: &species::MYOTIS_IKONNIKOVI, commonness: None, description: Some("China, Korea, Russia. FM peak ~50 kHz. Small forest bat."), name: None },
+    BookEntryDef { species: &species::MYOTIS_MACRODACTYLUS, commonness: None, description: Some("China and Korea. FM ~90\u{2013}40 kHz. Trawling insectivore over water."), name: None },
+    BookEntryDef { species: &species::PIPISTRELLUS_ABRAMUS, commonness: None, description: Some("Extremely common across China, Korea, Taiwan. FM-QCF ~52 kHz peak. Most common urban bat in East Asia."), name: None },
+    BookEntryDef { species: &species::HYPSUGO_ALASCHANICUS, commonness: None, description: None, name: None },
+    BookEntryDef { species: &species::NYCTALUS_PLANCYI, commonness: None, description: None, name: None },
+    BookEntryDef { species: &species::NYCTALUS_AVIATOR, commonness: None, description: Some("China and Korea. FM-QCF ~21 kHz peak. Forages up to 300 m altitude. Occasionally preys on migrating birds."), name: None },
+    BookEntryDef { species: &species::VESPERTILIO_SINENSIS, commonness: None, description: Some("Widespread across China, Korea, Russia. FM-QCF ~24 kHz peak. Migratory. Tree hollows and buildings."), name: None },
+    BookEntryDef { species: &species::EPTESICUS_SEROTINUS, commonness: None, description: Some("China and Korea. FM-QCF ~29\u{2013}32 kHz peak. Open habitats and urban areas."), name: None },
+    BookEntryDef { species: &species::EPTESICUS_NILSSONII_JP, commonness: None, description: Some("Mongolia, northern China, Korea. FM-QCF ~30\u{2013}32 kHz. The world\u{2019}s most northerly bat."), name: Some("Northern Bat") },
+    BookEntryDef { species: &species::VESPERTILIO_MURINUS, commonness: None, description: Some("Mongolia and northern China. FM-QCF alternating calls ~26 kHz peak. Open steppe habitats."), name: None },
+    BookEntryDef { species: &species::BARBASTELLA_LEUCOMELAS, commonness: None, description: Some("China, Korea, Mongolia. Alternating FM: type A ~32\u{2013}37 kHz, type B ~38\u{2013}45 kHz. Forest-dwelling."), name: None },
+    BookEntryDef { species: &species::MURINA_LEUCOGASTER, commonness: None, description: None, name: None },
+    BookEntryDef { species: &species::MURINA_HILGENDORFI, commonness: None, description: Some("China and Korea. Ultra-broadband FM ~165\u{2192}45 kHz. Forest gleaner."), name: None },
+    BookEntryDef { species: &species::IA_IO, commonness: None, description: None, name: None },
+    BookEntryDef { species: &species::SCOTOMANES_ORNATUS, commonness: None, description: None, name: None },
+    BookEntryDef { species: &species::SCOTOPHILUS_KUHLII, commonness: None, description: Some("Southern China and Taiwan. QCF ~44\u{2013}47 kHz. Open-country forager; buildings and palms."), name: None },
+    // ── Pteropodidae ──
+    BookEntryDef { species: &species::ROUSETTUS_LESCHENAULTII, commonness: None, description: Some("South and central China, Taiwan. Tongue-click echolocation. Cave-roosting fruit bat."), name: None },
+    BookEntryDef { species: &species::CYNOPTERUS_SPHINX, commonness: None, description: Some("Southern China and Taiwan. Tent-roosting fruit bat. Important pollinator."), name: None },
+];
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Middle East — species-level entries (incl. Central Asia)
+// ══════════════════════════════════════════════════════════════════════════════
+
+const MIDDLE_EAST_BOOK: &[BookEntryDef] = &[
+    // ── Rhinolophidae ──
+    BookEntryDef { species: &species::RHINOLOPHUS_FERRUMEQUINUM, commonness: None, description: Some("Very common across Turkey, Levant, Iran, Central Asia. CF ~78\u{2013}84 kHz. Caves and mines."), name: None },
+    BookEntryDef { species: &species::RHINOLOPHUS_HIPPOSIDEROS, commonness: None, description: Some("Turkey through Iran. CF ~105\u{2013}115 kHz. Caves and buildings near dense vegetation."), name: None },
+    BookEntryDef { species: &species::RHINOLOPHUS_EURYALE, commonness: None, description: Some("Turkey, Levant, Iran. CF ~100\u{2013}108 kHz. Cave-roosting."), name: None },
+    BookEntryDef { species: &species::RHINOLOPHUS_BLASII, commonness: None, description: Some("Middle East caves. CF ~86 kHz. Often sympatric with R. euryale and R. mehelyi."), name: None },
+    BookEntryDef { species: &species::RHINOLOPHUS_MEHELYI, commonness: None, description: None, name: None },
+    // ── Hipposideridae ──
+    BookEntryDef { species: &species::ASELLIA_TRIDENS, commonness: None, description: None, name: None },
+    // ── Rhinopomatidae ──
+    BookEntryDef { species: &species::RHINOPOMA_MICROPHYLLUM, commonness: None, description: None, name: None },
+    BookEntryDef { species: &species::RHINOPOMA_HARDWICKII, commonness: None, description: None, name: None },
+    BookEntryDef { species: &species::RHINOPOMA_CYSTOPS, commonness: None, description: None, name: None },
+    // ── Emballonuridae ──
+    BookEntryDef { species: &species::TAPHOZOUS_NUDIVENTRIS, commonness: None, description: None, name: None },
+    BookEntryDef { species: &species::TAPHOZOUS_PERFORATUS, commonness: None, description: Some("Egypt, Levant, Arabia. QCF ~25\u{2013}28 kHz. Arid regions; tombs, ruins, and rock faces."), name: None },
+    // ── Molossidae ──
+    BookEntryDef { species: &species::TADARIDA_TENIOTIS, commonness: None, description: Some("Turkey, Israel, Arabia. QCF ~10\u{2013}14 kHz, partially audible to humans. Cliff and building crevices."), name: None },
+    BookEntryDef { species: &species::TADARIDA_AEGYPTIACA, commonness: None, description: Some("Widespread across entire region. QCF ~18\u{2013}23 kHz. High-flying open-air forager."), name: None },
+    // ── Miniopteridae ──
+    BookEntryDef { species: &species::MINIOPTERUS_SCHREIBERSII, commonness: None, description: Some("Turkey, Levant, Iran. FM ~47\u{2013}57 kHz. Large cave colonies."), name: None },
+    BookEntryDef { species: &species::MINIOPTERUS_PALLIDUS, commonness: None, description: None, name: None },
+    // ── Vespertilionidae ──
+    BookEntryDef { species: &species::OTONYCTERIS_HEMPRICHII, commonness: None, description: None, name: None },
+    BookEntryDef { species: &species::PLECOTUS_CHRISTII, commonness: None, description: None, name: None },
+    BookEntryDef { species: &species::MYOTIS_MYOTIS, commonness: None, description: Some("Turkey, Iran, Levant caves. FM ~25\u{2013}80 kHz. Often in large cave colonies."), name: None },
+    BookEntryDef { species: &species::MYOTIS_BLYTHII, commonness: None, description: None, name: None },
+    BookEntryDef { species: &species::MYOTIS_EMARGINATUS, commonness: None, description: None, name: None },
+    BookEntryDef { species: &species::PIPISTRELLUS_KUHLII, commonness: None, description: Some("Dominant urban pipistrelle across the entire region. FM ~35\u{2013}45 kHz peak."), name: None },
+    BookEntryDef { species: &species::PIPISTRELLUS_PIPISTRELLUS, commonness: None, description: Some("Turkey, Caucasus, northern Levant. FM ~42\u{2013}51 kHz peak."), name: None },
+    BookEntryDef { species: &species::PIPISTRELLUS_DESERTI, commonness: None, description: None, name: None },
+    BookEntryDef { species: &species::PIPISTRELLUS_RUEPPELLII, commonness: None, description: Some("Arid zones and waterways across the region. FM-QCF ~40\u{2013}44 kHz peak."), name: None },
+    BookEntryDef { species: &species::HYPSUGO_SAVII, commonness: None, description: Some("Mediterranean Turkey, Levant, Iran. FM ~28\u{2013}42 kHz peak."), name: None },
+    BookEntryDef { species: &species::EPTESICUS_SEROTINUS, commonness: None, description: Some("Turkey, Iran, Caucasus. FM-QCF ~22\u{2013}55 kHz. Open habitats."), name: None },
+    BookEntryDef { species: &species::EPTESICUS_BOTTAE, commonness: None, description: None, name: None },
+    BookEntryDef { species: &species::EPTESICUS_ISABELLINUS, commonness: None, description: None, name: None },
+    BookEntryDef { species: &species::NYCTALUS_NOCTULA, commonness: None, description: Some("Turkey, Iran, Central Asia. QCF ~18\u{2013}25 kHz. Fast high-altitude forager."), name: None },
+    BookEntryDef { species: &species::VESPERTILIO_MURINUS, commonness: None, description: Some("Central Asia (Kazakhstan, Uzbekistan, Kyrgyzstan). FM-QCF alternating ~26 kHz. Open steppe."), name: None },
+    BookEntryDef { species: &species::BARBASTELLA_LEUCOMELAS, commonness: None, description: Some("Turkey, Iran, Afghanistan, Central Asia. Alternating FM types. Forest-dwelling."), name: None },
+    // ── Nycteridae ──
+    BookEntryDef { species: &species::NYCTERIS_THEBAICA, commonness: None, description: Some("Sinai and Arabian margins. Very low intensity FM. Gleaner; almost undetectable on bat detectors."), name: None },
+    // ── Pteropodidae ──
+    BookEntryDef { species: &species::ROUSETTUS_AEGYPTIACUS, commonness: None, description: Some("Large cave colonies in Israel, Turkey, Egypt. Tongue-click echolocation. Key Middle Eastern cave bat."), name: None },
+];
+
 /// Get the bat book manifest for a given region.
 ///
 /// Non-echolocating species are always sorted to the end (stable sort preserves
@@ -2455,6 +2665,10 @@ pub fn get_manifest(region: BatBookRegion) -> BatBookManifest {
         BatBookRegion::NorthAmerica => NORTH_AMERICA_BOOK,
         BatBookRegion::SouthAmerica => SOUTH_AMERICA_BOOK,
         BatBookRegion::Africa => AFRICA_BOOK,
+        BatBookRegion::SoutheastAsia => SOUTHEAST_ASIA_BOOK,
+        BatBookRegion::SouthAsia => SOUTH_ASIA_BOOK,
+        BatBookRegion::EastAsia => EAST_ASIA_BOOK,
+        BatBookRegion::MiddleEast => MIDDLE_EAST_BOOK,
         _ => GLOBAL_BOOK,
     };
     let mut entries: Vec<_> = book.iter().map(|e| e.materialize()).collect();
