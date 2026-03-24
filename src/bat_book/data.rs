@@ -792,6 +792,247 @@ const COSTA_RICA_BOOK: &[BookEntryDef] = &[
     },
 ];
 
+// ══════════════════════════════════════════════════════════════════════════════
+// Japan — species-level entries sorted by commonness
+// ══════════════════════════════════════════════════════════════════════════════
+//
+// Sources:
+// - Fukui et al. (2004) Zool Sci: Acoustic ID of eight Hokkaido species
+// - Funakoshi & Uchida (1978): R. ferrumequinum nippon CF frequency
+// - Hiryu et al. (2006): R. pumilus geographic variation on Okinawa
+// - Fujioka et al. (2014): CNN bat species ID system for 30 Japanese species
+// - IUCN Red List; Ministry of the Environment (Japan) Red Data Book
+
+const JAPAN_BOOK: &[BookEntryDef] = &[
+    // ── Very Common ──────────────────────────────────────────────
+    BookEntryDef {
+        species: &species::PIPISTRELLUS_ABRAMUS,
+        commonness: Some(Commonness::VeryCommon),
+        description: Some("Japan's most common urban bat. FM sweeps ~80\u{2013}95 kHz to terminal ~40 kHz, peak ~52 kHz. Roosts in buildings, forages around streetlights. Found throughout the archipelago."),
+        name: None,
+    },
+
+    // ── Common ───────────────────────────────────────────────────
+    BookEntryDef {
+        species: &species::RHINOLOPHUS_FERRUMEQUINUM_NIPPON,
+        commonness: Some(Commonness::Common),
+        description: Some("CF-FM calls with diagnostic CF2 at ~65\u{2013}69 kHz. FM/CF/FM structure. Widespread from Hokkaido to Kyushu. Cave, mine, and tunnel roosts. Key species for Doppler-shift research."),
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::RHINOLOPHUS_CORNUTUS,
+        commonness: Some(Commonness::Common),
+        description: Some("CF-FM calls with peak CF ~103\u{2013}111 kHz, increasing from north to south (103\u{2013}104 kHz in Aomori, 108\u{2013}111 kHz on Amami-Oshima). Endemic to Japan. Caves and buildings."),
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::MINIOPTERUS_FULIGINOSUS,
+        commonness: Some(Commonness::Common),
+        description: Some("FM downward sweeps, terminal frequency ~44\u{2013}50 kHz. Shows geographic variation in peak frequency among colonies. Fast agile flier. Large cave maternity colonies. Honshu to Ryukyus."),
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::MYOTIS_MACRODACTYLUS,
+        commonness: Some(Commonness::Common),
+        description: Some("Steep FM sweeps ~90\u{2013}40 kHz, peak ~50 kHz. Trawling insectivore using large feet to gaff prey from water surfaces. Rivers and streams throughout Japan."),
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::VESPERTILIO_SINENSIS,
+        commonness: Some(Commonness::Common),
+        description: Some("FM-QCF calls, peak ~24 kHz, max ~46 kHz. Steep FM into shallow QCF tail. Migratory species with seasonal movements through the archipelago. Hokkaido to Kyushu."),
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::NYCTALUS_AVIATOR,
+        commonness: Some(Commonness::Common),
+        description: Some("FM-QCF calls, peak ~21 kHz, duration ~12 ms\u{2014}longest among Hokkaido bats. Japan's largest insectivorous bat. Forages up to 300 m altitude. Occasionally preys on migrating birds."),
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::PLECOTUS_SACRIMONTIS,
+        commonness: Some(Commonness::Common),
+        description: Some("Low-intensity FM calls, start ~46 kHz, peak ~41 kHz, end ~23 kHz. Gleaning forager specialising in fluttering moths via passive listening. Endemic to Japan. Forest-dwelling."),
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::MURINA_HILGENDORFI,
+        commonness: Some(Commonness::Common),
+        description: Some("Ultra-broadband FM sweeps ~145\u{2013}165 kHz down to ~45\u{2013}55 kHz. Forest gleaner. Hokkaido to Kyushu. Roosts in tree hollows and dead curled leaves."),
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::MURINA_USSURIENSIS,
+        commonness: Some(Commonness::Common),
+        description: Some("Ultra-broadband FM sweeps similar to M. hilgendorfi. Tiny bat (4\u{2013}8 g). Remarkably hibernates under snow. Roosts in curled dead leaves. Hokkaido and Honshu."),
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::MURINA_SILVATICA,
+        commonness: Some(Commonness::Common),
+        description: Some("Broadband FM calls typical of Murina. Distribution spans ~2000 km north\u{2013}south across Japan. Sometimes considered conspecific with M. ussuriensis. Curled-leaf roosts."),
+        name: None,
+    },
+
+    // ── Uncommon ─────────────────────────────────────────────────
+    BookEntryDef {
+        species: &species::RHINOLOPHUS_PUMILUS,
+        commonness: Some(Commonness::Uncommon),
+        description: Some("CF-FM calls with CF ~80\u{2013}90 kHz. Shows 5\u{2013}8 kHz dialect difference between northern and southern Okinawa populations, maintained by maternal transmission. Central and southern Ryukyus."),
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::RHINOLOPHUS_IMAIZUMII,
+        commonness: Some(Commonness::Uncommon),
+        description: Some("CF-FM calls at frequency intermediate between R. cornutus and R. pumilus (~94\u{2013}108 kHz). Temperate forests on Honshu and Shikoku. Taxonomic status debated."),
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::MINIOPTERUS_FUSCUS,
+        commonness: Some(Commonness::Uncommon),
+        description: Some("FM calls slightly higher frequency than M. fuliginosus due to smaller body size. Ryukyu Islands and southern Kyushu. Cave-roosting."),
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::MYOTIS_IKONNIKOVI,
+        commonness: Some(Commonness::Uncommon),
+        description: Some("Steep FM sweeps, peak ~50.6 kHz, start ~90 kHz, end ~43 kHz, duration ~2 ms. Small forest bat of Hokkaido and northern Honshu."),
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::MYOTIS_BOMBINUS,
+        commonness: Some(Commonness::Uncommon),
+        description: Some("Very broadband FM calls sweeping from ~150 kHz down to ~20 kHz. Gleaning insectivore, hawks near vegetation. Forests of Kyushu and other regions."),
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::MYOTIS_FRATER,
+        commonness: Some(Commonness::Uncommon),
+        description: Some("Brief FM pulses ~110\u{2013}50 kHz, duration ~3.5 ms. Edge-space forager near cliffs and caves. Honshu and Kyushu."),
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::EPTESICUS_NILSSONII_JP,
+        commonness: Some(Commonness::Uncommon),
+        description: Some("FM-QCF calls, peak ~30.5 kHz, duration ~6 ms, bandwidth ~32 kHz. Hokkaido and northern Honshu. The most northerly-ranging bat in the world."),
+        name: None,
+    },
+
+    // ── Rare ─────────────────────────────────────────────────────
+    BookEntryDef {
+        species: &species::RHINOLOPHUS_PERDITUS,
+        commonness: Some(Commonness::Rare),
+        description: Some("CF-FM calls, peak CF ~92\u{2013}98 kHz (92\u{2013}93 on Iriomote, 96\u{2013}98 on Ishigaki). Endemic to the Yaeyama Islands. Forest-dwelling, cave-roosting."),
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::HIPPOSIDEROS_TURPIS,
+        commonness: Some(Commonness::Rare),
+        description: Some("CF calls typical of hipposiderids, ~65\u{2013}80 kHz. Southern Ryukyu Islands (Ishigaki, Iriomote, Miyako). Limestone cave roosts. Feeds mainly on beetles."),
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::TAPHOZOUS_MELANOPOGON,
+        commonness: Some(Commonness::Rare),
+        description: Some("Low-intensity FM calls, dominant ~29\u{2013}33 kHz with four harmonics. Marginal occurrence in Japan (Ryukyu Islands). Roosts on rock walls and in caves."),
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::TADARIDA_INSIGNIS,
+        commonness: Some(Commonness::Rare),
+        description: Some("Low-frequency FM-QCF calls ~18\u{2013}25 kHz. Fast, high-flying open-air forager. Western Japan. Roosts in rock crevices and buildings."),
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::TADARIDA_LATOUCHEI,
+        commonness: Some(Commonness::Rare),
+        description: Some("Echolocation ~20 kHz. High-altitude flier, very difficult to capture. Known in Japan from a single specimen on Amami-Oshima (1985). IUCN Data Deficient."),
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::MYOTIS_PRUINOSUS,
+        commonness: Some(Commonness::Rare),
+        description: Some("FM sweeps typical of Myotis. Endemic to Japan (Honshu, Shikoku, Kyushu). Forest-dwelling, roosts in tree hollows and buildings. Named for frosted fur."),
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::MYOTIS_FORMOSUS,
+        commonness: Some(Commonness::Rare),
+        description: Some("Steep downward FM calls. Distinctive orange-brown coloring. Tsushima Island and western Japan. Forest-dwelling insectivore."),
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::MYOTIS_HOSONOI,
+        commonness: Some(Commonness::Rare),
+        description: Some("FM calls typical of Myotis. Endemic to Japan (Honshu). Cave-dwelling. Poorly studied species."),
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::MYOTIS_GRACILIS,
+        commonness: Some(Commonness::Rare),
+        description: Some("FM calls typical of small Myotis. Endemic to Japan (Honshu). Forest-dwelling. Limited published acoustic data."),
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::MYOTIS_OZENSIS,
+        commonness: Some(Commonness::Rare),
+        description: Some("FM calls typical of Myotis. Endemic to central Honshu mountains. Cave-dwelling. Very limited distribution."),
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::PIPISTRELLUS_ENDOI,
+        commonness: Some(Commonness::Rare),
+        description: Some("FM-QCF calls similar to P. abramus but slightly lower frequency. Endemic to Japan (Honshu). Temperate forests at 100\u{2013}1500 m. IUCN Near Threatened."),
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::EPTESICUS_JAPONENSIS,
+        commonness: Some(Commonness::Rare),
+        description: Some("FM-QCF calls similar to E. nilssonii. Endemic to Japan (Honshu, Shikoku, Kyushu). Forest-dwelling, roosts in tree hollows and buildings."),
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::BARBASTELLA_LEUCOMELAS,
+        commonness: Some(Commonness::Rare),
+        description: Some("FM calls in two alternating types: type A at 32\u{2013}37 kHz, type B at 38\u{2013}45 kHz. Very elusive. Rare in Japan (Honshu). Forest-dwelling."),
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::MURINA_RYUKYUANA,
+        commonness: Some(Commonness::Rare),
+        description: Some("Broadband FM calls typical of Murina. Endemic to the Ryukyu Islands. Recently described species from Okinawa. Forest-dwelling."),
+        name: None,
+    },
+
+    // ── Endangered ───────────────────────────────────────────────
+    BookEntryDef {
+        species: &species::MYOTIS_YANBARENSIS,
+        commonness: Some(Commonness::Endangered),
+        description: Some("FM calls above 40 kHz. Endemic to northern Okinawa (Yanbaru forest). Described in 1997. One of the rarest bats in Japan. Subtropical forest only."),
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::MURINA_TENEBROSA,
+        commonness: Some(Commonness::Endangered),
+        description: Some("FM calls presumed similar to other Murina. Known only from a single holotype on Tsushima Island (1962). Possibly extinct due to deforestation. Alliance for Zero Extinction species."),
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::PIPISTRELLUS_STURDEEI,
+        commonness: Some(Commonness::Endangered),
+        description: Some("Presumed FM-QCF calls. Known only from a specimen on the Bonin Islands (Ogasawara). Not seen since 1915\u{2014}possibly extinct."),
+        name: None,
+    },
+
+    // ── Non-echolocating ─────────────────────────────────────────
+    BookEntryDef {
+        species: &species::PTEROPUS_DASYMALLUS,
+        commonness: Some(Commonness::Endangered),
+        description: Some("Large fruit bat of the Ryukyu Islands (4 subspecies in Japan). Does not echolocate. Feeds on fruit, flowers, and leaves. Endangered due to habitat loss and hunting."),
+        name: None,
+    },
+];
+
 /// Get the bat book manifest for a given region.
 ///
 /// Non-echolocating species are always sorted to the end (stable sort preserves
@@ -801,6 +1042,7 @@ pub fn get_manifest(region: BatBookRegion) -> BatBookManifest {
         BatBookRegion::VicAustralia => VIC_AUSTRALIA_BOOK,
         BatBookRegion::Europe => EUROPE_BOOK,
         BatBookRegion::CostaRica => COSTA_RICA_BOOK,
+        BatBookRegion::Japan => JAPAN_BOOK,
         _ => GLOBAL_BOOK,
     };
     let mut entries: Vec<_> = book.iter().map(|e| e.materialize()).collect();

@@ -1634,3 +1634,474 @@ pub const NATALUS_MEXICANUS: BatSpecies = BatSpecies {
     description: "Among the highest frequency echolocating bats. Peak ~100\u{2013}130 kHz (2nd harmonic). Very low intensity; barely detectable beyond 50 cm. Cave-roosting.",
     echolocates: true,
 };
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Japan species
+// ══════════════════════════════════════════════════════════════════════════════
+//
+// Sources:
+// - Fukui et al. (2004) Zool Sci: Acoustic ID of eight Hokkaido species
+// - Funakoshi & Uchida (1978): R. ferrumequinum nippon CF frequency
+// - Hiryu et al. (2006): R. pumilus geographic variation on Okinawa
+// - Fujioka et al. (2014): CNN bat species ID system for 30 Japanese species
+// - IUCN Red List; Ministry of the Environment (Japan) Red Data Book
+
+// ── Pteropodidae ─────────────────────────────────────────────────────────────
+
+pub const PTEROPUS_DASYMALLUS: BatSpecies = BatSpecies {
+    id: "pteropus_dasymallus",
+    name: "Ryukyu Flying Fox",
+    scientific_name: "Pteropus dasymallus",
+    family: "Pteropodidae",
+    call_type: "none",
+    freq_lo_hz: 0.0,
+    freq_hi_hz: 0.0,
+    description: "Large fruit bat of the Ryukyu Islands (4 subspecies in Japan). Does not echolocate. Feeds on fruit, flowers, and leaves. Endangered due to habitat loss and hunting.",
+    echolocates: false,
+};
+
+// ── Rhinolophidae ────────────────────────────────────────────────────────────
+
+pub const RHINOLOPHUS_FERRUMEQUINUM_NIPPON: BatSpecies = BatSpecies {
+    id: "rhinolophus_ferrumequinum_nippon",
+    name: "Japanese Greater Horseshoe Bat",
+    scientific_name: "Rhinolophus ferrumequinum nippon",
+    family: "Rhinolophidae",
+    call_type: "CF-FM",
+    freq_lo_hz: 58_000.0,
+    freq_hi_hz: 72_000.0,
+    description: "CF-FM calls with CF2 at ~65\u{2013}69 kHz. FM/CF/FM structure. Widespread from Hokkaido to Kyushu. Roosts in caves, mines, and tunnels.",
+    echolocates: true,
+};
+
+pub const RHINOLOPHUS_CORNUTUS: BatSpecies = BatSpecies {
+    id: "rhinolophus_cornutus",
+    name: "Japanese Lesser Horseshoe Bat",
+    scientific_name: "Rhinolophus cornutus",
+    family: "Rhinolophidae",
+    call_type: "CF-FM",
+    freq_lo_hz: 100_000.0,
+    freq_hi_hz: 120_000.0,
+    description: "CF-FM calls with peak CF ~103\u{2013}111 kHz, increasing from north to south. Endemic to Japan (Honshu, Shikoku, Kyushu). Roosts in caves and buildings.",
+    echolocates: true,
+};
+
+pub const RHINOLOPHUS_PUMILUS: BatSpecies = BatSpecies {
+    id: "rhinolophus_pumilus",
+    name: "Okinawa Least Horseshoe Bat",
+    scientific_name: "Rhinolophus pumilus",
+    family: "Rhinolophidae",
+    call_type: "CF-FM",
+    freq_lo_hz: 80_000.0,
+    freq_hi_hz: 92_000.0,
+    description: "CF-FM calls with CF ~80\u{2013}90 kHz. Shows 5\u{2013}8 kHz dialect difference between northern and southern Okinawa populations. Endemic to the central and southern Ryukyus.",
+    echolocates: true,
+};
+
+pub const RHINOLOPHUS_PERDITUS: BatSpecies = BatSpecies {
+    id: "rhinolophus_perditus",
+    name: "Yaeyama Horseshoe Bat",
+    scientific_name: "Rhinolophus perditus",
+    family: "Rhinolophidae",
+    call_type: "CF-FM",
+    freq_lo_hz: 90_000.0,
+    freq_hi_hz: 100_000.0,
+    description: "CF-FM calls with peak CF ~92\u{2013}98 kHz (92\u{2013}93 on Iriomote, 96\u{2013}98 on Ishigaki). Endemic to the Yaeyama Islands. Forest-dwelling, cave-roosting.",
+    echolocates: true,
+};
+
+pub const RHINOLOPHUS_IMAIZUMII: BatSpecies = BatSpecies {
+    id: "rhinolophus_imaizumii",
+    name: "Imaizumi's Horseshoe Bat",
+    scientific_name: "Rhinolophus imaizumii",
+    family: "Rhinolophidae",
+    call_type: "CF-FM",
+    freq_lo_hz: 94_000.0,
+    freq_hi_hz: 108_000.0,
+    description: "CF-FM calls at frequency intermediate between R. cornutus and R. pumilus. Temperate forests on Honshu and Shikoku. Taxonomic status debated (sometimes synonymised with R. pusillus).",
+    echolocates: true,
+};
+
+// ── Hipposideridae ───────────────────────────────────────────────────────────
+
+pub const HIPPOSIDEROS_TURPIS: BatSpecies = BatSpecies {
+    id: "hipposideros_turpis",
+    name: "Temminck's Leaf-nosed Bat",
+    scientific_name: "Hipposideros turpis",
+    family: "Hipposideridae",
+    call_type: "CF",
+    freq_lo_hz: 65_000.0,
+    freq_hi_hz: 80_000.0,
+    description: "CF calls typical of hipposiderids. Southern Ryukyu Islands (Ishigaki, Iriomote, Miyako). Roosts in limestone caves. Feeds mainly on beetles.",
+    echolocates: true,
+};
+
+// ── Emballonuridae ───────────────────────────────────────────────────────────
+
+pub const TAPHOZOUS_MELANOPOGON: BatSpecies = BatSpecies {
+    id: "taphozous_melanopogon",
+    name: "Black-bearded Tomb Bat",
+    scientific_name: "Taphozous melanopogon",
+    family: "Emballonuridae",
+    call_type: "FM",
+    freq_lo_hz: 25_000.0,
+    freq_hi_hz: 40_000.0,
+    description: "Low-intensity FM calls, dominant frequency ~29\u{2013}33 kHz with four harmonics and most energy in the second. Ryukyu Islands. Roosts on rock walls and in caves.",
+    echolocates: true,
+};
+
+// ── Miniopteridae ────────────────────────────────────────────────────────────
+
+pub const MINIOPTERUS_FULIGINOSUS: BatSpecies = BatSpecies {
+    id: "miniopterus_fuliginosus",
+    name: "Eastern Bent-wing Bat",
+    scientific_name: "Miniopterus fuliginosus",
+    family: "Miniopteridae",
+    call_type: "FM",
+    freq_lo_hz: 44_000.0,
+    freq_hi_hz: 100_000.0,
+    description: "FM downward sweeps, terminal frequency ~44\u{2013}50 kHz. Fast agile flier. Cave-roosting, forms large maternity colonies. Widespread from Honshu to the Ryukyus.",
+    echolocates: true,
+};
+
+pub const MINIOPTERUS_FUSCUS: BatSpecies = BatSpecies {
+    id: "miniopterus_fuscus",
+    name: "Ryukyu Bent-wing Bat",
+    scientific_name: "Miniopterus fuscus",
+    family: "Miniopteridae",
+    call_type: "FM",
+    freq_lo_hz: 48_000.0,
+    freq_hi_hz: 105_000.0,
+    description: "FM calls slightly higher frequency than M. fuliginosus due to smaller body size. Ryukyu Islands and southern Kyushu. Cave-roosting.",
+    echolocates: true,
+};
+
+// ── Molossidae ───────────────────────────────────────────────────────────────
+
+pub const TADARIDA_INSIGNIS: BatSpecies = BatSpecies {
+    id: "tadarida_insignis",
+    name: "East Asian Free-tailed Bat",
+    scientific_name: "Tadarida insignis",
+    family: "Molossidae",
+    call_type: "FM-QCF",
+    freq_lo_hz: 15_000.0,
+    freq_hi_hz: 30_000.0,
+    description: "Low-frequency FM-QCF calls ~18\u{2013}25 kHz. Fast, high-flying open-air forager. Western Japan. Roosts in rock crevices and buildings.",
+    echolocates: true,
+};
+
+pub const TADARIDA_LATOUCHEI: BatSpecies = BatSpecies {
+    id: "tadarida_latouchei",
+    name: "La Touche's Free-tailed Bat",
+    scientific_name: "Tadarida latouchei",
+    family: "Molossidae",
+    call_type: "FM-QCF",
+    freq_lo_hz: 15_000.0,
+    freq_hi_hz: 25_000.0,
+    description: "Echolocation ~20 kHz. High-altitude flier, very difficult to capture. Known in Japan from a single specimen on Amami-Oshima (1985). IUCN Data Deficient.",
+    echolocates: true,
+};
+
+// ── Vespertilionidae: Myotis ─────────────────────────────────────────────────
+
+pub const MYOTIS_MACRODACTYLUS: BatSpecies = BatSpecies {
+    id: "myotis_macrodactylus",
+    name: "Large-footed Bat",
+    scientific_name: "Myotis macrodactylus",
+    family: "Vespertilionidae",
+    call_type: "FM",
+    freq_lo_hz: 40_000.0,
+    freq_hi_hz: 90_000.0,
+    description: "Steep FM sweeps ~90\u{2013}40 kHz, peak ~50 kHz. Trawling insectivore, hunts over water using large feet to gaff prey. Rivers and streams throughout Japan.",
+    echolocates: true,
+};
+
+pub const MYOTIS_IKONNIKOVI: BatSpecies = BatSpecies {
+    id: "myotis_ikonnikovi",
+    name: "Ikonnikov's Bat",
+    scientific_name: "Myotis ikonnikovi",
+    family: "Vespertilionidae",
+    call_type: "FM",
+    freq_lo_hz: 37_000.0,
+    freq_hi_hz: 120_000.0,
+    description: "Steep FM sweeps, peak ~50.6 kHz, start ~90 kHz, end ~43 kHz, duration ~2 ms. Small forest bat. Hokkaido and northern Honshu.",
+    echolocates: true,
+};
+
+pub const MYOTIS_BOMBINUS: BatSpecies = BatSpecies {
+    id: "myotis_bombinus",
+    name: "Far Eastern Natterer's Bat",
+    scientific_name: "Myotis bombinus",
+    family: "Vespertilionidae",
+    call_type: "FM",
+    freq_lo_hz: 20_000.0,
+    freq_hi_hz: 150_000.0,
+    description: "Very broadband FM calls sweeping from ~150 kHz down to ~20 kHz. Gleaning insectivore, hawks near vegetation. Forests of Kyushu and other regions.",
+    echolocates: true,
+};
+
+pub const MYOTIS_PRUINOSUS: BatSpecies = BatSpecies {
+    id: "myotis_pruinosus",
+    name: "Frosted Myotis",
+    scientific_name: "Myotis pruinosus",
+    family: "Vespertilionidae",
+    call_type: "FM",
+    freq_lo_hz: 35_000.0,
+    freq_hi_hz: 100_000.0,
+    description: "FM sweeps typical of Myotis. Endemic to Japan (Honshu, Shikoku, Kyushu). Forest-dwelling, roosts in tree hollows and buildings. Named for frosted fur.",
+    echolocates: true,
+};
+
+pub const MYOTIS_YANBARENSIS: BatSpecies = BatSpecies {
+    id: "myotis_yanbarensis",
+    name: "Yanbaru Whiskered Bat",
+    scientific_name: "Myotis yanbarensis",
+    family: "Vespertilionidae",
+    call_type: "FM",
+    freq_lo_hz: 40_000.0,
+    freq_hi_hz: 100_000.0,
+    description: "FM calls above 40 kHz. Endemic to northern Okinawa (Yanbaru forest). Described in 1997. One of the rarest bats in Japan.",
+    echolocates: true,
+};
+
+pub const MYOTIS_FRATER: BatSpecies = BatSpecies {
+    id: "myotis_frater",
+    name: "Fraternal Bat",
+    scientific_name: "Myotis frater",
+    family: "Vespertilionidae",
+    call_type: "FM",
+    freq_lo_hz: 50_000.0,
+    freq_hi_hz: 110_000.0,
+    description: "Brief FM pulses ~110\u{2013}50 kHz, duration ~3.5 ms. Edge-space forager. Honshu and Kyushu in forested areas near cliffs and caves.",
+    echolocates: true,
+};
+
+pub const MYOTIS_FORMOSUS: BatSpecies = BatSpecies {
+    id: "myotis_formosus",
+    name: "Hodgson's Bat",
+    scientific_name: "Myotis formosus",
+    family: "Vespertilionidae",
+    call_type: "FM",
+    freq_lo_hz: 35_000.0,
+    freq_hi_hz: 95_000.0,
+    description: "Steep downward FM calls. Distinctive orange-brown coloring. Tsushima Island and western Japan. Forest-dwelling insectivore.",
+    echolocates: true,
+};
+
+pub const MYOTIS_HOSONOI: BatSpecies = BatSpecies {
+    id: "myotis_hosonoi",
+    name: "Hosono's Myotis",
+    scientific_name: "Myotis hosonoi",
+    family: "Vespertilionidae",
+    call_type: "FM",
+    freq_lo_hz: 35_000.0,
+    freq_hi_hz: 95_000.0,
+    description: "FM calls typical of Myotis. Endemic to Japan (Honshu). Cave-dwelling. Poorly studied.",
+    echolocates: true,
+};
+
+pub const MYOTIS_GRACILIS: BatSpecies = BatSpecies {
+    id: "myotis_gracilis",
+    name: "Gracile Myotis",
+    scientific_name: "Myotis gracilis",
+    family: "Vespertilionidae",
+    call_type: "FM",
+    freq_lo_hz: 35_000.0,
+    freq_hi_hz: 100_000.0,
+    description: "FM calls typical of small Myotis. Endemic to Japan (Honshu). Forest-dwelling. Limited published acoustic data.",
+    echolocates: true,
+};
+
+pub const MYOTIS_OZENSIS: BatSpecies = BatSpecies {
+    id: "myotis_ozensis",
+    name: "Ozensis Myotis",
+    scientific_name: "Myotis ozensis",
+    family: "Vespertilionidae",
+    call_type: "FM",
+    freq_lo_hz: 35_000.0,
+    freq_hi_hz: 95_000.0,
+    description: "FM calls typical of Myotis. Endemic to Japan (central Honshu mountains). Cave-dwelling. Limited distribution.",
+    echolocates: true,
+};
+
+// ── Vespertilionidae: Pipistrellus ───────────────────────────────────────────
+
+pub const PIPISTRELLUS_ABRAMUS: BatSpecies = BatSpecies {
+    id: "pipistrellus_abramus",
+    name: "Japanese Pipistrelle",
+    scientific_name: "Pipistrellus abramus",
+    family: "Vespertilionidae",
+    call_type: "FM-QCF",
+    freq_lo_hz: 40_000.0,
+    freq_hi_hz: 95_000.0,
+    description: "FM sweeps ~80\u{2013}95 kHz to terminal ~40 kHz, peak ~52 kHz. Japan's most common urban bat. Roosts in buildings and under bridges. Forages around streetlights.",
+    echolocates: true,
+};
+
+pub const PIPISTRELLUS_ENDOI: BatSpecies = BatSpecies {
+    id: "pipistrellus_endoi",
+    name: "Endo's Pipistrelle",
+    scientific_name: "Pipistrellus endoi",
+    family: "Vespertilionidae",
+    call_type: "FM-QCF",
+    freq_lo_hz: 38_000.0,
+    freq_hi_hz: 90_000.0,
+    description: "FM-QCF calls similar to P. abramus but slightly lower frequency. Endemic to Japan (Honshu). Temperate forests at 100\u{2013}1500 m. IUCN Near Threatened.",
+    echolocates: true,
+};
+
+pub const PIPISTRELLUS_STURDEEI: BatSpecies = BatSpecies {
+    id: "pipistrellus_sturdeei",
+    name: "Sturdee's Pipistrelle",
+    scientific_name: "Pipistrellus sturdeei",
+    family: "Vespertilionidae",
+    call_type: "FM-QCF",
+    freq_lo_hz: 38_000.0,
+    freq_hi_hz: 90_000.0,
+    description: "Presumed FM-QCF calls. Known only from a specimen on the Bonin Islands (Ogasawara). Not seen since 1915\u{2014}possibly extinct.",
+    echolocates: true,
+};
+
+// ── Vespertilionidae: Vespertilio ────────────────────────────────────────────
+
+pub const VESPERTILIO_SINENSIS: BatSpecies = BatSpecies {
+    id: "vespertilio_sinensis",
+    name: "Asian Parti-coloured Bat",
+    scientific_name: "Vespertilio sinensis",
+    family: "Vespertilionidae",
+    call_type: "FM-QCF",
+    freq_lo_hz: 20_000.0,
+    freq_hi_hz: 46_000.0,
+    description: "FM-QCF calls, peak ~24 kHz, max ~46 kHz, min ~22\u{2013}23 kHz. Steep FM into shallow QCF tail. Migratory. Hokkaido to Kyushu. Roosts in tree hollows and buildings.",
+    echolocates: true,
+};
+
+// ── Vespertilionidae: Eptesicus ──────────────────────────────────────────────
+
+pub const EPTESICUS_NILSSONII_JP: BatSpecies = BatSpecies {
+    id: "eptesicus_nilssonii_jp",
+    name: "Northern Bat",
+    scientific_name: "Eptesicus nilssonii",
+    family: "Vespertilionidae",
+    call_type: "FM-QCF",
+    freq_lo_hz: 25_000.0,
+    freq_hi_hz: 55_000.0,
+    description: "FM-QCF calls, peak ~30.5 kHz, duration ~6 ms, bandwidth ~32 kHz. Hokkaido and northern Honshu. The most northerly-ranging bat in the world.",
+    echolocates: true,
+};
+
+pub const EPTESICUS_JAPONENSIS: BatSpecies = BatSpecies {
+    id: "eptesicus_japonensis",
+    name: "Japanese Short-tailed Bat",
+    scientific_name: "Eptesicus japonensis",
+    family: "Vespertilionidae",
+    call_type: "FM-QCF",
+    freq_lo_hz: 25_000.0,
+    freq_hi_hz: 55_000.0,
+    description: "FM-QCF calls similar to E. nilssonii. Endemic to Japan (Honshu, Shikoku, Kyushu). Forest-dwelling, roosts in tree hollows and buildings.",
+    echolocates: true,
+};
+
+// ── Vespertilionidae: Nyctalus ───────────────────────────────────────────────
+
+pub const NYCTALUS_AVIATOR: BatSpecies = BatSpecies {
+    id: "nyctalus_aviator",
+    name: "Japanese Noctule",
+    scientific_name: "Nyctalus aviator",
+    family: "Vespertilionidae",
+    call_type: "FM-QCF",
+    freq_lo_hz: 17_000.0,
+    freq_hi_hz: 54_000.0,
+    description: "FM-QCF calls, peak ~21 kHz, duration ~12 ms. Japan's largest open-space insectivorous bat. Forages up to 300 m altitude. Occasionally preys on migrating birds. Roosts in tree cavities.",
+    echolocates: true,
+};
+
+// ── Vespertilionidae: Plecotus ───────────────────────────────────────────────
+
+pub const PLECOTUS_SACRIMONTIS: BatSpecies = BatSpecies {
+    id: "plecotus_sacrimontis",
+    name: "Japanese Long-eared Bat",
+    scientific_name: "Plecotus sacrimontis",
+    family: "Vespertilionidae",
+    call_type: "FM",
+    freq_lo_hz: 23_000.0,
+    freq_hi_hz: 46_000.0,
+    description: "Low-intensity FM calls, start ~46 kHz, peak ~41 kHz, end ~23 kHz. Gleaning forager specialising in fluttering moths. Endemic to Japan (Honshu, Hokkaido, Shikoku, Kyushu).",
+    echolocates: true,
+};
+
+// ── Vespertilionidae: Barbastella ────────────────────────────────────────────
+
+pub const BARBASTELLA_LEUCOMELAS: BatSpecies = BatSpecies {
+    id: "barbastella_leucomelas",
+    name: "Asian Barbastelle",
+    scientific_name: "Barbastella leucomelas",
+    family: "Vespertilionidae",
+    call_type: "FM",
+    freq_lo_hz: 30_000.0,
+    freq_hi_hz: 47_000.0,
+    description: "FM calls in two alternating types: type A at 32\u{2013}37 kHz, type B at 38\u{2013}45 kHz. Similar to European B. barbastellus. Rare in Japan (Honshu). Forest-dwelling, very elusive.",
+    echolocates: true,
+};
+
+// ── Vespertilionidae: Murina (tube-nosed bats) ──────────────────────────────
+
+pub const MURINA_HILGENDORFI: BatSpecies = BatSpecies {
+    id: "murina_hilgendorfi",
+    name: "Hilgendorf's Tube-nosed Bat",
+    scientific_name: "Murina hilgendorfi",
+    family: "Vespertilionidae",
+    call_type: "FM",
+    freq_lo_hz: 45_000.0,
+    freq_hi_hz: 165_000.0,
+    description: "Ultra-broadband FM sweeps ~145\u{2013}165 kHz down to ~45\u{2013}55 kHz. Forest gleaner. Throughout Japan (Hokkaido to Kyushu). Roosts in tree hollows and dead curled leaves.",
+    echolocates: true,
+};
+
+pub const MURINA_USSURIENSIS: BatSpecies = BatSpecies {
+    id: "murina_ussuriensis",
+    name: "Ussuri Tube-nosed Bat",
+    scientific_name: "Murina ussuriensis",
+    family: "Vespertilionidae",
+    call_type: "FM",
+    freq_lo_hz: 45_000.0,
+    freq_hi_hz: 165_000.0,
+    description: "Ultra-broadband FM sweeps similar to M. hilgendorfi. Tiny bat (4\u{2013}8 g). Remarkably hibernates under snow. Roosts in curled dead leaves. Hokkaido and Honshu.",
+    echolocates: true,
+};
+
+pub const MURINA_SILVATICA: BatSpecies = BatSpecies {
+    id: "murina_silvatica",
+    name: "Ognev's Tube-nosed Bat",
+    scientific_name: "Murina silvatica",
+    family: "Vespertilionidae",
+    call_type: "FM",
+    freq_lo_hz: 45_000.0,
+    freq_hi_hz: 160_000.0,
+    description: "Broadband FM calls typical of Murina. Distribution spans ~2000 km north\u{2013}south across the Japanese archipelago. Forest bat roosting in dead curled leaves.",
+    echolocates: true,
+};
+
+pub const MURINA_TENEBROSA: BatSpecies = BatSpecies {
+    id: "murina_tenebrosa",
+    name: "Gloomy Tube-nosed Bat",
+    scientific_name: "Murina tenebrosa",
+    family: "Vespertilionidae",
+    call_type: "FM",
+    freq_lo_hz: 45_000.0,
+    freq_hi_hz: 160_000.0,
+    description: "FM calls presumed similar to other Murina. Known only from a single holotype on Tsushima Island (1962). Possibly extinct. Alliance for Zero Extinction species.",
+    echolocates: true,
+};
+
+pub const MURINA_RYUKYUANA: BatSpecies = BatSpecies {
+    id: "murina_ryukyuana",
+    name: "Ryukyu Tube-nosed Bat",
+    scientific_name: "Murina ryukyuana",
+    family: "Vespertilionidae",
+    call_type: "FM",
+    freq_lo_hz: 45_000.0,
+    freq_hi_hz: 160_000.0,
+    description: "Broadband FM calls typical of Murina. Endemic to the Ryukyu Islands. Recently described species from Okinawa. Forest-dwelling.",
+    echolocates: true,
+};
