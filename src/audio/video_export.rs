@@ -418,6 +418,14 @@ async fn export_video_impl(state: &AppState) -> Result<(), JsValue> {
     let view_mode = state.video_view_mode.get_untracked();
     let export_duration = render.end_time - render.start_time;
 
+    // In time expansion mode, the audio is longer than the original time range.
+    // Map video (wall-clock) time back to spectrogram (original) time.
+    let playback_speed = if audio_duration > 0.0 {
+        export_duration / audio_duration
+    } else {
+        1.0
+    };
+
     match view_mode {
         VideoViewMode::StaticPlayhead => {
             // Zoom to fit the entire export range in the viewport
@@ -451,7 +459,7 @@ async fn export_video_impl(state: &AppState) -> Result<(), JsValue> {
 
                 // Draw playhead line
                 let t = frame_idx as f64 / FPS;
-                let playhead_x = (t / export_duration) * vid_w as f64;
+                let playhead_x = (t * playback_speed / export_duration) * vid_w as f64;
                 ctx.set_stroke_style_str("#ffffff");
                 ctx.set_line_width(2.0);
                 ctx.begin_path();
@@ -498,7 +506,8 @@ async fn export_video_impl(state: &AppState) -> Result<(), JsValue> {
                 }
 
                 let t = frame_idx as f64 / FPS;
-                let scroll = (render.start_time + t - visible_time * 0.25)
+                let spect_t = t * playback_speed; // position in original timeline
+                let scroll = (render.start_time + spect_t - visible_time * 0.25)
                     .max(0.0)
                     .min((render.duration - visible_time).max(0.0));
                 let scroll_col = scroll / render.time_res;
@@ -506,7 +515,7 @@ async fn export_video_impl(state: &AppState) -> Result<(), JsValue> {
                 render_frame(&ctx, &render, scroll_col, zoom, visible_time, scroll);
 
                 // Draw playhead line
-                let playhead_x = ((render.start_time + t - scroll) / visible_time) * vid_w as f64;
+                let playhead_x = ((render.start_time + spect_t - scroll) / visible_time) * vid_w as f64;
                 if playhead_x >= 0.0 && playhead_x <= vid_w as f64 {
                     ctx.set_stroke_style_str("#ffffff");
                     ctx.set_line_width(2.0);
