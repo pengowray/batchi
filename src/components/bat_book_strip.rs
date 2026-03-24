@@ -102,11 +102,7 @@ pub fn BatBookStrip() -> impl IntoView {
                             && (i == 0 || m.entries[i - 1].echolocates);
                         view! {
                             {show_divider.then(|| view! {
-                                <div class="bat-book-divider">
-                                    <span class="bat-book-divider-line"></span>
-                                    <span class="bat-book-divider-label">"Non-echolocating"</span>
-                                    <span class="bat-book-divider-line"></span>
-                                </div>
+                                <div class="bat-book-divider" title="Non-echolocating"></div>
                             })}
                             <BatBookChip entry=entry.clone() />
                         }
