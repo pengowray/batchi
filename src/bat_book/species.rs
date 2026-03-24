@@ -756,3 +756,881 @@ pub const MINIOPTERUS_SCHREIBERSII: BatSpecies = BatSpecies {
     description: "Fast, agile cave-dweller found across southern Europe. Long, narrow wings for sustained flight. Large colonies; sensitive to cave disturbance.",
     echolocates: true,
 };
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Species: Costa Rica
+// ══════════════════════════════════════════════════════════════════════════════
+//
+// Sources:
+// - Jung et al. (2007): Echolocation calls in Central American emballonurids
+// - Leiser-Miller & Santana (2021): Functional differences in phyllostomid echolocation (Costa Rica data)
+// - Gessinger et al. (2019): Unusual CF-FM echolocation of Lonchorhina aurita
+// - Schnitzler et al.: Fishing and echolocation of Noctilio leporinus
+// - Kalko et al.: Echolocation and foraging of Noctilio albiventris
+// - Zamora-Gutierrez et al. (2016): Acoustic identification of Mexican bats
+// - Rydell et al. (2002): Acoustic identification of Yucatan bats
+// - Yoh et al. (2020): Echolocation of Amazonian phyllostomid bats
+
+// ── Noctilionidae ──────────────────────────────────────────────────────────
+
+pub const NOCTILIO_LEPORINUS: BatSpecies = BatSpecies {
+    id: "noctilio_leporinus",
+    name: "Greater Bulldog Bat",
+    scientific_name: "Noctilio leporinus",
+    family: "Noctilionidae",
+    call_type: "CF-FM",
+    freq_lo_hz: 28_000.0,
+    freq_hi_hz: 56_000.0,
+    description: "Large fishing bat. Long CF component at 53\u{2013}56 kHz followed by FM sweep. Forages over water; one of few New World bats with long CF calls.",
+    echolocates: true,
+};
+
+pub const NOCTILIO_ALBIVENTRIS: BatSpecies = BatSpecies {
+    id: "noctilio_albiventris",
+    name: "Lesser Bulldog Bat",
+    scientific_name: "Noctilio albiventris",
+    family: "Noctilionidae",
+    call_type: "CF-FM",
+    freq_lo_hz: 57_000.0,
+    freq_hi_hz: 75_000.0,
+    description: "Smaller than N. leporinus with higher CF at ~75 kHz. Trawls insects from water surfaces. CF-FM call structure similar to greater bulldog bat.",
+    echolocates: true,
+};
+
+// ── Emballonuridae ─────────────────────────────────────────────────────────
+
+pub const SACCOPTERYX_BILINEATA: BatSpecies = BatSpecies {
+    id: "saccopteryx_bilineata",
+    name: "Greater Sac-winged Bat",
+    scientific_name: "Saccopteryx bilineata",
+    family: "Emballonuridae",
+    call_type: "QCF",
+    freq_lo_hz: 43_000.0,
+    freq_hi_hz: 49_000.0,
+    description: "Alternates between ~45 and ~48 kHz when foraging. Most energy in 2nd harmonic. Well-studied species with vocal learning. Distinctive white dorsal stripes.",
+    echolocates: true,
+};
+
+pub const SACCOPTERYX_LEPTURA: BatSpecies = BatSpecies {
+    id: "saccopteryx_leptura",
+    name: "Lesser Sac-winged Bat",
+    scientific_name: "Saccopteryx leptura",
+    family: "Emballonuridae",
+    call_type: "QCF",
+    freq_lo_hz: 47_000.0,
+    freq_hi_hz: 53_000.0,
+    description: "Higher frequency than S. bilineata. Similar multiharmonic QCF structure. Most energy in 2nd harmonic. Thinner dorsal stripes.",
+    echolocates: true,
+};
+
+pub const RHYNCHONYCTERIS_NASO: BatSpecies = BatSpecies {
+    id: "rhynchonycteris_naso",
+    name: "Proboscis Bat",
+    scientific_name: "Rhynchonycteris naso",
+    family: "Emballonuridae",
+    call_type: "CF-FM",
+    freq_lo_hz: 40_000.0,
+    freq_hi_hz: 100_000.0,
+    description: "Tiny bat roosting along rivers. Short CF at ~47 kHz plus FM downsweep. Peak drops from ~100 kHz (search) to ~67 kHz (buzz) during prey pursuit.",
+    echolocates: true,
+};
+
+pub const CORMURA_BREVIROSTRIS: BatSpecies = BatSpecies {
+    id: "cormura_brevirostris",
+    name: "Wagner's Sac-winged Bat",
+    scientific_name: "Cormura brevirostris",
+    family: "Emballonuridae",
+    call_type: "FM",
+    freq_lo_hz: 40_000.0,
+    freq_hi_hz: 90_000.0,
+    description: "Unusual: most energy in 5th harmonic (~68 kHz). Forest-interior forager. Multiharmonic calls with shallow FM sweeps.",
+    echolocates: true,
+};
+
+pub const BALANTIOPTERYX_PLICATA: BatSpecies = BatSpecies {
+    id: "balantiopteryx_plicata",
+    name: "Gray Sac-winged Bat",
+    scientific_name: "Balantiopteryx plicata",
+    family: "Emballonuridae",
+    call_type: "QCF",
+    freq_lo_hz: 22_000.0,
+    freq_hi_hz: 50_000.0,
+    description: "Open-area forager. Long narrowband QCF (14\u{2013}20 ms) plus short broadband component. Displays jamming avoidance by shifting peak frequency in groups.",
+    echolocates: true,
+};
+
+pub const PEROPTERYX_MACROTIS: BatSpecies = BatSpecies {
+    id: "peropteryx_macrotis",
+    name: "Lesser Dog-like Bat",
+    scientific_name: "Peropteryx macrotis",
+    family: "Emballonuridae",
+    call_type: "QCF",
+    freq_lo_hz: 35_000.0,
+    freq_hi_hz: 50_000.0,
+    description: "Multiharmonic QCF with most energy in 2nd harmonic at ~40 kHz. Higher frequency than P. kappleri.",
+    echolocates: true,
+};
+
+pub const PEROPTERYX_KAPPLERI: BatSpecies = BatSpecies {
+    id: "peropteryx_kappleri",
+    name: "Greater Dog-like Bat",
+    scientific_name: "Peropteryx kappleri",
+    family: "Emballonuridae",
+    call_type: "QCF",
+    freq_lo_hz: 28_000.0,
+    freq_hi_hz: 40_000.0,
+    description: "Lower frequency (~32 kHz) than P. macrotis, consistent with larger body size. Open-space forager. Most energy in 2nd harmonic.",
+    echolocates: true,
+};
+
+pub const DICLIDURUS_ALBUS: BatSpecies = BatSpecies {
+    id: "diclidurus_albus",
+    name: "Northern Ghost Bat",
+    scientific_name: "Diclidurus albus",
+    family: "Emballonuridae",
+    call_type: "QCF",
+    freq_lo_hz: 22_000.0,
+    freq_hi_hz: 27_000.0,
+    description: "Large emballonurid with distinctive white fur. Narrowband QCF at ~24 kHz. Long inter-pulse intervals. Rarely encountered.",
+    echolocates: true,
+};
+
+// ── Mormoopidae ────────────────────────────────────────────────────────────
+
+pub const PTERONOTUS_MESOAMERICANUS: BatSpecies = BatSpecies {
+    id: "pteronotus_mesoamericanus",
+    name: "Mesoamerican Mustached Bat",
+    scientific_name: "Pteronotus mesoamericanus",
+    family: "Mormoopidae",
+    call_type: "CF-FM",
+    freq_lo_hz: 30_000.0,
+    freq_hi_hz: 120_000.0,
+    description: "The ONLY New World high-duty-cycle echolocator. Long CF at ~61 kHz (2nd harmonic) with Doppler compensation. 4\u{2013}5 harmonics. Formerly P. parnellii.",
+    echolocates: true,
+};
+
+pub const PTERONOTUS_DAVYI: BatSpecies = BatSpecies {
+    id: "pteronotus_davyi",
+    name: "Davy's Naked-backed Bat",
+    scientific_name: "Pteronotus davyi",
+    family: "Mormoopidae",
+    call_type: "CF-FM",
+    freq_lo_hz: 51_000.0,
+    freq_hi_hz: 68_000.0,
+    description: "CF-FM with short CF at ~67 kHz, FM sweep down to ~51 kHz. Shorter calls than P. mesoamericanus. Most energy in 2nd harmonic. Wing membranes fused across back.",
+    echolocates: true,
+};
+
+pub const PTERONOTUS_GYMNONOTUS: BatSpecies = BatSpecies {
+    id: "pteronotus_gymnonotus",
+    name: "Big Naked-backed Bat",
+    scientific_name: "Pteronotus gymnonotus",
+    family: "Mormoopidae",
+    call_type: "CF-FM",
+    freq_lo_hz: 40_000.0,
+    freq_hi_hz: 65_000.0,
+    description: "CF component at ~54\u{2013}57 kHz. Similar structure to P. davyi but lower frequency, consistent with larger body size.",
+    echolocates: true,
+};
+
+pub const PTERONOTUS_PERSONATUS: BatSpecies = BatSpecies {
+    id: "pteronotus_personatus",
+    name: "Wagner's Mustached Bat",
+    scientific_name: "Pteronotus personatus",
+    family: "Mormoopidae",
+    call_type: "CF-FM",
+    freq_lo_hz: 62_000.0,
+    freq_hi_hz: 83_000.0,
+    description: "Highest frequency Pteronotus in Costa Rica (excl. P. mesoamericanus harmonics). Initial CF ~83 kHz, terminal CF ~68 kHz. Shows Doppler-shift compensation.",
+    echolocates: true,
+};
+
+pub const MORMOOPS_MEGALOPHYLLA: BatSpecies = BatSpecies {
+    id: "mormoops_megalophylla",
+    name: "Ghost-faced Bat",
+    scientific_name: "Mormoops megalophylla",
+    family: "Mormoopidae",
+    call_type: "QCF",
+    freq_lo_hz: 50_000.0,
+    freq_hi_hz: 70_000.0,
+    description: "Bizarre facial leaf. Fundamental ~30 kHz suppressed; only 2nd harmonic (~67 kHz) typically recorded. Cave-roosting; large colonies.",
+    echolocates: true,
+};
+
+// ── Phyllostomidae: Phyllostominae (insectivores/carnivores) ───────────────
+
+pub const VAMPYRUM_SPECTRUM: BatSpecies = BatSpecies {
+    id: "vampyrum_spectrum",
+    name: "Spectral Bat",
+    scientific_name: "Vampyrum spectrum",
+    family: "Phyllostomidae",
+    call_type: "FM",
+    freq_lo_hz: 55_000.0,
+    freq_hi_hz: 90_000.0,
+    description: "Largest bat in the Americas (wingspan ~1 m). Low-intensity multiharmonic FM. Carnivorous: preys on birds and other bats. Very difficult to detect acoustically.",
+    echolocates: true,
+};
+
+pub const CHROTOPTERUS_AURITUS: BatSpecies = BatSpecies {
+    id: "chrotopterus_auritus",
+    name: "Big-eared Woolly Bat",
+    scientific_name: "Chrotopterus auritus",
+    family: "Phyllostomidae",
+    call_type: "FM",
+    freq_lo_hz: 67_000.0,
+    freq_hi_hz: 88_000.0,
+    description: "Carnivorous gleaner. Peak ~77 kHz, higher than predicted for body size. Short FM sweeps (0.8\u{2013}1.4 ms). Low-intensity; hard to detect beyond a few meters.",
+    echolocates: true,
+};
+
+pub const PHYLLOSTOMUS_HASTATUS: BatSpecies = BatSpecies {
+    id: "phyllostomus_hastatus",
+    name: "Greater Spear-nosed Bat",
+    scientific_name: "Phyllostomus hastatus",
+    family: "Phyllostomidae",
+    call_type: "FM",
+    freq_lo_hz: 34_000.0,
+    freq_hi_hz: 60_000.0,
+    description: "Large omnivore. One of the lowest-frequency phyllostomids (~47 kHz peak). Multiharmonic FM. Forms harem groups in caves and hollow trees.",
+    echolocates: true,
+};
+
+pub const PHYLLOSTOMUS_DISCOLOR: BatSpecies = BatSpecies {
+    id: "phyllostomus_discolor",
+    name: "Pale Spear-nosed Bat",
+    scientific_name: "Phyllostomus discolor",
+    family: "Phyllostomidae",
+    call_type: "FM",
+    freq_lo_hz: 40_000.0,
+    freq_hi_hz: 80_000.0,
+    description: "Omnivore with lower frequency than most phyllostomids (~55 kHz peak). Best hearing sensitivity at 20 kHz. Low-intensity whispering calls.",
+    echolocates: true,
+};
+
+pub const LONCHORHINA_AURITA: BatSpecies = BatSpecies {
+    id: "lonchorhina_aurita",
+    name: "Tomes's Sword-nosed Bat",
+    scientific_name: "Lonchorhina aurita",
+    family: "Phyllostomidae",
+    call_type: "CF-FM",
+    freq_lo_hz: 38_000.0,
+    freq_hi_hz: 50_000.0,
+    description: "UNIQUE among phyllostomids: uses CF-FM calls like mormoopids. Long CF at ~45 kHz (3rd harmonic dominant). Longest calls of any phyllostomid (up to 8.7 ms).",
+    echolocates: true,
+};
+
+pub const TRACHOPS_CIRRHOSUS: BatSpecies = BatSpecies {
+    id: "trachops_cirrhosus",
+    name: "Fringe-lipped Bat",
+    scientific_name: "Trachops cirrhosus",
+    family: "Phyllostomidae",
+    call_type: "FM",
+    freq_lo_hz: 50_000.0,
+    freq_hi_hz: 100_000.0,
+    description: "Famous frog-eating bat. Listens for frog mating calls to locate prey. Low-intensity multiharmonic FM (~70 kHz peak). Hard to detect acoustically.",
+    echolocates: true,
+};
+
+pub const MICRONYCTERIS_MICROTIS: BatSpecies = BatSpecies {
+    id: "micronycteris_microtis",
+    name: "Common Big-eared Bat",
+    scientific_name: "Micronycteris microtis",
+    family: "Phyllostomidae",
+    call_type: "FM",
+    freq_lo_hz: 60_000.0,
+    freq_hi_hz: 120_000.0,
+    description: "Gleaning insectivore in dense understory. Can detect silent, motionless prey. Very short broadband calls (0.3\u{2013}1 ms) at high frequency (~90\u{2013}100 kHz). Ultra-low intensity.",
+    echolocates: true,
+};
+
+pub const MICRONYCTERIS_HIRSUTA: BatSpecies = BatSpecies {
+    id: "micronycteris_hirsuta",
+    name: "Hairy Big-eared Bat",
+    scientific_name: "Micronycteris hirsuta",
+    family: "Phyllostomidae",
+    call_type: "FM",
+    freq_lo_hz: 51_000.0,
+    freq_hi_hz: 90_000.0,
+    description: "Lower peak frequency (~52 kHz) than M. microtis. Gleaning insectivore. Low-intensity multiharmonic FM. Documented from Costa Rica.",
+    echolocates: true,
+};
+
+pub const LOPHOSTOMA_SILVICOLUM: BatSpecies = BatSpecies {
+    id: "lophostoma_silvicolum",
+    name: "White-throated Round-eared Bat",
+    scientific_name: "Lophostoma silvicolum",
+    family: "Phyllostomidae",
+    call_type: "FM",
+    freq_lo_hz: 50_000.0,
+    freq_hi_hz: 100_000.0,
+    description: "Gleaning insectivore. Modifies termite nests to create roosts. Peak ~70 kHz. Low-intensity multiharmonic FM. Difficult to detect beyond a few meters.",
+    echolocates: true,
+};
+
+pub const MIMON_CRENULATUM: BatSpecies = BatSpecies {
+    id: "mimon_crenulatum",
+    name: "Striped Hairy-nosed Bat",
+    scientific_name: "Gardnerycteris crenulatum",
+    family: "Phyllostomidae",
+    call_type: "FM",
+    freq_lo_hz: 50_000.0,
+    freq_hi_hz: 100_000.0,
+    description: "Gleaning insectivore. Peak ~75 kHz. Low-intensity multiharmonic FM. Now placed in genus Gardnerycteris by some authorities.",
+    echolocates: true,
+};
+
+pub const TONATIA_SAUROPHILA: BatSpecies = BatSpecies {
+    id: "tonatia_saurophila",
+    name: "Stripe-headed Round-eared Bat",
+    scientific_name: "Tonatia saurophila",
+    family: "Phyllostomidae",
+    call_type: "FM",
+    freq_lo_hz: 50_000.0,
+    freq_hi_hz: 90_000.0,
+    description: "Gleaning insectivore/carnivore. Peak ~65 kHz. Low-intensity multiharmonic FM. Forest interior species.",
+    echolocates: true,
+};
+
+pub const MACROPHYLLUM_MACROPHYLLUM: BatSpecies = BatSpecies {
+    id: "macrophyllum_macrophyllum",
+    name: "Long-legged Bat",
+    scientific_name: "Macrophyllum macrophyllum",
+    family: "Phyllostomidae",
+    call_type: "FM",
+    freq_lo_hz: 55_000.0,
+    freq_hi_hz: 110_000.0,
+    description: "Unusual phyllostomid: trawls insects from water surfaces. Louder than most phyllostomids (~101 dB SPL). Adjusts intensity by habitat openness. Peak ~85 kHz.",
+    echolocates: true,
+};
+
+pub const LAMPRONYCTERIS_BRACHYOTIS: BatSpecies = BatSpecies {
+    id: "lampronycteris_brachyotis",
+    name: "Yellow-throated Big-eared Bat",
+    scientific_name: "Lampronycteris brachyotis",
+    family: "Phyllostomidae",
+    call_type: "FM",
+    freq_lo_hz: 55_000.0,
+    freq_hi_hz: 100_000.0,
+    description: "Rare gleaning insectivore. Peak ~75 kHz. Low-intensity multiharmonic FM. Poorly documented acoustically.",
+    echolocates: true,
+};
+
+pub const GLYPHONYCTERIS_SYLVESTRIS: BatSpecies = BatSpecies {
+    id: "glyphonycteris_sylvestris",
+    name: "Tricolored Big-eared Bat",
+    scientific_name: "Glyphonycteris sylvestris",
+    family: "Phyllostomidae",
+    call_type: "FM",
+    freq_lo_hz: 60_000.0,
+    freq_hi_hz: 110_000.0,
+    description: "Rare gleaning insectivore. Peak ~85 kHz. Very short broadband FM calls (0.3\u{2013}1 ms). Ultra-low intensity.",
+    echolocates: true,
+};
+
+pub const TRINYCTERIS_NICEFORI: BatSpecies = BatSpecies {
+    id: "trinycteris_nicefori",
+    name: "Niceforo's Big-eared Bat",
+    scientific_name: "Trinycteris nicefori",
+    family: "Phyllostomidae",
+    call_type: "FM",
+    freq_lo_hz: 55_000.0,
+    freq_hi_hz: 100_000.0,
+    description: "Low-intensity gleaner. Peak ~80 kHz. Multiharmonic FM. Forest understory specialist.",
+    echolocates: true,
+};
+
+// ── Phyllostomidae: Glossophaginae (nectar bats) ───────────────────────────
+
+pub const GLOSSOPHAGA_SORICINA: BatSpecies = BatSpecies {
+    id: "glossophaga_soricina",
+    name: "Pallas's Long-tongued Bat",
+    scientific_name: "Glossophaga soricina",
+    family: "Phyllostomidae",
+    call_type: "FM",
+    freq_lo_hz: 50_000.0,
+    freq_hi_hz: 140_000.0,
+    description: "Nectarivore that uses echolocation to find flowers (some have evolved acoustic reflectors). Peak ~80 kHz. Multiharmonic FM. Low intensity.",
+    echolocates: true,
+};
+
+pub const GLOSSOPHAGA_COMMISSARISI: BatSpecies = BatSpecies {
+    id: "glossophaga_commissarisi",
+    name: "Commissaris's Long-tongued Bat",
+    scientific_name: "Glossophaga commissarisi",
+    family: "Phyllostomidae",
+    call_type: "FM",
+    freq_lo_hz: 50_000.0,
+    freq_hi_hz: 130_000.0,
+    description: "Similar call structure to G. soricina but slightly lower peak (~75 kHz). Nectarivore. Low-intensity multiharmonic FM.",
+    echolocates: true,
+};
+
+pub const ANOURA_GEOFFROYI: BatSpecies = BatSpecies {
+    id: "anoura_geoffroyi",
+    name: "Geoffroy's Tailless Bat",
+    scientific_name: "Anoura geoffroyi",
+    family: "Phyllostomidae",
+    call_type: "FM",
+    freq_lo_hz: 50_000.0,
+    freq_hi_hz: 120_000.0,
+    description: "High-altitude nectarivore. Peak ~70 kHz. Low-intensity multiharmonic FM. Found in cloud forests and highlands.",
+    echolocates: true,
+};
+
+pub const HYLONYCTERIS_UNDERWOODI: BatSpecies = BatSpecies {
+    id: "hylonycteris_underwoodi",
+    name: "Underwood's Long-tongued Bat",
+    scientific_name: "Hylonycteris underwoodi",
+    family: "Phyllostomidae",
+    call_type: "FM",
+    freq_lo_hz: 60_000.0,
+    freq_hi_hz: 130_000.0,
+    description: "Very small nectarivore. High frequency calls (~90 kHz peak). Low-intensity FM. Found in montane forests.",
+    echolocates: true,
+};
+
+// ── Phyllostomidae: Carolliinae (short-tailed bats) ────────────────────────
+
+pub const CAROLLIA_PERSPICILLATA: BatSpecies = BatSpecies {
+    id: "carollia_perspicillata",
+    name: "Seba's Short-tailed Bat",
+    scientific_name: "Carollia perspicillata",
+    family: "Phyllostomidae",
+    call_type: "FM",
+    freq_lo_hz: 55_000.0,
+    freq_hi_hz: 100_000.0,
+    description: "One of the most abundant Neotropical bats. Peak ~71 kHz. Frugivore that also takes insects. Low-intensity whispering calls.",
+    echolocates: true,
+};
+
+pub const CAROLLIA_CASTANEA: BatSpecies = BatSpecies {
+    id: "carollia_castanea",
+    name: "Chestnut Short-tailed Bat",
+    scientific_name: "Carollia castanea",
+    family: "Phyllostomidae",
+    call_type: "FM",
+    freq_lo_hz: 60_000.0,
+    freq_hi_hz: 110_000.0,
+    description: "Higher peak (~78 kHz) than C. perspicillata, consistent with smaller body. Frugivore. Low-intensity FM. Documented from Costa Rica.",
+    echolocates: true,
+};
+
+pub const CAROLLIA_BREVICAUDA: BatSpecies = BatSpecies {
+    id: "carollia_brevicauda",
+    name: "Silky Short-tailed Bat",
+    scientific_name: "Carollia brevicauda",
+    family: "Phyllostomidae",
+    call_type: "FM",
+    freq_lo_hz: 55_000.0,
+    freq_hi_hz: 100_000.0,
+    description: "Intermediate in size and frequency (~73 kHz peak) between C. perspicillata and C. castanea. Frugivore. Low-intensity FM.",
+    echolocates: true,
+};
+
+// ── Phyllostomidae: Desmodontinae (vampire bats) ──────────────────────────
+
+pub const DESMODUS_ROTUNDUS: BatSpecies = BatSpecies {
+    id: "desmodus_rotundus",
+    name: "Common Vampire Bat",
+    scientific_name: "Desmodus rotundus",
+    family: "Phyllostomidae",
+    call_type: "FM",
+    freq_lo_hz: 35_000.0,
+    freq_hi_hz: 85_000.0,
+    description: "Relatively long calls for a phyllostomid (~5.5 ms). Peak ~55 kHz. Obligate blood-feeder. Emits single pulses or groups of 2\u{2013}3.",
+    echolocates: true,
+};
+
+// ── Phyllostomidae: Stenodermatinae (fruit bats) ──────────────────────────
+
+pub const ARTIBEUS_JAMAICENSIS: BatSpecies = BatSpecies {
+    id: "artibeus_jamaicensis",
+    name: "Jamaican Fruit Bat",
+    scientific_name: "Artibeus jamaicensis",
+    family: "Phyllostomidae",
+    call_type: "FM",
+    freq_lo_hz: 50_000.0,
+    freq_hi_hz: 90_000.0,
+    description: "Very common frugivore. Peak ~56 kHz. Variable intensity (mean ~96 dB SPL); not always a quiet \"whisperer\". Important seed disperser.",
+    echolocates: true,
+};
+
+pub const ARTIBEUS_LITURATUS: BatSpecies = BatSpecies {
+    id: "artibeus_lituratus",
+    name: "Great Fruit-eating Bat",
+    scientific_name: "Artibeus lituratus",
+    family: "Phyllostomidae",
+    call_type: "FM",
+    freq_lo_hz: 45_000.0,
+    freq_hi_hz: 85_000.0,
+    description: "Large frugivore. Lower peak (~52 kHz) than A. jamaicensis, consistent with larger body. Prominent facial stripes. Important pollinator.",
+    echolocates: true,
+};
+
+pub const STURNIRA_LILIUM: BatSpecies = BatSpecies {
+    id: "sturnira_lilium",
+    name: "Little Yellow-shouldered Bat",
+    scientific_name: "Sturnira lilium",
+    family: "Phyllostomidae",
+    call_type: "FM",
+    freq_lo_hz: 60_000.0,
+    freq_hi_hz: 76_000.0,
+    description: "Frugivore. Peak ~66.5 kHz (well documented). Low-intensity multiharmonic FM. Common in forest and edge habitats.",
+    echolocates: true,
+};
+
+pub const URODERMA_BILOBATUM: BatSpecies = BatSpecies {
+    id: "uroderma_bilobatum",
+    name: "Tent-making Bat",
+    scientific_name: "Uroderma bilobatum",
+    family: "Phyllostomidae",
+    call_type: "FM",
+    freq_lo_hz: 55_000.0,
+    freq_hi_hz: 95_000.0,
+    description: "Tent-roosting frugivore. Modifies large leaves into tents. Peak ~70 kHz. Low-intensity nasal FM. Found in lowland forests.",
+    echolocates: true,
+};
+
+pub const ECTOPHYLLA_ALBA: BatSpecies = BatSpecies {
+    id: "ectophylla_alba",
+    name: "Honduran White Bat",
+    scientific_name: "Ectophylla alba",
+    family: "Phyllostomidae",
+    call_type: "FM",
+    freq_lo_hz: 55_000.0,
+    freq_hi_hz: 95_000.0,
+    description: "Tiny, iconic white tent-roosting bat. Peak ~75 kHz. Low-intensity FM. Endemic to Central America (Honduras to Panama). Frugivore specializing on one fig species.",
+    echolocates: true,
+};
+
+pub const CENTURIO_SENEX: BatSpecies = BatSpecies {
+    id: "centurio_senex",
+    name: "Wrinkle-faced Bat",
+    scientific_name: "Centurio senex",
+    family: "Phyllostomidae",
+    call_type: "FM",
+    freq_lo_hz: 50_000.0,
+    freq_hi_hz: 90_000.0,
+    description: "Bizarre wrinkled face with skin fold that can cover it like a mask. Peak ~65 kHz. Relatively long calls for a stenodermatine (1\u{2013}3 ms). Frugivore.",
+    echolocates: true,
+};
+
+pub const DERMANURA_PHAEOTIS: BatSpecies = BatSpecies {
+    id: "dermanura_phaeotis",
+    name: "Pygmy Fruit-eating Bat",
+    scientific_name: "Dermanura phaeotis",
+    family: "Phyllostomidae",
+    call_type: "FM",
+    freq_lo_hz: 55_000.0,
+    freq_hi_hz: 100_000.0,
+    description: "Small frugivore (formerly Artibeus phaeotis). Peak ~75 kHz. Low-intensity multiharmonic FM. Common in lowland forests.",
+    echolocates: true,
+};
+
+pub const MESOPHYLLA_MACCONNELLI: BatSpecies = BatSpecies {
+    id: "mesophylla_macconnelli",
+    name: "MacConnell's Bat",
+    scientific_name: "Mesophylla macconnelli",
+    family: "Phyllostomidae",
+    call_type: "FM",
+    freq_lo_hz: 70_000.0,
+    freq_hi_hz: 118_000.0,
+    description: "Very small (5\u{2013}7 g) with the highest peak frequency recorded among phyllostomids (~100\u{2013}118 kHz). Ultra-low intensity. Tent-roosting frugivore.",
+    echolocates: true,
+};
+
+// ── Molossidae ─────────────────────────────────────────────────────────────
+
+pub const MOLOSSUS_MOLOSSUS: BatSpecies = BatSpecies {
+    id: "molossus_molossus",
+    name: "Velvety Free-tailed Bat",
+    scientific_name: "Molossus molossus",
+    family: "Molossidae",
+    call_type: "QCF",
+    freq_lo_hz: 33_000.0,
+    freq_hi_hz: 50_000.0,
+    description: "Alternates between ~34.5 and ~39.6 kHz when foraging. Narrowband QCF. Common in buildings and urban areas. Open-space aerial hawker.",
+    echolocates: true,
+};
+
+pub const MOLOSSUS_SINALOAE: BatSpecies = BatSpecies {
+    id: "molossus_sinaloae",
+    name: "Sinaloan Mastiff Bat",
+    scientific_name: "Molossus sinaloae",
+    family: "Molossidae",
+    call_type: "QCF",
+    freq_lo_hz: 31_000.0,
+    freq_hi_hz: 57_000.0,
+    description: "QCF at ~34 kHz in natural habitat; shifts up ~6 kHz in urban noise (Lombard effect). Open-space forager. Larger than M. molossus.",
+    echolocates: true,
+};
+
+pub const MOLOSSUS_RUFUS: BatSpecies = BatSpecies {
+    id: "molossus_rufus",
+    name: "Black Mastiff Bat",
+    scientific_name: "Molossus rufus",
+    family: "Molossidae",
+    call_type: "QCF",
+    freq_lo_hz: 24_000.0,
+    freq_hi_hz: 28_000.0,
+    description: "Large molossid with low frequency (~25\u{2013}26 kHz). Open-space forager. Formerly M. ater. Roosts in buildings and hollow trees.",
+    echolocates: true,
+};
+
+pub const MOLOSSUS_BONDAE: BatSpecies = BatSpecies {
+    id: "molossus_bondae",
+    name: "Bonda Mastiff Bat",
+    scientific_name: "Molossus bondae",
+    family: "Molossidae",
+    call_type: "QCF",
+    freq_lo_hz: 28_000.0,
+    freq_hi_hz: 42_000.0,
+    description: "Similar to M. molossus but slightly lower frequency (~33 kHz). Open-space forager. Roosts in buildings.",
+    echolocates: true,
+};
+
+pub const MOLOSSUS_COIBENSIS: BatSpecies = BatSpecies {
+    id: "molossus_coibensis",
+    name: "Coiban Mastiff Bat",
+    scientific_name: "Molossus coibensis",
+    family: "Molossidae",
+    call_type: "QCF",
+    freq_lo_hz: 30_000.0,
+    freq_hi_hz: 42_000.0,
+    description: "Similar to M. molossus (~35 kHz). Originally described from Coiba Island, Panama. Open-space forager.",
+    echolocates: true,
+};
+
+pub const EUMOPS_AURIPENDULUS: BatSpecies = BatSpecies {
+    id: "eumops_auripendulus",
+    name: "Black Bonneted Bat",
+    scientific_name: "Eumops auripendulus",
+    family: "Molossidae",
+    call_type: "QCF",
+    freq_lo_hz: 18_000.0,
+    freq_hi_hz: 36_000.0,
+    description: "Large molossid. Alternating QCF calls at ~23\u{2013}26 kHz. High, fast flight. Long-duration narrowband calls.",
+    echolocates: true,
+};
+
+pub const EUMOPS_GLAUCINUS: BatSpecies = BatSpecies {
+    id: "eumops_glaucinus",
+    name: "Wagner's Bonneted Bat",
+    scientific_name: "Eumops glaucinus",
+    family: "Molossidae",
+    call_type: "QCF",
+    freq_lo_hz: 19_000.0,
+    freq_hi_hz: 29_000.0,
+    description: "Among the lowest-frequency calling molossids (~22\u{2013}25 kHz). Large bat with long, narrow wings. High-altitude open-space forager.",
+    echolocates: true,
+};
+
+pub const CYNOMOPS_GREENHALLI: BatSpecies = BatSpecies {
+    id: "cynomops_greenhalli",
+    name: "Greenhall's Dog-faced Bat",
+    scientific_name: "Cynomops greenhalli",
+    family: "Molossidae",
+    call_type: "QCF",
+    freq_lo_hz: 17_000.0,
+    freq_hi_hz: 29_000.0,
+    description: "Low frequency (~22 kHz) open-space forager. Flat-faced with forward-pointing nostrils. Roosts in buildings and hollow trees.",
+    echolocates: true,
+};
+
+pub const TADARIDA_BRASILIENSIS: BatSpecies = BatSpecies {
+    id: "tadarida_brasiliensis",
+    name: "Mexican Free-tailed Bat",
+    scientific_name: "Tadarida brasiliensis",
+    family: "Molossidae",
+    call_type: "QCF",
+    freq_lo_hz: 20_000.0,
+    freq_hi_hz: 75_000.0,
+    description: "Extremely flexible acoustics: narrow QCF 49\u{2013}70 kHz in open space, drops to 25\u{2013}40 kHz near objects, broadband FM during approach. Forms massive colonies.",
+    echolocates: true,
+};
+
+pub const PROMOPS_CENTRALIS: BatSpecies = BatSpecies {
+    id: "promops_centralis",
+    name: "Big-crested Mastiff Bat",
+    scientific_name: "Promops centralis",
+    family: "Molossidae",
+    call_type: "QCF",
+    freq_lo_hz: 28_000.0,
+    freq_hi_hz: 35_000.0,
+    description: "Distinctive upward-modulated calls (unusual for molossids). Alternating pulse pairs at ~30 and ~35 kHz. Most energy in 1st harmonic. Easily recognizable.",
+    echolocates: true,
+};
+
+pub const NYCTINOMOPS_LATICAUDATUS: BatSpecies = BatSpecies {
+    id: "nyctinomops_laticaudatus",
+    name: "Broad-eared Free-tailed Bat",
+    scientific_name: "Nyctinomops laticaudatus",
+    family: "Molossidae",
+    call_type: "QCF",
+    freq_lo_hz: 24_000.0,
+    freq_hi_hz: 32_000.0,
+    description: "Three-frequency alternation pattern (~26.7, 28.7, 32.4 kHz). Downward-modulated QCF. Open-space forager.",
+    echolocates: true,
+};
+
+// ── Vespertilionidae ───────────────────────────────────────────────────────
+
+pub const MYOTIS_NIGRICANS: BatSpecies = BatSpecies {
+    id: "myotis_nigricans",
+    name: "Black Myotis",
+    scientific_name: "Myotis nigricans",
+    family: "Vespertilionidae",
+    call_type: "FM",
+    freq_lo_hz: 40_000.0,
+    freq_hi_hz: 80_000.0,
+    description: "Highly plastic call structure. Narrowband ~7 ms in open space; adds broadband FM in clutter. Convergent with European pipistrelles. Peak ~50 kHz.",
+    echolocates: true,
+};
+
+pub const MYOTIS_KEAYSI: BatSpecies = BatSpecies {
+    id: "myotis_keaysi",
+    name: "Hairy-legged Myotis",
+    scientific_name: "Myotis keaysi",
+    family: "Vespertilionidae",
+    call_type: "FM",
+    freq_lo_hz: 45_000.0,
+    freq_hi_hz: 100_000.0,
+    description: "High variable repetition rates (15\u{2013}20 calls/s). Short, high-intensity calls (~2.5 ms). Peak ~55 kHz. Recorded from colonies in Costa Rica.",
+    echolocates: true,
+};
+
+pub const MYOTIS_RIPARIUS: BatSpecies = BatSpecies {
+    id: "myotis_riparius",
+    name: "Riparian Myotis",
+    scientific_name: "Myotis riparius",
+    family: "Vespertilionidae",
+    call_type: "FM",
+    freq_lo_hz: 50_000.0,
+    freq_hi_hz: 120_000.0,
+    description: "Steep broadband FM sweep from ~120 kHz to ~50 kHz. Short calls (~2 ms). No harmonics observed. Recorded in Costa Rica.",
+    echolocates: true,
+};
+
+pub const MYOTIS_ELEGANS: BatSpecies = BatSpecies {
+    id: "myotis_elegans",
+    name: "Elegant Myotis",
+    scientific_name: "Myotis elegans",
+    family: "Vespertilionidae",
+    call_type: "FM",
+    freq_lo_hz: 50_000.0,
+    freq_hi_hz: 100_000.0,
+    description: "High-frequency calls typical of small Myotis. Peak ~55 kHz. Difficult to distinguish from M. nigricans acoustically.",
+    echolocates: true,
+};
+
+pub const EPTESICUS_BRASILIENSIS: BatSpecies = BatSpecies {
+    id: "eptesicus_brasiliensis",
+    name: "Brazilian Brown Bat",
+    scientific_name: "Eptesicus brasiliensis",
+    family: "Vespertilionidae",
+    call_type: "FM",
+    freq_lo_hz: 40_000.0,
+    freq_hi_hz: 70_000.0,
+    description: "Peak ~54\u{2013}60 kHz. Source level ~101\u{2013}106 dB SPL. Frequency decreases with temperature. FM-QCF structure.",
+    echolocates: true,
+};
+
+pub const EPTESICUS_FURINALIS: BatSpecies = BatSpecies {
+    id: "eptesicus_furinalis",
+    name: "Argentine Brown Bat",
+    scientific_name: "Eptesicus furinalis",
+    family: "Vespertilionidae",
+    call_type: "FM",
+    freq_lo_hz: 35_000.0,
+    freq_hi_hz: 45_000.0,
+    description: "Lower frequency than E. brasiliensis (~43 kHz peak). More FM in cluttered habitats. FM-QCF structure.",
+    echolocates: true,
+};
+
+pub const EPTESICUS_FUSCUS: BatSpecies = BatSpecies {
+    id: "eptesicus_fuscus",
+    name: "Big Brown Bat",
+    scientific_name: "Eptesicus fuscus",
+    family: "Vespertilionidae",
+    call_type: "FM",
+    freq_lo_hz: 25_000.0,
+    freq_hi_hz: 50_000.0,
+    description: "One of the best-studied bat species globally. Large vespertilionid. Peak ~30 kHz. FM-QCF. Open-space forager. Common in buildings.",
+    echolocates: true,
+};
+
+pub const LASIURUS_BLOSSEVILLII: BatSpecies = BatSpecies {
+    id: "lasiurus_blossevillii",
+    name: "Desert Red Bat",
+    scientific_name: "Lasiurus blossevillii",
+    family: "Vespertilionidae",
+    call_type: "FM",
+    freq_lo_hz: 23_000.0,
+    freq_hi_hz: 52_000.0,
+    description: "Open-air forager. Maximum energy ~42 kHz. FM-QCF. Migratory. Roosts solitarily in foliage. Distinctive reddish fur.",
+    echolocates: true,
+};
+
+pub const LASIURUS_EGA: BatSpecies = BatSpecies {
+    id: "lasiurus_ega",
+    name: "Southern Yellow Bat",
+    scientific_name: "Lasiurus ega",
+    family: "Vespertilionidae",
+    call_type: "FM",
+    freq_lo_hz: 28_000.0,
+    freq_hi_hz: 50_000.0,
+    description: "Lower peak (~35 kHz) than L. blossevillii. FM-QCF. Open-air forager. Roosts in palm fronds.",
+    echolocates: true,
+};
+
+pub const RHOGEESSA_TUMIDA: BatSpecies = BatSpecies {
+    id: "rhogeessa_tumida",
+    name: "Black-winged Little Yellow Bat",
+    scientific_name: "Rhogeessa tumida",
+    family: "Vespertilionidae",
+    call_type: "FM",
+    freq_lo_hz: 43_000.0,
+    freq_hi_hz: 55_000.0,
+    description: "Small vespertilionid. Broadband steep FM with small QCF termination. Peak ~48 kHz. Bandwidth >15 kHz.",
+    echolocates: true,
+};
+
+pub const BAUERUS_DUBIAQUERCUS: BatSpecies = BatSpecies {
+    id: "bauerus_dubiaquercus",
+    name: "Van Gelder's Bat",
+    scientific_name: "Bauerus dubiaquercus",
+    family: "Vespertilionidae",
+    call_type: "FM",
+    freq_lo_hz: 25_000.0,
+    freq_hi_hz: 55_000.0,
+    description: "Very quiet calls. Related to long-eared bats (Plecotus-like). Gleaning insectivore. Peak ~35 kHz. Rare, poorly known.",
+    echolocates: true,
+};
+
+// ── Thyropteridae ──────────────────────────────────────────────────────────
+
+pub const THYROPTERA_TRICOLOR: BatSpecies = BatSpecies {
+    id: "thyroptera_tricolor",
+    name: "Spix's Disk-winged Bat",
+    scientific_name: "Thyroptera tricolor",
+    family: "Thyropteridae",
+    call_type: "FM",
+    freq_lo_hz: 25_000.0,
+    freq_hi_hz: 70_000.0,
+    description: "Suction-cup disks on wrists and ankles for roosting in rolled Heliconia leaves. Extremely low intensity; barely detectable at <1 m. Distinctive social calls for roost-finding.",
+    echolocates: true,
+};
+
+// ── Natalidae ──────────────────────────────────────────────────────────────
+
+pub const NATALUS_MEXICANUS: BatSpecies = BatSpecies {
+    id: "natalus_mexicanus",
+    name: "Mexican Funnel-eared Bat",
+    scientific_name: "Natalus mexicanus",
+    family: "Natalidae",
+    call_type: "FM",
+    freq_lo_hz: 85_000.0,
+    freq_hi_hz: 170_000.0,
+    description: "Among the highest frequency echolocating bats. Peak ~100\u{2013}130 kHz (2nd harmonic). Very low intensity; barely detectable beyond 50 cm. Cave-roosting.",
+    echolocates: true,
+};

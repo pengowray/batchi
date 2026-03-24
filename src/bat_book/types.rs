@@ -133,6 +133,7 @@ pub enum BatBookRegion {
     Africa,
     Asia,
     SouthAmerica,
+    CostaRica,
 }
 
 impl BatBookRegion {
@@ -146,6 +147,7 @@ impl BatBookRegion {
             Self::Africa => "Africa",
             Self::Asia => "Asia",
             Self::SouthAmerica => "South America",
+            Self::CostaRica => "Costa Rica",
         }
     }
 
@@ -159,6 +161,7 @@ impl BatBookRegion {
             Self::Africa => "Africa",
             Self::Asia => "Asia",
             Self::SouthAmerica => "S. America",
+            Self::CostaRica => "Costa Rica",
         }
     }
 
@@ -166,6 +169,7 @@ impl BatBookRegion {
         Self::Global,
         Self::Europe,
         Self::NorthAmerica,
+        Self::CostaRica,
         Self::SouthAmerica,
         Self::Africa,
         Self::Asia,
@@ -183,6 +187,7 @@ impl BatBookRegion {
             Self::Africa => "africa",
             Self::Asia => "asia",
             Self::SouthAmerica => "south_america",
+            Self::CostaRica => "costa_rica",
         }
     }
 
