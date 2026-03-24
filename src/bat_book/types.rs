@@ -22,6 +22,59 @@ impl Commonness {
     }
 }
 
+/// Base bat species/family data — defined once, reused across books.
+pub struct BatSpecies {
+    /// Unique identifier, e.g. "vespertilionidae" or "chalinolobus_gouldii"
+    pub id: &'static str,
+    /// Display name, e.g. "Vesper Bats" or "Gould's Wattled Bat"
+    pub name: &'static str,
+    /// Scientific (binomial) name, e.g. "Chalinolobus gouldii" (empty for family-level)
+    pub scientific_name: &'static str,
+    /// Taxonomic family name
+    pub family: &'static str,
+    /// Call type abbreviation (CF, FM, QCF, CF-FM, clicks, none)
+    pub call_type: &'static str,
+    /// Lower bound of typical echolocation frequency range (Hz)
+    pub freq_lo_hz: f64,
+    /// Upper bound of typical echolocation frequency range (Hz)
+    pub freq_hi_hz: f64,
+    /// Short description (generic / species-level)
+    pub description: &'static str,
+    /// Whether this species uses echolocation (false for flying foxes etc.)
+    pub echolocates: bool,
+}
+
+/// A book entry definition — references a species with optional regional overrides.
+pub struct BookEntryDef {
+    /// Reference to the base species data
+    pub species: &'static BatSpecies,
+    /// Regional commonness (None for family-level entries)
+    pub commonness: Option<Commonness>,
+    /// Override description for this book (None = use species default)
+    pub description: Option<&'static str>,
+    /// Override display name for this book (None = use species default)
+    pub name: Option<&'static str>,
+}
+
+impl BookEntryDef {
+    /// Materialize into a full BatBookEntry by resolving overrides.
+    pub fn materialize(&self) -> BatBookEntry {
+        let s = self.species;
+        BatBookEntry {
+            id: s.id,
+            name: self.name.unwrap_or(s.name),
+            scientific_name: s.scientific_name,
+            family: s.family,
+            call_type: s.call_type,
+            freq_lo_hz: s.freq_lo_hz,
+            freq_hi_hz: s.freq_hi_hz,
+            description: self.description.unwrap_or(s.description),
+            commonness: self.commonness,
+            echolocates: s.echolocates,
+        }
+    }
+}
+
 /// A bat book manifest containing entries for a region.
 #[derive(Clone, Debug, PartialEq)]
 pub struct BatBookManifest {
@@ -29,7 +82,7 @@ pub struct BatBookManifest {
     pub entries: Vec<BatBookEntry>,
 }
 
-/// A single bat book entry — either a family (global) or a species (regional).
+/// A single bat book entry — materialized from species + book overrides.
 #[derive(Clone, Debug, PartialEq)]
 pub struct BatBookEntry {
     /// Unique identifier, e.g. "vespertilionidae" or "chalinolobus_gouldii"
@@ -50,6 +103,8 @@ pub struct BatBookEntry {
     pub description: &'static str,
     /// How common the species is in the region (None for family-level entries)
     pub commonness: Option<Commonness>,
+    /// Whether this species uses echolocation
+    pub echolocates: bool,
 }
 
 impl BatBookEntry {

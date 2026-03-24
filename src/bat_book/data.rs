@@ -1,424 +1,361 @@
-use super::types::{BatBookEntry, BatBookManifest, BatBookRegion, Commonness};
+use super::types::{BookEntryDef, BatBookManifest, BatBookRegion, Commonness};
+use super::species;
 
-/// Hardcoded global bat book with researched frequency ranges.
-///
-/// Sources:
-/// - Jones & Barlow (2004) JEB: Scaling of echolocation call parameters
-/// - Jung et al. (2014) PMC: Molossidae call design
-/// - Shi et al. (2024) PMC: Correlated evolution body size & echolocation
-/// - Jones & Rayner (1989) Springer: Horseshoe bat foraging ecology
-/// - Collen (2012) BioOne: Rhinolophidae & Hipposideridae comparative ecology
-const GLOBAL_ENTRIES: &[BatBookEntry] = &[
-    BatBookEntry {
-        id: "rhinolophidae",
-        name: "Horseshoe bats",
-        scientific_name: "",
-        family: "Rhinolophidae",
-        call_type: "CF",
-        freq_lo_hz: 30_000.0,
-        freq_hi_hz: 120_000.0,
-        description: "Constant-frequency calls; species range ~30 kHz (large) to ~112 kHz (lesser horseshoe)",
-        commonness: None,
+// ══════════════════════════════════════════════════════════════════════════════
+// Global book — family-level entries
+// ══════════════════════════════════════════════════════════════════════════════
+
+const GLOBAL_BOOK: &[BookEntryDef] = &[
+    BookEntryDef { species: &species::RHINOLOPHIDAE, commonness: None, description: None, name: None },
+    BookEntryDef { species: &species::HIPPOSIDERIDAE, commonness: None, description: None, name: None },
+    BookEntryDef { species: &species::VESPERTILIONIDAE, commonness: None, description: None, name: None },
+    BookEntryDef { species: &species::MOLOSSIDAE, commonness: None, description: None, name: None },
+    BookEntryDef { species: &species::EMBALLONURIDAE, commonness: None, description: None, name: None },
+    BookEntryDef { species: &species::PHYLLOSTOMIDAE, commonness: None, description: None, name: None },
+    BookEntryDef { species: &species::MORMOOPIDAE, commonness: None, description: None, name: None },
+    BookEntryDef { species: &species::MINIOPTERIDAE, commonness: None, description: None, name: None },
+    BookEntryDef { species: &species::NYCTERIDAE, commonness: None, description: None, name: None },
+    BookEntryDef { species: &species::MEGADERMATIDAE, commonness: None, description: None, name: None },
+    // Non-echolocating (will be sorted to end by get_manifest)
+    BookEntryDef { species: &species::PTEROPODIDAE, commonness: None, description: None, name: None },
+];
+
+// ══════════════════════════════════════════════════════════════════════════════
+// VIC, Australia — species-level entries sorted by commonness
+// ══════════════════════════════════════════════════════════════════════════════
+
+const VIC_AUSTRALIA_BOOK: &[BookEntryDef] = &[
+    // ── Very Common ──────────────────────────────────────────────
+    BookEntryDef {
+        species: &species::CHALINOLOBUS_GOULDII,
+        commonness: Some(Commonness::VeryCommon),
+        description: Some("Widespread and abundant across Victoria. Roosts in tree hollows, buildings, and bat boxes. Alternating call frequencies are distinctive."),
+        name: None,
     },
-    BatBookEntry {
-        id: "hipposideridae",
-        name: "Roundleaf bats",
-        scientific_name: "",
-        family: "Hipposideridae",
-        call_type: "CF",
-        freq_lo_hz: 60_000.0,
-        freq_hi_hz: 160_000.0,
-        description: "CF calls; Cleotis percivalis reaches 212 kHz, the highest known bat frequency",
-        commonness: None,
+    BookEntryDef {
+        species: &species::CHALINOLOBUS_MORIO,
+        commonness: Some(Commonness::VeryCommon),
+        description: Some("Common across southern Australia. Small, dark bat roosting in tree hollows and buildings. Higher frequency calls than Gould's Wattled Bat."),
+        name: None,
     },
-    BatBookEntry {
-        id: "vespertilionidae",
-        name: "Vesper bats",
-        scientific_name: "",
-        family: "Vespertilionidae",
-        call_type: "FM",
-        freq_lo_hz: 15_000.0,
-        freq_hi_hz: 120_000.0,
-        description: "Broadest family; FM sweeps; most species 20\u{2013}60 kHz peak",
-        commonness: None,
+    BookEntryDef {
+        species: &species::NYCTOPHILUS_GEOFFROYI,
+        commonness: Some(Commonness::VeryCommon),
+        description: Some("Australia's most widespread bat. Very quiet, broadband FM calls; often difficult to detect acoustically. Gleaning insectivore with large ears."),
+        name: None,
     },
-    BatBookEntry {
-        id: "molossidae",
-        name: "Free-tailed bats",
-        scientific_name: "",
-        family: "Molossidae",
-        call_type: "QCF",
-        freq_lo_hz: 10_000.0,
-        freq_hi_hz: 45_000.0,
-        description: "Narrowband, long-duration QCF calls; 16\u{2013}44 kHz peak typical",
-        commonness: None,
+    BookEntryDef {
+        species: &species::AUSTRONOMUS_AUSTRALIS,
+        commonness: Some(Commonness::VeryCommon),
+        description: Some("Australia's largest insectivorous bat. Loud, low-frequency calls audible to some humans. Fast, high-flying open-air forager."),
+        name: None,
     },
-    BatBookEntry {
-        id: "emballonuridae",
-        name: "Sheath-tailed bats",
-        scientific_name: "",
-        family: "Emballonuridae",
-        call_type: "QCF",
-        freq_lo_hz: 20_000.0,
-        freq_hi_hz: 55_000.0,
-        description: "Quasi-constant-frequency calls; some species sweep 40\u{2013}100 kHz",
-        commonness: None,
+    BookEntryDef {
+        species: &species::VESPADELUS_VULTURNUS,
+        commonness: Some(Commonness::VeryCommon),
+        description: Some("One of Australia's smallest bats (~4 g). Common in forests and urban areas throughout Victoria. High-frequency calls."),
+        name: None,
     },
-    BatBookEntry {
-        id: "phyllostomidae",
-        name: "Leaf-nosed bats",
-        scientific_name: "",
-        family: "Phyllostomidae",
-        call_type: "FM",
-        freq_lo_hz: 40_000.0,
-        freq_hi_hz: 120_000.0,
-        description: "Low-intensity \"whispering\" bats; multi-harmonic FM calls",
-        commonness: None,
+    // ── Common ───────────────────────────────────────────────────
+    BookEntryDef {
+        species: &species::VESPADELUS_REGULUS,
+        commonness: Some(Commonness::Common),
+        description: Some("Small forest bat found across southern Australia. Roosts in tree hollows. Call frequency overlaps with Little Forest Bat."),
+        name: None,
     },
-    BatBookEntry {
-        id: "mormoopidae",
-        name: "Ghost-faced bats",
-        scientific_name: "",
-        family: "Mormoopidae",
-        call_type: "CF-FM",
-        freq_lo_hz: 45_000.0,
-        freq_hi_hz: 65_000.0,
-        description: "P. parnellii CF at ~63 kHz with FM sweep to ~54 kHz",
-        commonness: None,
+    BookEntryDef {
+        species: &species::NYCTOPHILUS_GOULDI,
+        commonness: Some(Commonness::Common),
+        description: Some("Common in forests of eastern Australia. Very quiet calls, similar to Lesser Long-eared Bat. Distinguished by larger size and habitat preference."),
+        name: None,
     },
-    BatBookEntry {
-        id: "miniopteridae",
-        name: "Bent-winged bats",
-        scientific_name: "",
-        family: "Miniopteridae",
-        call_type: "FM",
-        freq_lo_hz: 45_000.0,
-        freq_hi_hz: 85_000.0,
-        description: "FM-dominated calls; formerly classified within Vespertilionidae",
-        commonness: None,
+    BookEntryDef {
+        species: &species::VESPADELUS_DARLINGTONI,
+        commonness: Some(Commonness::Common),
+        description: Some("Largest Vespadelus species. Found in wet and dry forests of south-eastern Australia including Tasmania."),
+        name: None,
     },
-    BatBookEntry {
-        id: "nycteridae",
-        name: "Slit-faced bats",
-        scientific_name: "",
-        family: "Nycteridae",
-        call_type: "FM",
-        freq_lo_hz: 30_000.0,
-        freq_hi_hz: 80_000.0,
-        description: "Low-intensity, multi-harmonic FM calls emitted through nostrils",
-        commonness: None,
+    BookEntryDef {
+        species: &species::MINIOPTERUS_ORIANAE_OCEANENSIS,
+        commonness: Some(Commonness::Common),
+        description: Some("Cave-roosting bat found along eastern Australia. Fast, agile flier. Maternity cave near Bairnsdale. Vulnerable in Victoria."),
+        name: None,
     },
-    BatBookEntry {
-        id: "megadermatidae",
-        name: "False vampires",
-        scientific_name: "",
-        family: "Megadermatidae",
-        call_type: "FM",
-        freq_lo_hz: 20_000.0,
-        freq_hi_hz: 110_000.0,
-        description: "Low-intensity broadband FM; large carnivorous bats",
-        commonness: None,
+    BookEntryDef {
+        species: &species::OZIMOPS_PLANICEPS,
+        commonness: Some(Commonness::Common),
+        description: Some("Small free-tailed bat of south-eastern Australia. Roosts in tree hollows and buildings. Rapid, direct flight."),
+        name: None,
     },
-    BatBookEntry {
-        id: "pteropodidae",
-        name: "Fruit bats",
-        scientific_name: "",
-        family: "Pteropodidae",
-        call_type: "clicks",
-        freq_lo_hz: 10_000.0,
-        freq_hi_hz: 100_000.0,
-        description: "Most don't echolocate; Rousettus uses tongue clicks for cave navigation",
-        commonness: None,
+    BookEntryDef {
+        species: &species::OZIMOPS_RIDEI,
+        commonness: Some(Commonness::Common),
+        description: Some("Widespread across eastern Australian coasts. Similar to Southern Free-tailed Bat but slightly higher frequency calls."),
+        name: None,
+    },
+    // ── Uncommon ─────────────────────────────────────────────────
+    BookEntryDef {
+        species: &species::FALSISTRELLUS_TASMANIENSIS,
+        commonness: Some(Commonness::Uncommon),
+        description: Some("Large vesper bat of south-eastern forests. Roosts in tree hollows. Vulnerable (IUCN). Distinctive mid-range frequency calls."),
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::SCOTOREPENS_ORION,
+        commonness: Some(Commonness::Uncommon),
+        description: Some("Robust bat of south-eastern coastal forests. Narrow frequency range distinctive. Roosts in tree hollows."),
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::SCOTOREPENS_BALSTONI,
+        commonness: Some(Commonness::Uncommon),
+        description: Some("Widespread across inland Australia. Found in drier regions of northern and western Victoria. Similar frequency to Gould's Wattled Bat."),
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::MYOTIS_MACROPUS,
+        commonness: Some(Commonness::Uncommon),
+        description: Some("Australia's only fishing bat. Trawls water surfaces with large feet. Found near rivers, lakes, and dams. Very quiet calls."),
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::SACCOLAIMUS_FLAVIVENTRIS,
+        commonness: Some(Commonness::Uncommon),
+        description: Some("Large, fast-flying bat with glossy black fur and yellow belly. Migratory; visits Victoria seasonally. High-altitude forager."),
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::RHINOLOPHUS_MEGAPHYLLUS,
+        commonness: Some(Commonness::Uncommon),
+        description: Some("Constant-frequency echolocation using distinctive horseshoe-shaped noseleaf. Cave-roosting. Found in forests of eastern and southern Victoria."),
+        name: None,
+    },
+    // ── Rare ─────────────────────────────────────────────────────
+    BookEntryDef {
+        species: &species::NYCTOPHILUS_MAJOR,
+        commonness: Some(Commonness::Rare),
+        description: Some("Formerly N. timoriensis. Rare in Victoria, restricted to drier woodlands. Very quiet gleaning calls. Vulnerable."),
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::VESPADELUS_BAVERSTOCKI,
+        commonness: Some(Commonness::Rare),
+        description: Some("Small bat of inland Australia. In Victoria, restricted to the semi-arid northwest (Mallee region)."),
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::SCOTEANAX_RUEPPELLII,
+        commonness: Some(Commonness::Rare),
+        description: Some("Large, robust bat of eastern coastal forests. Rare in Victoria, mainly in far east Gippsland. Aggressive predator of large insects and small vertebrates."),
+        name: None,
+    },
+    // ── Endangered ───────────────────────────────────────────────
+    BookEntryDef {
+        species: &species::MINIOPTERUS_ORIANAE_BASSANII,
+        commonness: Some(Commonness::Endangered),
+        description: Some("Critically Endangered (EPBC Act). Dependent on a single maternity cave near Warrnambool. Population <50 individuals. Southwest Victoria only."),
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::NYCTOPHILUS_CORBENI,
+        commonness: Some(Commonness::Endangered),
+        description: Some("Vulnerable (EPBC Act). Extremely rare in Victoria; restricted to northwest Mallee (Hattah-Kulkyne, Gunbower). Possibly <50 individuals in VIC."),
+        name: None,
+    },
+    // ── Non-echolocating (sorted to end by get_manifest) ────────
+    BookEntryDef {
+        species: &species::PTEROPUS_POLIOCEPHALUS,
+        commonness: Some(Commonness::Rare),
+        description: Some("Australia's largest bat (wingspan ~1 m). Does not echolocate. Camps in colonies along waterways. Vulnerable (EPBC Act). Pollinator and seed disperser."),
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::PTEROPUS_SCAPULATUS,
+        commonness: Some(Commonness::Vagrant),
+        description: Some("Seasonal visitor to northern Victoria. Does not echolocate. Nomadic, following eucalypt flowering. Occasionally camps at Swan Hill and Numurkah."),
+        name: None,
     },
 ];
 
-/// Victorian (Australia) bat species, sorted by commonness.
-///
-/// Sources:
-/// - Batica: Microbat Call Identification Assistant (Bayside, VIC)
-/// - SWIFFT: Insectivorous bats of Victoria
-/// - Milne (2002): Key to the Bat Calls of the Top End of the NT
-/// - Wikipedia: List of bats of Australia
-/// - Museums Victoria, Atlas of Living Australia
-const VIC_AUSTRALIA_ENTRIES: &[BatBookEntry] = &[
+// ══════════════════════════════════════════════════════════════════════════════
+// Europe — species-level entries sorted by commonness
+// ══════════════════════════════════════════════════════════════════════════════
+//
+// Sources:
+// - Dietz, Helversen & Nill (2009): Bats of Britain, Europe and Northwest Africa
+// - Russ (2012): British Bat Calls: A Guide to Species Identification
+// - Barataud (2015): Acoustic Ecology of European Bats
+
+const EUROPE_BOOK: &[BookEntryDef] = &[
     // ── Very Common ──────────────────────────────────────────────
-    BatBookEntry {
-        id: "chalinolobus_gouldii",
-        name: "Gould's Wattled Bat",
-        scientific_name: "Chalinolobus gouldii",
-        family: "Vespertilionidae",
-        call_type: "FM",
-        freq_lo_hz: 25_000.0,
-        freq_hi_hz: 34_000.0,
-        description: "Widespread and abundant across Victoria. Roosts in tree hollows, buildings, and bat boxes. Alternating call frequencies are distinctive.",
+    BookEntryDef {
+        species: &species::PIPISTRELLUS_PIPISTRELLUS,
         commonness: Some(Commonness::VeryCommon),
+        description: None,
+        name: None,
     },
-    BatBookEntry {
-        id: "chalinolobus_morio",
-        name: "Chocolate Wattled Bat",
-        scientific_name: "Chalinolobus morio",
-        family: "Vespertilionidae",
-        call_type: "FM",
-        freq_lo_hz: 48_000.0,
-        freq_hi_hz: 53_000.0,
-        description: "Common across southern Australia. Small, dark bat roosting in tree hollows and buildings. Higher frequency calls than Gould's Wattled Bat.",
+    BookEntryDef {
+        species: &species::PIPISTRELLUS_PYGMAEUS,
         commonness: Some(Commonness::VeryCommon),
-    },
-    BatBookEntry {
-        id: "nyctophilus_geoffroyi",
-        name: "Lesser Long-eared Bat",
-        scientific_name: "Nyctophilus geoffroyi",
-        family: "Vespertilionidae",
-        call_type: "FM",
-        freq_lo_hz: 35_000.0,
-        freq_hi_hz: 80_000.0,
-        description: "Australia's most widespread bat. Very quiet, broadband FM calls; often difficult to detect acoustically. Gleaning insectivore with large ears.",
-        commonness: Some(Commonness::VeryCommon),
-    },
-    BatBookEntry {
-        id: "austronomus_australis",
-        name: "White-striped Free-tailed Bat",
-        scientific_name: "Austronomus australis",
-        family: "Molossidae",
-        call_type: "QCF",
-        freq_lo_hz: 10_000.0,
-        freq_hi_hz: 15_000.0,
-        description: "Australia's largest insectivorous bat. Loud, low-frequency calls audible to some humans. Fast, high-flying open-air forager.",
-        commonness: Some(Commonness::VeryCommon),
-    },
-    BatBookEntry {
-        id: "vespadelus_vulturnus",
-        name: "Little Forest Bat",
-        scientific_name: "Vespadelus vulturnus",
-        family: "Vespertilionidae",
-        call_type: "FM",
-        freq_lo_hz: 45_000.0,
-        freq_hi_hz: 53_000.0,
-        description: "One of Australia's smallest bats (~4 g). Common in forests and urban areas throughout Victoria. High-frequency calls.",
-        commonness: Some(Commonness::VeryCommon),
+        description: None,
+        name: None,
     },
     // ── Common ───────────────────────────────────────────────────
-    BatBookEntry {
-        id: "vespadelus_regulus",
-        name: "Southern Forest Bat",
-        scientific_name: "Vespadelus regulus",
-        family: "Vespertilionidae",
-        call_type: "FM",
-        freq_lo_hz: 40_000.0,
-        freq_hi_hz: 55_000.0,
-        description: "Small forest bat found across southern Australia. Roosts in tree hollows. Call frequency overlaps with Little Forest Bat.",
+    BookEntryDef {
+        species: &species::PIPISTRELLUS_NATHUSII,
         commonness: Some(Commonness::Common),
+        description: None,
+        name: None,
     },
-    BatBookEntry {
-        id: "nyctophilus_gouldi",
-        name: "Gould's Long-eared Bat",
-        scientific_name: "Nyctophilus gouldi",
-        family: "Vespertilionidae",
-        call_type: "FM",
-        freq_lo_hz: 35_000.0,
-        freq_hi_hz: 80_000.0,
-        description: "Common in forests of eastern Australia. Very quiet calls, similar to Lesser Long-eared Bat. Distinguished by larger size and habitat preference.",
+    BookEntryDef {
+        species: &species::PIPISTRELLUS_KUHLII,
         commonness: Some(Commonness::Common),
+        description: None,
+        name: None,
     },
-    BatBookEntry {
-        id: "vespadelus_darlingtoni",
-        name: "Large Forest Bat",
-        scientific_name: "Vespadelus darlingtoni",
-        family: "Vespertilionidae",
-        call_type: "FM",
-        freq_lo_hz: 38_000.0,
-        freq_hi_hz: 46_000.0,
-        description: "Largest Vespadelus species. Found in wet and dry forests of south-eastern Australia including Tasmania.",
+    BookEntryDef {
+        species: &species::MYOTIS_DAUBENTONII,
         commonness: Some(Commonness::Common),
+        description: None,
+        name: None,
     },
-    BatBookEntry {
-        id: "miniopterus_orianae_oceanensis",
-        name: "Eastern Bent-wing Bat",
-        scientific_name: "Miniopterus orianae oceanensis",
-        family: "Miniopteridae",
-        call_type: "FM",
-        freq_lo_hz: 43_000.0,
-        freq_hi_hz: 48_000.0,
-        description: "Cave-roosting bat found along eastern Australia. Fast, agile flier. Maternity cave near Bairnsdale. Vulnerable in Victoria.",
+    BookEntryDef {
+        species: &species::MYOTIS_NATTERERI,
         commonness: Some(Commonness::Common),
+        description: None,
+        name: None,
     },
-    BatBookEntry {
-        id: "ozimops_planiceps",
-        name: "Southern Free-tailed Bat",
-        scientific_name: "Ozimops planiceps",
-        family: "Molossidae",
-        call_type: "QCF",
-        freq_lo_hz: 25_000.0,
-        freq_hi_hz: 29_000.0,
-        description: "Small free-tailed bat of south-eastern Australia. Roosts in tree hollows and buildings. Rapid, direct flight.",
+    BookEntryDef {
+        species: &species::MYOTIS_MYSTACINUS,
         commonness: Some(Commonness::Common),
+        description: None,
+        name: None,
     },
-    BatBookEntry {
-        id: "ozimops_ridei",
-        name: "Ride's Free-tailed Bat",
-        scientific_name: "Ozimops ridei",
-        family: "Molossidae",
-        call_type: "QCF",
-        freq_lo_hz: 30_000.0,
-        freq_hi_hz: 35_000.0,
-        description: "Widespread across eastern Australian coasts. Similar to Southern Free-tailed Bat but slightly higher frequency calls.",
+    BookEntryDef {
+        species: &species::MYOTIS_BRANDTII,
         commonness: Some(Commonness::Common),
+        description: None,
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::MYOTIS_MYOTIS,
+        commonness: Some(Commonness::Common),
+        description: None,
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::NYCTALUS_NOCTULA,
+        commonness: Some(Commonness::Common),
+        description: None,
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::NYCTALUS_LEISLERI,
+        commonness: Some(Commonness::Common),
+        description: None,
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::EPTESICUS_SEROTINUS,
+        commonness: Some(Commonness::Common),
+        description: None,
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::EPTESICUS_NILSSONII,
+        commonness: Some(Commonness::Common),
+        description: None,
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::PLECOTUS_AURITUS,
+        commonness: Some(Commonness::Common),
+        description: None,
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::RHINOLOPHUS_FERRUMEQUINUM,
+        commonness: Some(Commonness::Common),
+        description: None,
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::RHINOLOPHUS_HIPPOSIDEROS,
+        commonness: Some(Commonness::Common),
+        description: None,
+        name: None,
+    },
+    BookEntryDef {
+        species: &species::MINIOPTERUS_SCHREIBERSII,
+        commonness: Some(Commonness::Common),
+        description: Some("Fast, agile cave-dweller found across southern Europe. Long, narrow wings. Formerly one species; now split into several. Sensitive to cave disturbance."),
+        name: None,
     },
     // ── Uncommon ─────────────────────────────────────────────────
-    BatBookEntry {
-        id: "falsistrellus_tasmaniensis",
-        name: "Eastern Falsistrelle",
-        scientific_name: "Falsistrellus tasmaniensis",
-        family: "Vespertilionidae",
-        call_type: "FM",
-        freq_lo_hz: 34_000.0,
-        freq_hi_hz: 39_000.0,
-        description: "Large vesper bat of south-eastern forests. Roosts in tree hollows. Vulnerable (IUCN). Distinctive mid-range frequency calls.",
+    BookEntryDef {
+        species: &species::BARBASTELLA_BARBASTELLUS,
         commonness: Some(Commonness::Uncommon),
+        description: None,
+        name: None,
     },
-    BatBookEntry {
-        id: "scotorepens_orion",
-        name: "Eastern Broad-nosed Bat",
-        scientific_name: "Scotorepens orion",
-        family: "Vespertilionidae",
-        call_type: "FM",
-        freq_lo_hz: 34_500.0,
-        freq_hi_hz: 37_500.0,
-        description: "Robust bat of south-eastern coastal forests. Narrow frequency range distinctive. Roosts in tree hollows.",
+    BookEntryDef {
+        species: &species::PLECOTUS_AUSTRIACUS,
         commonness: Some(Commonness::Uncommon),
+        description: None,
+        name: None,
     },
-    BatBookEntry {
-        id: "scotorepens_balstoni",
-        name: "Inland Broad-nosed Bat",
-        scientific_name: "Scotorepens balstoni",
-        family: "Vespertilionidae",
-        call_type: "FM",
-        freq_lo_hz: 28_000.0,
-        freq_hi_hz: 34_000.0,
-        description: "Widespread across inland Australia. Found in drier regions of northern and western Victoria. Similar frequency to Gould's Wattled Bat.",
+    BookEntryDef {
+        species: &species::VESPERTILIO_MURINUS,
         commonness: Some(Commonness::Uncommon),
+        description: None,
+        name: None,
     },
-    BatBookEntry {
-        id: "myotis_macropus",
-        name: "Large-footed Myotis",
-        scientific_name: "Myotis macropus",
-        family: "Vespertilionidae",
-        call_type: "FM",
-        freq_lo_hz: 35_000.0,
-        freq_hi_hz: 80_000.0,
-        description: "Australia's only fishing bat. Trawls water surfaces with large feet. Found near rivers, lakes, and dams. Very quiet calls.",
+    BookEntryDef {
+        species: &species::MYOTIS_BECHSTEINII,
         commonness: Some(Commonness::Uncommon),
+        description: None,
+        name: None,
     },
-    BatBookEntry {
-        id: "saccolaimus_flaviventris",
-        name: "Yellow-bellied Sheathtail Bat",
-        scientific_name: "Saccolaimus flaviventris",
-        family: "Emballonuridae",
-        call_type: "QCF",
-        freq_lo_hz: 17_500.0,
-        freq_hi_hz: 22_500.0,
-        description: "Large, fast-flying bat with glossy black fur and yellow belly. Migratory; visits Victoria seasonally. High-altitude forager.",
+    BookEntryDef {
+        species: &species::MYOTIS_DASYCNEME,
         commonness: Some(Commonness::Uncommon),
+        description: None,
+        name: None,
     },
-    BatBookEntry {
-        id: "rhinolophus_megaphyllus",
-        name: "Eastern Horseshoe Bat",
-        scientific_name: "Rhinolophus megaphyllus",
-        family: "Rhinolophidae",
-        call_type: "CF",
-        freq_lo_hz: 67_000.0,
-        freq_hi_hz: 71_000.0,
-        description: "Constant-frequency echolocation using distinctive horseshoe-shaped noseleaf. Cave-roosting. Found in forests of eastern and southern Victoria.",
+    BookEntryDef {
+        species: &species::TADARIDA_TENIOTIS,
         commonness: Some(Commonness::Uncommon),
+        description: Some("Europe's only free-tailed bat. Loud, low-frequency calls audible to humans. Fast, high-altitude forager. Restricted to the Mediterranean; roosts in cliff crevices and tall buildings."),
+        name: None,
     },
     // ── Rare ─────────────────────────────────────────────────────
-    BatBookEntry {
-        id: "pteropus_poliocephalus",
-        name: "Grey-headed Flying-fox",
-        scientific_name: "Pteropus poliocephalus",
-        family: "Pteropodidae",
-        call_type: "none",
-        freq_lo_hz: 0.0,
-        freq_hi_hz: 0.0,
-        description: "Australia's largest bat (wingspan ~1 m). Does not echolocate. Camps in colonies along waterways. Vulnerable (EPBC Act). Pollinator and seed disperser.",
+    BookEntryDef {
+        species: &species::RHINOLOPHUS_EURYALE,
         commonness: Some(Commonness::Rare),
+        description: None,
+        name: None,
     },
-    BatBookEntry {
-        id: "nyctophilus_major",
-        name: "Greater Long-eared Bat",
-        scientific_name: "Nyctophilus major",
-        family: "Vespertilionidae",
-        call_type: "FM",
-        freq_lo_hz: 35_000.0,
-        freq_hi_hz: 65_000.0,
-        description: "Formerly N. timoriensis. Rare in Victoria, restricted to drier woodlands. Very quiet gleaning calls. Vulnerable.",
+    BookEntryDef {
+        species: &species::NYCTALUS_LASIOPTERUS,
         commonness: Some(Commonness::Rare),
-    },
-    BatBookEntry {
-        id: "vespadelus_baverstocki",
-        name: "Inland Forest Bat",
-        scientific_name: "Vespadelus baverstocki",
-        family: "Vespertilionidae",
-        call_type: "FM",
-        freq_lo_hz: 45_000.0,
-        freq_hi_hz: 50_000.0,
-        description: "Small bat of inland Australia. In Victoria, restricted to the semi-arid northwest (Mallee region).",
-        commonness: Some(Commonness::Rare),
-    },
-    BatBookEntry {
-        id: "scoteanax_rueppellii",
-        name: "Greater Broad-nosed Bat",
-        scientific_name: "Scoteanax rueppellii",
-        family: "Vespertilionidae",
-        call_type: "FM",
-        freq_lo_hz: 30_000.0,
-        freq_hi_hz: 38_000.0,
-        description: "Large, robust bat of eastern coastal forests. Rare in Victoria, mainly in far east Gippsland. Aggressive predator of large insects and small vertebrates.",
-        commonness: Some(Commonness::Rare),
-    },
-    // ── Endangered ───────────────────────────────────────────────
-    BatBookEntry {
-        id: "miniopterus_orianae_bassanii",
-        name: "Southern Bent-wing Bat",
-        scientific_name: "Miniopterus orianae bassanii",
-        family: "Miniopteridae",
-        call_type: "FM",
-        freq_lo_hz: 43_000.0,
-        freq_hi_hz: 48_000.0,
-        description: "Critically Endangered (EPBC Act). Dependent on a single maternity cave near Warrnambool. Population <50 individuals. Southwest Victoria only.",
-        commonness: Some(Commonness::Endangered),
-    },
-    BatBookEntry {
-        id: "nyctophilus_corbeni",
-        name: "South-eastern Long-eared Bat",
-        scientific_name: "Nyctophilus corbeni",
-        family: "Vespertilionidae",
-        call_type: "FM",
-        freq_lo_hz: 35_000.0,
-        freq_hi_hz: 65_000.0,
-        description: "Vulnerable (EPBC Act). Extremely rare in Victoria; restricted to northwest Mallee (Hattah-Kulkyne, Gunbower). Possibly <50 individuals in VIC.",
-        commonness: Some(Commonness::Endangered),
-    },
-    // ── Vagrant ──────────────────────────────────────────────────
-    BatBookEntry {
-        id: "pteropus_scapulatus",
-        name: "Little Red Flying-fox",
-        scientific_name: "Pteropus scapulatus",
-        family: "Pteropodidae",
-        call_type: "none",
-        freq_lo_hz: 0.0,
-        freq_hi_hz: 0.0,
-        description: "Seasonal visitor to northern Victoria. Does not echolocate. Nomadic, following eucalypt flowering. Occasionally camps at Swan Hill and Numurkah.",
-        commonness: Some(Commonness::Vagrant),
+        description: None,
+        name: None,
     },
 ];
 
 /// Get the bat book manifest for a given region.
+///
+/// Non-echolocating species are always sorted to the end (stable sort preserves
+/// relative order within each group).
 pub fn get_manifest(region: BatBookRegion) -> BatBookManifest {
-    let entries = match region {
-        BatBookRegion::VicAustralia => VIC_AUSTRALIA_ENTRIES.to_vec(),
-        _ => GLOBAL_ENTRIES.to_vec(),
+    let book: &[BookEntryDef] = match region {
+        BatBookRegion::VicAustralia => VIC_AUSTRALIA_BOOK,
+        BatBookRegion::Europe => EUROPE_BOOK,
+        _ => GLOBAL_BOOK,
     };
+    let mut entries: Vec<_> = book.iter().map(|e| e.materialize()).collect();
+    // Stable sort: echolocating first, non-echolocating last
+    entries.sort_by_key(|e| if e.echolocates { 0u8 } else { 1 });
     BatBookManifest {
         region: region.short_label().to_string(),
         entries,

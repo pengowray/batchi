@@ -4199,6 +4199,32 @@ body.sidebar-resizing {
     white-space: nowrap;
 }
 
+/* Divider between echolocating and non-echolocating entries */
+.bat-book-divider {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 6px;
+    min-width: 40px;
+    align-self: center;
+}
+
+.bat-book-divider-line {
+    flex: 1;
+    height: 1px;
+    background: #444;
+    min-width: 8px;
+}
+
+.bat-book-divider-label {
+    font-size: 8px;
+    color: #555;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    white-space: nowrap;
+}
+
 /* Reference panel (floating overlay, right side of main view) */
 .bat-book-ref-panel {
     position: absolute;

@@ -292,8 +292,8 @@ pub fn Toolbar() -> impl IntoView {
                         <div class="about-header">
                             <span class="about-title"><b>"Oversample"</b></span>
                             <span class="about-version">{concat!("v", env!("CARGO_PKG_VERSION"))}</span>
+                            <div style="font-size: 11px; color: #aaa; margin-top: 2px;">"by Pengo Wray"</div>
                         </div>
-                        <div style="font-size: 11px; color: #aaa; margin-top: 2px;">"by Pengo Wray"</div>
                         <p class="about-desc">"Bat call viewer and acoustic analysis tool."</p>
                         <div style="margin-top: 12px; font-size: 11px; color: #999; line-height: 1.8;">
                             "Thanks to the libraries that make this possible:"
@@ -309,7 +309,7 @@ pub fn Toolbar() -> impl IntoView {
                                 <div><a href="https://crates.io/crates/wasm-bindgen" target="_blank" style="color: #8cf; text-decoration: none;">"wasm-bindgen"</a></div>
                                 <div><a href="https://crates.io/crates/web-sys" target="_blank" style="color: #8cf; text-decoration: none;">"web-sys"</a></div>
                             </div>
-                            <div style="margin-top: 8px;">"and mic code from "<a href="https://github.com/jmears63/batgizmo-app-public" target="_blank" style="color: #8cf; text-decoration: none;">"batgizmo-app"</a></div>
+                            <div style="margin-top: 8px;">"and "<a href="https://github.com/jmears63/batgizmo-app-public" target="_blank" style="color: #8cf; text-decoration: none;">"batgizmo-app"</a>" for USB microphone code and inspiration."</div>
                         </div>
                         <button class="about-close" on:click=move |_| show_about.set(false)>"Close"</button>
                     </div>

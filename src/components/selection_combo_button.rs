@@ -302,8 +302,12 @@ pub fn SelectionComboButton() -> impl IntoView {
 
     view! {
         <div
-            style=move || format!("position: absolute; top: 10px; right: 30px; pointer-events: none; z-index: 20; opacity: {}; transition: opacity 0.1s;",
-                if state.mouse_in_label_area.get() { "0" } else { "1" })
+            style=move || {
+                let right = if state.bat_book_ref_open.get() { 176 } else { 30 };
+                format!("position: absolute; top: 10px; right: {}px; pointer-events: none; z-index: 20; opacity: {}; transition: opacity 0.1s, right 0.15s;",
+                    right,
+                    if state.mouse_in_label_area.get() { "0" } else { "1" })
+            }
             on:click=|ev: web_sys::MouseEvent| ev.stop_propagation()
             on:touchstart=|ev: web_sys::TouchEvent| ev.stop_propagation()
         >

@@ -95,8 +95,21 @@ pub fn BatBookStrip() -> impl IntoView {
             <div class="bat-book-scroll" node_ref=scroll_ref on:wheel=on_wheel>
                 {move || {
                     let m = manifest.get();
-                    m.entries.iter().map(|entry| {
-                        view! { <BatBookChip entry=entry.clone() /> }
+                    let has_non_echo = m.entries.iter().any(|e| !e.echolocates);
+                    m.entries.iter().enumerate().map(|(i, entry)| {
+                        // Insert a divider before the first non-echolocating entry
+                        let show_divider = has_non_echo && !entry.echolocates
+                            && (i == 0 || m.entries[i - 1].echolocates);
+                        view! {
+                            {show_divider.then(|| view! {
+                                <div class="bat-book-divider">
+                                    <span class="bat-book-divider-line"></span>
+                                    <span class="bat-book-divider-label">"Non-echolocating"</span>
+                                    <span class="bat-book-divider-line"></span>
+                                </div>
+                            })}
+                            <BatBookChip entry=entry.clone() />
+                        }
                     }).collect_view()
                 }}
             </div>
