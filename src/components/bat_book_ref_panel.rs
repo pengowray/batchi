@@ -133,7 +133,7 @@ pub fn BatBookRefPanel() -> impl IntoView {
                     }).collect_view()
                 }}
                 <div class="ref-panel-draft-notice">
-                    "Draft Only. Details are approximate at best."
+                    "Draft Only. May contain errors."
                 </div>
             </div>
         </div>
