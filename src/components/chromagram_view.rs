@@ -149,8 +149,6 @@ pub fn ChromagramView() -> impl IntoView {
         let playhead = state.playhead_time.get();
         let is_playing = state.is_playing.get();
         let follow = state.follow_cursor.get();
-        // Use get_untracked to avoid recursive Effect invocation — this Effect
-        // already re-runs via playhead_time / is_playing / follow_cursor changes.
         let suspended = state.follow_suspended.get_untracked();
 
         if !follow { return; }
@@ -183,17 +181,14 @@ pub fn ChromagramView() -> impl IntoView {
         if suspended {
             let playhead_visible = playhead_rel >= 0.0 && playhead_rel <= visible_time;
             if playhead_visible {
-                let now = js_sys::Date::now();
-                match state.follow_visible_since.get_untracked() {
-                    None => { state.follow_visible_since.set(Some(now)); }
-                    Some(since) if now - since >= 500.0 => {
-                        state.follow_suspended.set(false);
-                        state.follow_visible_since.set(None);
-                    }
-                    _ => {}
+                let resume = match state.follow_visible_since.get_untracked() {
+                    Some(since) => js_sys::Date::now() - since >= 200.0,
+                    None => true,
+                };
+                if resume {
+                    state.follow_suspended.set(false);
+                    state.follow_visible_since.set(None);
                 }
-            } else {
-                state.follow_visible_since.set(None);
             }
             return;
         }

@@ -917,7 +917,8 @@ pub fn Spectrogram() -> impl IntoView {
 
     // Effect 4: auto-scroll to follow playhead during playback
     // Supports temporary suspension: when the user manually scrolls, following
-    // pauses until the playhead is back on-screen for 500 ms continuously.
+    // pauses until the playhead is on-screen and 200ms have passed since the
+    // last scroll action — so it resumes even when very zoomed in.
     Effect::new(move || {
         let playhead = state.playhead_time.get();
         let is_playing = state.is_playing.get();
@@ -957,23 +958,17 @@ pub fn Spectrogram() -> impl IntoView {
         let playhead_rel = playhead - scroll;
 
         if suspended {
+            // Resume once the playhead is on-screen and user stopped scrolling
             let playhead_visible = playhead_rel >= 0.0 && playhead_rel <= visible_time;
             if playhead_visible {
-                let now = js_sys::Date::now(); // milliseconds
-                match state.follow_visible_since.get_untracked() {
-                    None => {
-                        state.follow_visible_since.set(Some(now));
-                    }
-                    Some(since) if now - since >= 500.0 => {
-                        // Playhead has been on-screen for 500 ms — resume following
-                        state.follow_suspended.set(false);
-                        state.follow_visible_since.set(None);
-                    }
-                    _ => {}
+                let resume = match state.follow_visible_since.get_untracked() {
+                    Some(since) => js_sys::Date::now() - since >= 200.0,
+                    None => true, // no recorded scroll time — safe to resume
+                };
+                if resume {
+                    state.follow_suspended.set(false);
+                    state.follow_visible_since.set(None);
                 }
-            } else {
-                // Playhead wandered off-screen; reset the visibility timer
-                state.follow_visible_since.set(None);
             }
             return;
         }

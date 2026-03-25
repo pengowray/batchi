@@ -133,14 +133,37 @@ fn cancel_replay_timer() {
     });
 }
 
+/// Check whether the current playhead position is within the visible viewport.
+fn is_playhead_visible(state: &AppState) -> bool {
+    let playhead = state.playhead_time.get_untracked();
+    let scroll = state.scroll_offset.get_untracked();
+    let zoom = state.zoom_level.get_untracked();
+    let canvas_w = state.spectrogram_canvas_width.get_untracked();
+    let time_res = state.current_file_index.get_untracked()
+        .and_then(|i| state.files.get_untracked().get(i).cloned())
+        .map(|f| f.spectrogram.time_resolution)
+        .unwrap_or(1.0);
+    let visible = viewport::visible_time(canvas_w, zoom, time_res);
+    let rel = playhead - scroll;
+    rel >= 0.0 && rel <= visible
+}
+
 pub fn stop(state: &AppState) {
     let was_playing = state.is_playing.get_untracked();
     cancel_replay_timer();
     cancel_playhead();
     streaming_playback::stop_stream();
     if was_playing {
-        // Restore scroll to pre-play position when stopping active playback.
-        state.scroll_offset.set(state.pre_play_scroll.get_untracked());
+        if state.user_panned_during_playback.get_untracked()
+            && !is_playhead_visible(state)
+        {
+            // User scrolled the playhead off-screen — don't snap back.
+            // The pre-play position was pushed to nav history when playback
+            // started, so the back button can still return there.
+        } else {
+            // Playhead is still on-screen (or user didn't pan) — snap back.
+            state.scroll_offset.set(state.pre_play_scroll.get_untracked());
+        }
     }
     state.is_playing.set(false);
     state.active_playback_selection.set(None);
@@ -365,7 +388,9 @@ pub fn play(state: &AppState) {
         _ => 1.0,
     };
 
+    state.push_nav(); // save pre-play position so the back button can return here
     state.pre_play_scroll.set(state.scroll_offset.get_untracked());
+    state.user_panned_during_playback.set(false);
     state.active_playback_selection.set(selection);
     state.is_playing.set(true);
     state.playhead_time.set(play_start_time);
@@ -499,7 +524,11 @@ fn start_playhead(state: AppState, start_time: f64, duration: f64, speed: f64) {
 
         if current >= end_time {
             state.playhead_time.set(end_time);
-            state.scroll_offset.set(state.pre_play_scroll.get_untracked());
+            if !(state.user_panned_during_playback.get_untracked()
+                && !is_playhead_visible(&state))
+            {
+                state.scroll_offset.set(state.pre_play_scroll.get_untracked());
+            }
             state.is_playing.set(false);
             // Show bookmark popup briefly if any bookmarks were made during playback
             if !state.bookmarks.get_untracked().is_empty() {

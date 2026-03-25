@@ -776,6 +776,7 @@ pub struct AppState {
     pub follow_suspended: RwSignal<bool>,
     pub follow_visible_since: RwSignal<Option<f64>>,
     pub pre_play_scroll: RwSignal<f64>,
+    pub user_panned_during_playback: RwSignal<bool>,
     // Filter EQ (driven by bandpass_mode effect)
     pub filter_enabled: RwSignal<bool>,
     pub filter_band_mode: RwSignal<u8>,
@@ -1227,6 +1228,7 @@ impl AppState {
             follow_suspended: RwSignal::new(false),
             follow_visible_since: RwSignal::new(None),
             pre_play_scroll: RwSignal::new(0.0),
+            user_panned_during_playback: RwSignal::new(false),
             filter_enabled: RwSignal::new(false),
             filter_band_mode: RwSignal::new(3),
             filter_freq_low: RwSignal::new(20_000.0),
@@ -1618,12 +1620,16 @@ impl AppState {
         });
     }
 
-    /// Temporarily suspend follow-cursor so the user can scroll freely.
-    /// Re-engagement happens automatically once the playhead is visible for 500ms.
+    /// Temporarily suspend follow-cursor when the user scrolls or pans.
+    /// Re-engagement happens automatically once the playhead is on-screen
+    /// and 200ms have passed since the last scroll action.
     pub fn suspend_follow(&self) {
+        if self.is_playing.get_untracked() {
+            self.user_panned_during_playback.set(true);
+        }
         if self.follow_cursor.get_untracked() && self.is_playing.get_untracked() {
             self.follow_suspended.set(true);
-            self.follow_visible_since.set(None);
+            self.follow_visible_since.set(Some(js_sys::Date::now()));
         }
     }
 
