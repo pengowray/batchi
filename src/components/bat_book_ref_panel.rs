@@ -1,13 +1,21 @@
 use leptos::prelude::*;
+use wasm_bindgen::JsCast;
 use crate::state::AppState;
 use crate::bat_book::data::get_manifest;
 
 /// Floating reference panel on the right side of the main view.
 /// Shows info about the selected bat family/families.
-/// Scroll wheel navigates through entries.
+/// Scroll wheel on the header navigates between entries;
+/// the body scrolls normally for content overflow.
 #[component]
 pub fn BatBookRefPanel() -> impl IntoView {
     let state = expect_context::<AppState>();
+
+    // Which entry is "focused" when scrolling through multi-select via header
+    let focused_index = RwSignal::new(0usize);
+
+    // NodeRef for the body so we can scroll it programmatically
+    let body_ref = NodeRef::<leptos::html::Div>::new();
 
     let selected_entries = Memo::new(move |_| {
         let sel_ids = state.bat_book_selected_ids.get();
@@ -21,55 +29,82 @@ pub fn BatBookRefPanel() -> impl IntoView {
             .collect::<Vec<_>>()
     });
 
+    // Reset focused_index when selection changes
+    Effect::new(move |_| {
+        let _ = state.bat_book_selected_ids.get();
+        focused_index.set(0);
+    });
+
     let on_close = move |ev: web_sys::MouseEvent| {
         ev.stop_propagation();
         state.bat_book_ref_open.set(false);
     };
 
-    // Scroll wheel: navigate to prev/next entry in the full manifest
-    // Disabled when multiple bats are selected (allow normal scroll instead)
-    let on_wheel = move |ev: web_sys::WheelEvent| {
-        let ids = state.bat_book_selected_ids.get_untracked();
-        if ids.len() > 1 {
-            // Multiple selected — let the panel scroll normally
-            return;
-        }
+    // Scroll the body to bring the Nth .ref-panel-entry into view
+    let scroll_body_to_entry = move |index: usize| {
+        let Some(body) = body_ref.get_untracked() else { return };
+        let body_el: &web_sys::HtmlElement = &body;
+        let Ok(nodes) = body_el.query_selector_all(".ref-panel-entry") else { return };
+        let Some(node) = nodes.get(index as u32) else { return };
+        let Ok(el) = node.dyn_into::<web_sys::Element>() else { return };
+        let opts = web_sys::ScrollIntoViewOptions::new();
+        opts.set_behavior(web_sys::ScrollBehavior::Smooth);
+        opts.set_block(web_sys::ScrollLogicalPosition::Start);
+        el.scroll_into_view_with_scroll_into_view_options(&opts);
+    };
+
+    // Header wheel handler: navigate entries
+    let on_header_wheel = move |ev: web_sys::WheelEvent| {
         ev.prevent_default();
         ev.stop_propagation();
         let delta = ev.delta_y();
         if delta.abs() < 1.0 { return; }
 
-        let region = state.bat_book_region.get_untracked();
-        let manifest = get_manifest(region);
         let ids = state.bat_book_selected_ids.get_untracked();
-        if ids.is_empty() || manifest.entries.is_empty() { return; }
 
-        // Find the index of the last selected entry
-        let last_id = &ids[ids.len() - 1];
-        let cur_idx = manifest.entries.iter().position(|e| e.id == last_id.as_str());
-        let Some(cur) = cur_idx else { return };
+        if ids.len() > 1 {
+            // Multi-select: scroll through selected entries in the body
+            let entries = selected_entries.get_untracked();
+            let n = entries.len();
+            if n == 0 { return; }
 
-        let next = if delta > 0.0 {
-            // scroll down = next
-            if cur + 1 < manifest.entries.len() { cur + 1 } else { return }
+            let cur = focused_index.get_untracked();
+            let next = if delta > 0.0 {
+                if cur + 1 < n { cur + 1 } else { return }
+            } else {
+                if cur > 0 { cur - 1 } else { return }
+            };
+            focused_index.set(next);
+            scroll_body_to_entry(next);
         } else {
-            // scroll up = prev
-            if cur > 0 { cur - 1 } else { return }
-        };
+            // Single select: navigate through full manifest
+            let region = state.bat_book_region.get_untracked();
+            let manifest = get_manifest(region);
+            if ids.is_empty() || manifest.entries.is_empty() { return; }
 
-        let new_id = manifest.entries[next].id.to_string();
+            let last_id = &ids[ids.len() - 1];
+            let cur_idx = manifest.entries.iter().position(|e| e.id == last_id.as_str());
+            let Some(cur) = cur_idx else { return };
 
-        state.bat_book_selected_ids.set(vec![new_id]);
+            let next = if delta > 0.0 {
+                if cur + 1 < manifest.entries.len() { cur + 1 } else { return }
+            } else {
+                if cur > 0 { cur - 1 } else { return }
+            };
 
-        // Apply FF for the new entry via focus stack
-        let entry = &manifest.entries[next];
-        if let Some(idx) = state.current_file_index.get_untracked() {
-            let files = state.files.get_untracked();
-            if let Some(file) = files.get(idx) {
-                let nyquist = file.audio.sample_rate as f64 / 2.0;
-                if entry.freq_lo_hz < nyquist {
-                    let clamped_hi = entry.freq_hi_hz.min(nyquist);
-                    state.push_bat_book_ff(entry.freq_lo_hz, clamped_hi);
+            let new_id = manifest.entries[next].id.to_string();
+            state.bat_book_selected_ids.set(vec![new_id]);
+
+            // Apply FF for the new entry via focus stack
+            let entry = &manifest.entries[next];
+            if let Some(idx) = state.current_file_index.get_untracked() {
+                let files = state.files.get_untracked();
+                if let Some(file) = files.get(idx) {
+                    let nyquist = file.audio.sample_rate as f64 / 2.0;
+                    if entry.freq_lo_hz < nyquist {
+                        let clamped_hi = entry.freq_hi_hz.min(nyquist);
+                        state.push_bat_book_ff(entry.freq_lo_hz, clamped_hi);
+                    }
                 }
             }
         }
@@ -96,14 +131,25 @@ pub fn BatBookRefPanel() -> impl IntoView {
             class="bat-book-ref-panel"
             on:touchstart=on_touchstart
             on:touchend=on_touchend
-            on:wheel=on_wheel
         >
-            <div class="ref-panel-header">
+            <div class="ref-panel-header" on:wheel=on_header_wheel>
                 <span class="ref-panel-name">
                     {move || {
-                        let n = selected_entries.get().len();
+                        let entries = selected_entries.get();
+                        let n = entries.len();
                         if n > 1 {
-                            format!("{n} selections")
+                            let fi = focused_index.get();
+                            format!("{} of {} selections", fi + 1, n)
+                        } else if n == 1 {
+                            let region = state.bat_book_region.get();
+                            let manifest = get_manifest(region);
+                            let total = manifest.entries.len();
+                            let ids = state.bat_book_selected_ids.get();
+                            let pos = ids.first()
+                                .and_then(|id| manifest.entries.iter().position(|e| e.id == id.as_str()))
+                                .map(|i| i + 1)
+                                .unwrap_or(0);
+                            format!("{} \u{2014} {} of {}", region.short_label(), pos, total)
                         } else {
                             String::new()
                         }
@@ -113,7 +159,7 @@ pub fn BatBookRefPanel() -> impl IntoView {
                     "\u{00d7}"
                 </button>
             </div>
-            <div class="ref-panel-body">
+            <div class="ref-panel-body" node_ref=body_ref>
                 {move || {
                     let entries = selected_entries.get();
                     entries.into_iter().map(|entry| {
