@@ -148,6 +148,23 @@ fn is_playhead_visible(state: &AppState) -> bool {
     rel >= 0.0 && rel <= visible
 }
 
+/// Check whether any part of a selection overlaps the visible viewport.
+fn is_selection_in_viewport(state: &AppState, sel: &Selection) -> bool {
+    let scroll = state.scroll_offset.get_untracked();
+    let zoom = state.zoom_level.get_untracked();
+    let canvas_w = state.spectrogram_canvas_width.get_untracked();
+    let time_res = state.current_file_index.get_untracked()
+        .and_then(|i| state.files.get_untracked().get(i).cloned())
+        .map(|f| f.spectrogram.time_resolution)
+        .unwrap_or(1.0);
+    let visible = viewport::visible_time(canvas_w, zoom, time_res);
+    if visible <= 0.0 {
+        return true; // can't determine viewport, assume visible
+    }
+    let vp_end = scroll + visible;
+    sel.time_start < vp_end && sel.time_end > scroll
+}
+
 pub fn stop(state: &AppState) {
     let was_playing = state.is_playing.get_untracked();
     cancel_replay_timer();
@@ -358,7 +375,15 @@ pub fn play(state: &AppState) {
     let selection = if state.active_timeline.get_untracked().is_some() {
         timeline_selection(state)
     } else {
-        effective_selection(state)
+        let sel = effective_selection(state);
+        // If the selection is entirely off-screen, ignore it and play from "here"
+        if let Some(ref s) = sel {
+            if !is_selection_in_viewport(state, s) {
+                play_from_here(state);
+                return;
+            }
+        }
+        sel
     };
     let sr = target.sample_rate;
 
