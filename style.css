@@ -1672,7 +1672,7 @@ body.sidebar-resizing {
     align-items: center;
     justify-content: center;
     min-width: 0; /* allow shrinking */
-    overflow: hidden;
+    overflow: visible;
     gap: 1px;
 }
 
