@@ -149,7 +149,7 @@ fn is_playhead_visible(state: &AppState) -> bool {
 }
 
 /// Check whether any part of a selection overlaps the visible viewport.
-fn is_selection_in_viewport(state: &AppState, sel: &Selection) -> bool {
+pub fn is_selection_in_viewport(state: &AppState, sel: &Selection) -> bool {
     let scroll = state.scroll_offset.get_untracked();
     let zoom = state.zoom_level.get_untracked();
     let canvas_w = state.spectrogram_canvas_width.get_untracked();

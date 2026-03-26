@@ -74,12 +74,20 @@ pub fn BottomToolbar() -> impl IntoView {
             PlayStartMode::FromHere => "Here".to_string(),
             PlayStartMode::Selected => "Sel".to_string(),
             PlayStartMode::Auto => {
-                // Subscribe to selection-related signals for reactivity
+                // Subscribe to signals that affect auto-play mode for reactivity
                 let _sel = state.selection.get();
                 let _ann = state.selected_annotation_ids.get();
-                if playback::effective_selection(&state).is_some() {
-                    "Sel".to_string()
-                } else if state.scroll_offset.get() <= 0.0 {
+                let _scroll = state.scroll_offset.get();
+                let _zoom = state.zoom_level.get();
+                if let Some(sel) = playback::effective_selection(&state) {
+                    if playback::is_selection_in_viewport(&state, &sel) {
+                        "Sel".to_string()
+                    } else if _scroll <= 0.0 {
+                        "All".to_string()
+                    } else {
+                        "Here".to_string()
+                    }
+                } else if _scroll <= 0.0 {
                     "All".to_string()
                 } else {
                     "Here".to_string()
@@ -103,8 +111,14 @@ pub fn BottomToolbar() -> impl IntoView {
                     }
                 }
                 PlayStartMode::Auto => {
-                    if playback::effective_selection(&state).is_some() {
-                        playback::play(&state);
+                    if let Some(sel) = playback::effective_selection(&state) {
+                        if playback::is_selection_in_viewport(&state, &sel) {
+                            playback::play(&state);
+                        } else if state.scroll_offset.get_untracked() <= 0.0 {
+                            playback::play_from_start(&state);
+                        } else {
+                            playback::play_from_here(&state);
+                        }
                     } else if state.scroll_offset.get_untracked() <= 0.0 {
                         playback::play_from_start(&state);
                     } else {

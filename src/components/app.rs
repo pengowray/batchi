@@ -627,8 +627,14 @@ pub fn App() -> impl IntoView {
                             }
                         }
                         PlayStartMode::Auto => {
-                            if playback::effective_selection(&state_kb).is_some() {
-                                playback::play(&state_kb);
+                            if let Some(sel) = playback::effective_selection(&state_kb) {
+                                if playback::is_selection_in_viewport(&state_kb, &sel) {
+                                    playback::play(&state_kb);
+                                } else if state_kb.scroll_offset.get_untracked() <= 0.0 {
+                                    playback::play_from_start(&state_kb);
+                                } else {
+                                    playback::play_from_here(&state_kb);
+                                }
                             } else if state_kb.scroll_offset.get_untracked() <= 0.0 {
                                 playback::play_from_start(&state_kb);
                             } else {
