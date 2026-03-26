@@ -289,6 +289,148 @@ async fn yield_now() {
     wasm_bindgen_futures::JsFuture::from(promise).await.ok();
 }
 
+/// Threshold: files below this size verify via full blake3; above via spot_hash_b3.
+/// The spot hash reads up to 16 x 1MB = 16MB, so below ~24MB the full blake3
+/// costs about the same and is more definitive.
+pub const SMALL_FILE_THRESHOLD: u64 = 24_000_000;
+
+/// Merge reference hashes from XC sidecar and annotation-store sidecar identity.
+/// XC hashes take priority when both sources have a value.
+fn merge_references(
+    xc_hashes: &Option<crate::state::SidecarHashes>,
+    sidecar_id: &Option<FileIdentity>,
+) -> crate::state::SidecarHashes {
+    let mut merged = crate::state::SidecarHashes::default();
+
+    // Start with sidecar identity (from .batm file)
+    if let Some(sid) = sidecar_id {
+        merged.blake3 = sid.full_blake3.clone();
+        merged.sha256 = sid.full_sha256.clone();
+        merged.spot_hash_b3 = sid.spot_hash_b3.clone();
+        merged.content_hash = sid.content_hash.clone();
+        merged.file_size = Some(sid.file_size);
+        merged.data_offset = sid.data_offset;
+        merged.data_size = sid.data_size;
+    }
+
+    // Override with XC hashes (more authoritative for downloaded files)
+    if let Some(xc) = xc_hashes {
+        if xc.blake3.is_some() { merged.blake3 = xc.blake3.clone(); }
+        if xc.sha256.is_some() { merged.sha256 = xc.sha256.clone(); }
+        if xc.spot_hash_b3.is_some() { merged.spot_hash_b3 = xc.spot_hash_b3.clone(); }
+        if xc.content_hash.is_some() { merged.content_hash = xc.content_hash.clone(); }
+        if xc.file_size.is_some() { merged.file_size = xc.file_size; }
+        if xc.data_offset.is_some() { merged.data_offset = xc.data_offset; }
+        if xc.data_size.is_some() { merged.data_size = xc.data_size; }
+    }
+
+    merged
+}
+
+/// Compare computed identity against reference hashes. Returns the verification outcome.
+///
+/// Logic:
+/// 1. File size check (>4KB difference = significant)
+/// 2. Primary hash: blake3 for small files (<10MB), spot_hash for large files
+/// 3. Content hash fallback if primary mismatches
+fn run_verification(
+    identity: &FileIdentity,
+    reference: &crate::state::SidecarHashes,
+) -> crate::state::VerifyOutcome {
+    use crate::state::VerifyOutcome;
+
+    if reference.is_empty() {
+        return VerifyOutcome::Pending;
+    }
+
+    // 1. File size check
+    if let Some(ref_size) = reference.file_size {
+        let diff = (identity.file_size as i64 - ref_size as i64).unsigned_abs();
+        if diff > 4096 {
+            // Sizes differ significantly — hash verification still proceeds
+            // but is very likely to fail (unless file was completely rewritten)
+        }
+    }
+
+    // 2. Primary hash check based on file size
+    let is_small = identity.file_size < SMALL_FILE_THRESHOLD;
+
+    let primary_matched = if is_small {
+        match (&identity.full_blake3, &reference.blake3) {
+            (Some(computed), Some(expected)) => Some(computed == expected),
+            _ => None,
+        }
+    } else {
+        match (&identity.spot_hash_b3, &reference.spot_hash_b3) {
+            (Some(computed), Some(expected)) => Some(computed == expected),
+            _ => None,
+        }
+    };
+
+    match primary_matched {
+        Some(true) => return VerifyOutcome::Match,
+        None => return VerifyOutcome::Pending,
+        Some(false) => {} // Mismatch — try content_hash fallback
+    }
+
+    // 3. Content hash fallback
+    if let (Some(computed_ch), Some(expected_ch)) = (&identity.content_hash, &reference.content_hash) {
+        if computed_ch == expected_ch {
+            return VerifyOutcome::ContentMatch;
+        }
+    }
+
+    VerifyOutcome::Mismatch
+}
+
+/// Read the current reference hashes for a file from state.
+fn get_merged_reference(state: AppState, file_index: usize) -> crate::state::SidecarHashes {
+    let xc_hashes = state.files.with_untracked(|files| {
+        files.get(file_index).and_then(|f| f.xc_hashes.clone())
+    });
+    let sidecar_id = state.annotation_store.with_untracked(|store| {
+        store.sets.get(file_index)
+            .and_then(|s| s.as_ref())
+            .map(|set| set.file_identity.clone())
+    });
+    merge_references(&xc_hashes, &sidecar_id)
+}
+
+/// Store verification outcome on the LoadedFile.
+fn set_verify_outcome(state: AppState, file_index: usize, outcome: crate::state::VerifyOutcome) {
+    state.files.update(|files| {
+        if let Some(f) = files.get_mut(file_index) {
+            f.verify_outcome = outcome;
+        }
+    });
+}
+
+/// Check if the content_hash reconstruction fallback should be attempted:
+/// the current file's audio data_size matches the reference's data_size,
+/// meaning only the header changed size.
+fn can_reconstruct_content_hash(
+    identity: &FileIdentity,
+    reference: &crate::state::SidecarHashes,
+) -> Option<u64> {
+    // We need: different file sizes, same data_size, reference has content_hash
+    let ref_size = reference.file_size?;
+    let ref_data_size = reference.data_size?;
+    let cur_data_size = identity.data_size?;
+    let _cur_data_offset = identity.data_offset?;
+    let _ref_content_hash = reference.content_hash.as_ref()?;
+
+    if identity.file_size == ref_size {
+        return None; // Same file size, no reconstruction needed
+    }
+    if cur_data_size != ref_data_size {
+        return None; // Audio data length differs, not a header-only change
+    }
+
+    // Original header size = original file size - original data size
+    let original_header_size = ref_size.checked_sub(ref_data_size)?;
+    Some(original_header_size)
+}
+
 /// Compute Layer 1 identity and kick off async Layer 2 (spot-check) computation.
 /// Call this after a file is added to state.files.
 pub fn start_identity_computation(
@@ -367,48 +509,114 @@ pub fn start_identity_computation(
             }
         }
 
-        // For small files with file handles but no in-memory bytes, auto-compute
-        // blake3 + content_hash (but not SHA-256 — that's on-demand only)
-        if file_bytes.is_none() && file_size < 10_000_000 {
-            let has_handle = state.files.with_untracked(|files| {
-                files.get(file_index).is_some_and(|f| f.file_handle.is_some())
-            });
-            if has_handle {
-                start_full_hash_computation(state, file_index, false);
+        let is_small = file_size < SMALL_FILE_THRESHOLD;
+
+        // For small files, auto-compute blake3 + content_hash (not SHA-256)
+        if is_small {
+            if let Some(bytes) = file_bytes {
+                yield_now().await;
+
+                // Layer 3: content hash (header zeroed) + Layer 4: full BLAKE3
+                let header_end = data_offset.unwrap_or(0) as usize;
+                let content_hash = {
+                    let mut hasher = blake3::Hasher::new();
+                    if header_end > 0 && header_end < bytes.len() {
+                        let zeroed = vec![0u8; header_end];
+                        hasher.update(&zeroed);
+                        hasher.update(&bytes[header_end..]);
+                    } else {
+                        hasher.update(&bytes);
+                    }
+                    hasher.finalize().to_hex().to_string()
+                };
+                let full_blake3 = blake3::hash(&bytes).to_hex().to_string();
+
+                state.files.update(|files| {
+                    if let Some(f) = files.get_mut(file_index) {
+                        if let Some(ref mut id) = f.identity {
+                            id.content_hash = Some(content_hash);
+                            id.full_blake3 = Some(full_blake3);
+                        }
+                    }
+                });
+
+                crate::opfs::save_annotations_to_opfs(state, file_index);
+            } else {
+                // Small file without in-memory bytes: compute via file handle
+                let has_handle = state.files.with_untracked(|files| {
+                    files.get(file_index).is_some_and(|f| f.file_handle.is_some())
+                });
+                if has_handle {
+                    start_full_hash_computation(state, file_index, false);
+                }
             }
         }
 
-        // When we have in-memory bytes, compute blake3 + content_hash
-        // (SHA-256 is on-demand only — user can click "Compute" in the info panel)
-        if let Some(bytes) = file_bytes {
-            yield_now().await; // yield before heavy computation
+        // Run verification against reference hashes
+        let reference = get_merged_reference(state, file_index);
+        let identity = state.files.with_untracked(|files| {
+            files.get(file_index).and_then(|f| f.identity.clone())
+        });
 
-            // Layer 3: content hash (header zeroed) + Layer 4: full BLAKE3
-            let header_end = data_offset.unwrap_or(0) as usize;
-            let content_hash = {
-                let mut hasher = blake3::Hasher::new();
-                if header_end > 0 && header_end < bytes.len() {
-                    let zeroed = vec![0u8; header_end];
-                    hasher.update(&zeroed);
-                    hasher.update(&bytes[header_end..]);
-                } else {
-                    hasher.update(&bytes);
-                }
-                hasher.finalize().to_hex().to_string()
-            };
-            let full_blake3 = blake3::hash(&bytes).to_hex().to_string();
+        if let Some(ref id) = identity {
+            let mut outcome = run_verification(id, &reference);
 
-            state.files.update(|files| {
-                if let Some(f) = files.get_mut(file_index) {
-                    if let Some(ref mut id) = f.identity {
-                        id.content_hash = Some(content_hash);
-                        id.full_blake3 = Some(full_blake3);
+            // On mismatch: for large files, content_hash isn't auto-computed.
+            // Compute it now as a fallback, then re-verify.
+            if outcome == crate::state::VerifyOutcome::Mismatch && id.content_hash.is_none() {
+                let handle = state.files.with_untracked(|files| {
+                    files.get(file_index).and_then(|f| f.file_handle.clone())
+                });
+                if let Some(handle) = handle {
+                    let reader = reader_from_handle(&handle);
+                    let check = |_: u32| false; // no cancellation for fallback
+                    if let Ok((content_hash, full_blake3)) =
+                        compute_full_hashes(reader.as_ref(), file_size, data_offset, 0, &check).await
+                    {
+                        state.files.update(|files| {
+                            if let Some(f) = files.get_mut(file_index) {
+                                if let Some(ref mut fid) = f.identity {
+                                    fid.content_hash = Some(content_hash);
+                                    fid.full_blake3 = Some(full_blake3);
+                                }
+                            }
+                        });
+                        crate::opfs::save_annotations_to_opfs(state, file_index);
+
+                        // Re-verify with content_hash now available
+                        let updated_id = state.files.with_untracked(|files| {
+                            files.get(file_index).and_then(|f| f.identity.clone())
+                        });
+                        if let Some(ref uid) = updated_id {
+                            outcome = run_verification(uid, &reference);
+                        }
                     }
                 }
-            });
+            }
 
-            // Save updated identity to sidecar
-            crate::opfs::save_annotations_to_opfs(state, file_index);
+            // On mismatch: try reconstructed content_hash (header size changed)
+            if outcome == crate::state::VerifyOutcome::Mismatch {
+                if let Some(original_header_size) = can_reconstruct_content_hash(id, &reference) {
+                    let cur_data_offset = id.data_offset.unwrap_or(0);
+                    let handle = state.files.with_untracked(|files| {
+                        files.get(file_index).and_then(|f| f.file_handle.clone())
+                    });
+                    if let Some(handle) = handle {
+                        let reader = reader_from_handle(&handle);
+                        let check = |_: u32| false;
+                        if let Ok(reconstructed) = compute_content_hash_reconstructed(
+                            reader.as_ref(), file_size, cur_data_offset,
+                            original_header_size, 0, &check,
+                        ).await {
+                            if reference.content_hash.as_deref() == Some(&reconstructed) {
+                                outcome = crate::state::VerifyOutcome::ContentMatch;
+                            }
+                        }
+                    }
+                }
+            }
+
+            set_verify_outcome(state, file_index, outcome);
         }
     });
 }
@@ -488,6 +696,22 @@ pub fn start_full_hash_computation(state: AppState, file_index: usize, include_s
         // Only clear computing flag if this is still the current generation
         if !check(gen) {
             state.hash_computing.set(false);
+
+            // Mark all hashes as verified and run verification
+            state.files.update(|files| {
+                if let Some(f) = files.get_mut(file_index) {
+                    f.all_hashes_verified = true;
+                }
+            });
+
+            let reference = get_merged_reference(state, file_index);
+            let identity = state.files.with_untracked(|files| {
+                files.get(file_index).and_then(|f| f.identity.clone())
+            });
+            if let Some(ref id) = identity {
+                let outcome = run_verification(id, &reference);
+                set_verify_outcome(state, file_index, outcome);
+            }
 
             // Save updated identity to sidecar
             crate::opfs::save_annotations_to_opfs(state, file_index);

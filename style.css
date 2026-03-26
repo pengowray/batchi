@@ -1169,10 +1169,19 @@ body.sidebar-resizing {
 }
 .hash-indicator.mismatch {
     display: block;
-    color: #ff9800;
+    color: #e53935;
 }
 .metadata-row:hover .hash-indicator {
     right: 28px;
+}
+.hash-from-ref {
+    opacity: 0.55;
+    font-style: italic;
+}
+.hash-note {
+    font-style: italic;
+    color: #ff9800;
+    font-size: 11px;
 }
 
 .copy-report-row {

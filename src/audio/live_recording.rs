@@ -80,6 +80,8 @@ pub(crate) fn start_live_recording(state: &AppState, sample_rate: u32) -> usize 
             cached_full_peak_db: None,
             read_only: false,
             had_sidecar: false,
+            verify_outcome: crate::state::VerifyOutcome::Pending,
+            all_hashes_verified: false,
         });
     });
 
@@ -510,6 +512,8 @@ fn finalize_recording(samples: Vec<f32>, sample_rate: u32, state: AppState) {
                 cached_full_peak_db: None,
                 read_only: false,
                 had_sidecar: false,
+                verify_outcome: crate::state::VerifyOutcome::Pending,
+                all_hashes_verified: false,
             });
         });
         file_index = idx;

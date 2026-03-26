@@ -1137,6 +1137,8 @@ fn finalize_recording_tauri(result: JsValue, state: AppState) {
                 cached_full_peak_db: None,
                 read_only: false,
                 had_sidecar: false,
+                verify_outcome: crate::state::VerifyOutcome::Pending,
+                all_hashes_verified: false,
             });
         });
         file_index = idx;

@@ -13,20 +13,31 @@ pub struct SidecarHashes {
     pub blake3: Option<String>,
     pub sha256: Option<String>,
     pub file_size: Option<u64>,
-    /// Multi-point spot hash (16×1MB chunks, matches main app Layer 2).
     pub spot_hash_b3: Option<String>,
-    /// Content hash (BLAKE3 with header zeroed).
     pub content_hash: Option<String>,
-    /// Audio data region byte offset within the file.
     pub data_offset: Option<u64>,
-    /// Audio data region byte length.
     pub data_size: Option<u64>,
 }
 
 impl SidecarHashes {
     pub fn is_empty(&self) -> bool {
-        self.blake3.is_none() && self.sha256.is_none() && self.file_size.is_none()
+        self.blake3.is_none() && self.sha256.is_none()
+            && self.file_size.is_none() && self.spot_hash_b3.is_none()
     }
+}
+
+/// Overall verification result against reference hashes (XC sidecar or .batm).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub enum VerifyOutcome {
+    #[default]
+    /// No verification attempted yet (hashes still computing or no reference available).
+    Pending,
+    /// Primary hash matched reference.
+    Match,
+    /// Primary hash failed, but content_hash matched (header-only change).
+    ContentMatch,
+    /// All verification failed.
+    Mismatch,
 }
 
 /// Per-file settings that persist when switching between files.
@@ -95,6 +106,10 @@ pub struct LoadedFile {
     /// A file-adjacent .batm sidecar existed when this file was loaded.
     /// When true, auto-save updates the sidecar alongside the central store.
     pub had_sidecar: bool,
+    /// Overall verification result against reference hashes.
+    pub verify_outcome: VerifyOutcome,
+    /// True after user clicks "Calculate all hashes" — enables indicators on all hash rows.
+    pub all_hashes_verified: bool,
 }
 
 impl LoadedFile {

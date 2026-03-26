@@ -48,7 +48,9 @@ fn metadata_row(label: String, value: String, label_title: Option<String>) -> im
 }
 
 /// Metadata row for hash values with a match/mismatch indicator next to the copy button.
-fn hash_row(label: &str, hash: &str, reference: Option<&str>) -> impl IntoView {
+/// `reference`: if Some, compares hash against it and shows tick/cross. None = no indicator.
+/// `from_reference`: if true, the value is from metadata (not computed locally) — dimmed style.
+fn hash_row(label: &str, hash: &str, reference: Option<&str>, from_reference: bool) -> impl IntoView {
     let hash_for_copy = hash.to_string();
     let hash_for_title = hash.to_string();
     let hash_display = hash.to_string();
@@ -59,13 +61,18 @@ fn hash_row(label: &str, hash: &str, reference: Option<&str>) -> impl IntoView {
     };
     let (indicator, indicator_class) = match reference {
         Some(expected) if expected == hash => ("\u{2713}", "hash-indicator match"),
-        Some(_) => ("\u{26A0}", "hash-indicator mismatch"),
+        Some(_) => ("\u{2717}", "hash-indicator mismatch"),
         None => ("", "hash-indicator"),
+    };
+    let value_class = if from_reference {
+        "setting-value metadata-value hash-from-ref"
+    } else {
+        "setting-value metadata-value"
     };
     view! {
         <div class="setting-row metadata-row">
             <span class="setting-label">{label}</span>
-            <span class="setting-value metadata-value" title=hash_for_title>{hash_display}</span>
+            <span class=value_class title=hash_for_title>{hash_display}</span>
             <span class=indicator_class>{indicator}</span>
             <button class="copy-btn" on:click=on_copy title="Copy">{"\u{2398}"}</button>
         </div>
@@ -83,12 +90,19 @@ fn format_file_size(bytes: usize) -> String {
 }
 
 /// Render the file identity / hash section.
+///
+/// Verification strategy: only one hash is auto-verified per file:
+/// - Small files (<10MB): blake3
+/// - Large files (>=10MB): spot_hash
+/// Other hashes are shown without indicators unless user clicks [Calculate all hashes].
 fn file_identity_section(f: &crate::state::LoadedFile) -> impl IntoView {
     let state = expect_context::<AppState>();
     let identity = f.identity.clone();
     let has_file_handle = f.file_handle.is_some();
+    let verify_outcome = f.verify_outcome.clone();
+    let all_verified = f.all_hashes_verified;
 
-    // Get sidecar identity for comparison (if annotations loaded)
+    // Merge reference hashes from XC sidecar + annotation store sidecar
     let file_idx = state.current_file_index.get_untracked();
     let sidecar_identity = file_idx.and_then(|idx| {
         state.annotation_store.with_untracked(|store| {
@@ -97,126 +111,123 @@ fn file_identity_section(f: &crate::state::LoadedFile) -> impl IntoView {
                 .map(|set| set.file_identity.clone())
         })
     });
-
-    // XC sidecar hashes (structured data, separate from display metadata)
-    let xc_blake3 = f.xc_hashes.as_ref().and_then(|h| h.blake3.clone());
-    let xc_sha256 = f.xc_hashes.as_ref().and_then(|h| h.sha256.clone());
-    let xc_spot_hash_b3 = f.xc_hashes.as_ref().and_then(|h| h.spot_hash_b3.clone());
-    let xc_content_hash = f.xc_hashes.as_ref().and_then(|h| h.content_hash.clone());
-    let xc_file_size = f.xc_hashes.as_ref().and_then(|h| h.file_size);
-    let has_xc_hashes = xc_blake3.is_some() || xc_sha256.is_some();
+    let xc = &f.xc_hashes;
+    let ref_blake3 = xc.as_ref().and_then(|h| h.blake3.clone())
+        .or_else(|| sidecar_identity.as_ref().and_then(|s| s.full_blake3.clone()));
+    let ref_sha256 = xc.as_ref().and_then(|h| h.sha256.clone())
+        .or_else(|| sidecar_identity.as_ref().and_then(|s| s.full_sha256.clone()));
+    let ref_spot = xc.as_ref().and_then(|h| h.spot_hash_b3.clone())
+        .or_else(|| sidecar_identity.as_ref().and_then(|s| s.spot_hash_b3.clone()));
+    let ref_content = xc.as_ref().and_then(|h| h.content_hash.clone())
+        .or_else(|| sidecar_identity.as_ref().and_then(|s| s.content_hash.clone()));
+    let ref_file_size = xc.as_ref().and_then(|h| h.file_size)
+        .or_else(|| sidecar_identity.as_ref().map(|s| s.file_size));
 
     let mut items: Vec<leptos::tachys::view::any_view::AnyView> = Vec::new();
 
-    // File size in bytes (from identity or XC sidecar)
-    let size_bytes = identity.as_ref().map(|id| id.file_size).or(xc_file_size);
-    if let Some(size) = size_bytes {
+    let actual_size = identity.as_ref().map(|id| id.file_size);
+    let display_size = actual_size.or(ref_file_size);
+    let is_small = display_size.map(|s| s < crate::file_identity::SMALL_FILE_THRESHOLD).unwrap_or(true);
+
+    // File size with match indicator (always compare if reference exists)
+    if let Some(size) = display_size {
         if size > 0 {
-            items.push(metadata_row(
-                "File size (bytes)".into(),
-                size.to_string(),
-                None,
-            ).into_any());
+            let size_ref = match (actual_size, ref_file_size) {
+                (Some(actual), Some(expected)) => Some(if actual == expected {
+                    actual.to_string()
+                } else {
+                    format!("{expected}")
+                }),
+                _ => None,
+            };
+            items.push(hash_row("File size (bytes)", &size.to_string(), size_ref.as_deref(), false).into_any());
         }
     }
 
     if let Some(ref id) = identity {
-        // Spot hash (Layer 2)
+        // Spot hash — indicator only for large files (primary) or all_verified
         if let Some(ref hash) = id.spot_hash_b3 {
-            let reference = sidecar_identity.as_ref()
-                .and_then(|sid| sid.spot_hash_b3.as_deref())
-                .or(xc_spot_hash_b3.as_deref());
-            items.push(hash_row("Spot hash", hash, reference).into_any());
+            let reference = if !is_small || all_verified {
+                ref_spot.as_deref()
+            } else {
+                None
+            };
+            items.push(hash_row("Spot hash", hash, reference, false).into_any());
         } else {
-            items.push(metadata_row(
-                "Spot hash".into(),
-                "computing...".into(),
-                None,
-            ).into_any());
+            items.push(metadata_row("Spot hash".into(), "computing...".into(), None).into_any());
         }
 
-        // Content hash (Layer 3)
-        if let Some(ref hash) = id.content_hash {
-            let reference = sidecar_identity.as_ref()
-                .and_then(|sid| sid.content_hash.as_deref())
-                .or(xc_content_hash.as_deref());
-            items.push(hash_row("Content hash", hash, reference).into_any());
-        }
-
-        // Full BLAKE3 (Layer 4)
+        // Full BLAKE3 — indicator only for small files (primary) or all_verified
         if let Some(ref hash) = id.full_blake3 {
-            let reference = sidecar_identity.as_ref()
-                .and_then(|sid| sid.full_blake3.as_deref())
-                .or(xc_blake3.as_deref());
-            items.push(hash_row("Full BLAKE3", hash, reference).into_any());
-        } else if has_file_handle {
-            let on_calc = move |_: web_sys::MouseEvent| {
-                if let Some(idx) = state.current_file_index.get_untracked() {
-                    crate::file_identity::start_full_hash_computation(state, idx, false);
-                }
-            };
-            let computing = state.hash_computing.get();
-            let has_reference = sidecar_identity.as_ref().and_then(|s| s.full_blake3.as_ref()).is_some()
-                || xc_blake3.is_some();
-            let label = if computing {
-                "Computing..."
-            } else if has_reference {
-                "Verify"
+            let reference = if is_small || all_verified {
+                ref_blake3.as_deref()
             } else {
-                "Compute"
+                None
             };
-            items.push(view! {
-                <div class="setting-row metadata-row">
-                    <span class="setting-label">"Full BLAKE3"</span>
-                    <button class="hash-calc-btn" on:click=on_calc disabled=computing>{label}</button>
-                </div>
-            }.into_any());
+            items.push(hash_row("Full BLAKE3", hash, reference, false).into_any());
+        } else if let Some(ref known) = ref_blake3 {
+            // Show known hash from reference (not computed locally)
+            items.push(hash_row("Full BLAKE3", known, None, true).into_any());
         }
 
-        // Full SHA-256 (Layer 4-alt)
-        if let Some(ref hash) = id.full_sha256 {
-            let reference = sidecar_identity.as_ref()
-                .and_then(|sid| sid.full_sha256.as_deref())
-                .or(xc_sha256.as_deref());
-            items.push(hash_row("Full SHA-256", hash, reference).into_any());
-        } else if has_file_handle {
-            let xc_sha256_for_btn = xc_sha256.clone();
-            let on_calc_sha = move |_: web_sys::MouseEvent| {
-                if let Some(idx) = state.current_file_index.get_untracked() {
-                    crate::file_identity::start_full_hash_computation(state, idx, true);
-                }
-            };
-            let computing = state.hash_computing.get();
-            let has_reference = sidecar_identity.as_ref().and_then(|s| s.full_sha256.as_ref()).is_some()
-                || xc_sha256_for_btn.is_some();
-            let label = if computing {
-                "Computing..."
-            } else if has_reference {
-                "Verify"
+        // Content hash — indicator if fallback triggered (ContentMatch) or all_verified
+        if let Some(ref hash) = id.content_hash {
+            let reference = if verify_outcome == crate::state::VerifyOutcome::ContentMatch || all_verified {
+                ref_content.as_deref()
             } else {
-                "Compute"
+                None
             };
-            items.push(view! {
-                <div class="setting-row metadata-row">
-                    <span class="setting-label">"Full SHA-256"</span>
-                    <button class="hash-calc-btn" on:click=on_calc_sha disabled=computing>{label}</button>
-                </div>
-            }.into_any());
+            items.push(hash_row("Content hash", hash, reference, false).into_any());
+        } else if let Some(ref known) = ref_content {
+            items.push(hash_row("Content hash", known, None, true).into_any());
         }
-    } else if has_file_handle && has_xc_hashes {
-        // No identity yet but XC sidecar has hashes — show verify button
-        let has_sha = xc_sha256.is_some();
-        let on_calc = move |_: web_sys::MouseEvent| {
-            if let Some(idx) = state.current_file_index.get_untracked() {
-                crate::file_identity::start_full_hash_computation(state, idx, has_sha);
-            }
-        };
-        let computing = state.hash_computing.get();
-        let label = if computing { "Computing..." } else { "Verify hashes" };
+
+        // Full SHA-256 — indicator only if all_verified
+        if let Some(ref hash) = id.full_sha256 {
+            let reference = if all_verified { ref_sha256.as_deref() } else { None };
+            items.push(hash_row("Full SHA-256", hash, reference, false).into_any());
+        } else if let Some(ref known) = ref_sha256 {
+            items.push(hash_row("Full SHA-256", known, None, true).into_any());
+        }
+    } else {
+        // No identity computed yet — show known hashes from reference
+        if let Some(ref known) = ref_spot {
+            items.push(hash_row("Spot hash", known, None, true).into_any());
+        }
+        if let Some(ref known) = ref_blake3 {
+            items.push(hash_row("Full BLAKE3", known, None, true).into_any());
+        }
+        if let Some(ref known) = ref_content {
+            items.push(hash_row("Content hash", known, None, true).into_any());
+        }
+        if let Some(ref known) = ref_sha256 {
+            items.push(hash_row("Full SHA-256", known, None, true).into_any());
+        }
+    }
+
+    // Content match note
+    if verify_outcome == crate::state::VerifyOutcome::ContentMatch {
         items.push(view! {
             <div class="setting-row metadata-row">
-                <span class="setting-label">"File hashes"</span>
-                <button class="hash-calc-btn" on:click=on_calc disabled=computing>{label}</button>
+                <span class="setting-label hash-note">
+                    "Header changed \u{2014} audio content verified"
+                </span>
+            </div>
+        }.into_any());
+    }
+
+    // [Calculate all hashes] button
+    if has_file_handle && !all_verified {
+        let computing = state.hash_computing.get();
+        let on_calc_all = move |_: web_sys::MouseEvent| {
+            if let Some(idx) = state.current_file_index.get_untracked() {
+                crate::file_identity::start_full_hash_computation(state, idx, true);
+            }
+        };
+        let label = if computing { "Computing..." } else { "Calculate all hashes" };
+        items.push(view! {
+            <div class="setting-row metadata-row">
+                <button class="hash-calc-btn" on:click=on_calc_all disabled=computing>{label}</button>
             </div>
         }.into_any());
     }

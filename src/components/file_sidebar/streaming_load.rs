@@ -217,6 +217,8 @@ pub(super) async fn try_streaming_wav(file: &File, name: &str, state: AppState, 
                 cached_full_peak_db: None,
                 read_only: false,
                 had_sidecar: false,
+                verify_outcome: crate::state::VerifyOutcome::Pending,
+                all_hashes_verified: false,
             });
             if files.len() == 1 {
                 state.current_file_index.set(Some(0));
@@ -500,6 +502,8 @@ pub(super) async fn try_streaming_flac(file: &File, name: &str, state: AppState,
                 cached_full_peak_db: None,
                 read_only: false,
                 had_sidecar: false,
+                verify_outcome: crate::state::VerifyOutcome::Pending,
+                all_hashes_verified: false,
             });
             if files.len() == 1 {
                 state.current_file_index.set(Some(0));
@@ -861,6 +865,8 @@ pub(super) async fn try_streaming_mp3(file: &File, name: &str, state: AppState, 
                 cached_full_peak_db: None,
                 read_only: false,
                 had_sidecar: false,
+                verify_outcome: crate::state::VerifyOutcome::Pending,
+                all_hashes_verified: false,
             });
             if files.len() == 1 {
                 state.current_file_index.set(Some(0));
@@ -1221,6 +1227,8 @@ pub(super) async fn try_streaming_ogg(file: &File, name: &str, state: AppState, 
                 cached_full_peak_db: None,
                 read_only: false,
                 had_sidecar: false,
+                verify_outcome: crate::state::VerifyOutcome::Pending,
+                all_hashes_verified: false,
             });
             if files.len() == 1 {
                 state.current_file_index.set(Some(0));
