@@ -925,10 +925,8 @@ fn finalize_recording_tauri(result: JsValue, state: AppState) {
     let mic_name = state.mic_device_name.get_untracked();
     let conn_type = state.mic_connection_type.get_untracked();
     let guano = crate::audio::guano::build_recording_guano(
-        sample_rate, duration_secs, &filename, state.is_tauri, mic_name.as_deref(),
+        sample_rate, duration_secs, &filename, state.is_tauri, state.is_mobile.get_untracked(), mic_name.as_deref(),
         &crate::audio::guano::RecordingGuanoExtra {
-            bits_per_sample: Some(bits_per_sample),
-            is_float,
             connection_type: conn_type,
         },
     );

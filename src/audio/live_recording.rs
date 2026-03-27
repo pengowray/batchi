@@ -15,7 +15,7 @@ use std::sync::Arc;
 pub(crate) fn start_live_recording(state: &AppState, sample_rate: u32) -> usize {
     let now = js_sys::Date::new_0();
     let name = format!(
-        "batcap_{:04}-{:02}-{:02}_{:02}{:02}{:02}.wav",
+        "batcap_{:04}{:02}{:02}_{:02}{:02}{:02}.wav",
         now.get_full_year(),
         now.get_month() + 1,
         now.get_date(),
@@ -323,12 +323,9 @@ pub(crate) fn finalize_live_recording(samples: Vec<f32>, sample_rate: u32, state
 
     let mic_name = state.mic_device_name.get_untracked();
     let conn_type = state.mic_connection_type.get_untracked();
-    let bits = state.mic_bits_per_sample.get_untracked();
     let guano = crate::audio::guano::build_recording_guano(
-        sample_rate, duration_secs, &name_check, state.is_tauri, mic_name.as_deref(),
+        sample_rate, duration_secs, &name_check, state.is_tauri, state.is_mobile.get_untracked(), mic_name.as_deref(),
         &crate::audio::guano::RecordingGuanoExtra {
-            bits_per_sample: Some(bits),
-            is_float: false,
             connection_type: conn_type,
         },
     );
@@ -389,15 +386,13 @@ pub(crate) fn finalize_live_recording(samples: Vec<f32>, sample_rate: u32, state
     if is_tauri {
         let mic_name = state.mic_device_name.get_untracked();
         let conn_type_save = state.mic_connection_type.get_untracked();
-        let bits_save = state.mic_bits_per_sample.get_untracked();
         let samples_ref = state.files.get_untracked();
         if let Some(file) = samples_ref.get(file_index) {
             let extra = crate::audio::guano::RecordingGuanoExtra {
-                bits_per_sample: Some(bits_save),
-                is_float: false,
                 connection_type: conn_type_save,
             };
-            let wav_data = encode_wav_with_guano(&file.audio.samples, file.audio.sample_rate, &name_for_save, true, mic_name.as_deref(), &extra);
+            let is_mobile = state.is_mobile.get_untracked();
+            let wav_data = encode_wav_with_guano(&file.audio.samples, file.audio.sample_rate, &name_for_save, true, is_mobile, mic_name.as_deref(), &extra);
             let filename = name_for_save;
             wasm_bindgen_futures::spawn_local(async move {
                 if try_tauri_save(&wav_data, &filename).await {
@@ -427,7 +422,7 @@ fn finalize_recording(samples: Vec<f32>, sample_rate: u32, state: AppState) {
     let duration_secs = samples.len() as f64 / sample_rate as f64;
     let now = js_sys::Date::new_0();
     let name = format!(
-        "batcap_{:04}-{:02}-{:02}_{:02}{:02}{:02}.wav",
+        "batcap_{:04}{:02}{:02}_{:02}{:02}{:02}.wav",
         now.get_full_year(),
         now.get_month() + 1,
         now.get_date(),
@@ -438,12 +433,9 @@ fn finalize_recording(samples: Vec<f32>, sample_rate: u32, state: AppState) {
 
     let mic_name = state.mic_device_name.get_untracked();
     let conn_type = state.mic_connection_type.get_untracked();
-    let bits = state.mic_bits_per_sample.get_untracked();
     let guano = crate::audio::guano::build_recording_guano(
-        sample_rate, duration_secs, &name, state.is_tauri, mic_name.as_deref(),
+        sample_rate, duration_secs, &name, state.is_tauri, state.is_mobile.get_untracked(), mic_name.as_deref(),
         &crate::audio::guano::RecordingGuanoExtra {
-            bits_per_sample: Some(bits),
-            is_float: false,
             connection_type: conn_type,
         },
     );
@@ -534,15 +526,13 @@ fn finalize_recording(samples: Vec<f32>, sample_rate: u32, state: AppState) {
     // Try Tauri auto-save in background (web mode path for old save_recording command)
     if is_tauri {
         let conn_type_save = state.mic_connection_type.get_untracked();
-        let bits_save = state.mic_bits_per_sample.get_untracked();
         let samples_ref = state.files.get_untracked();
         if let Some(file) = samples_ref.get(file_index) {
             let extra = crate::audio::guano::RecordingGuanoExtra {
-                bits_per_sample: Some(bits_save),
-                is_float: false,
                 connection_type: conn_type_save,
             };
-            let wav_data = encode_wav_with_guano(&file.audio.samples, file.audio.sample_rate, &name_for_save, true, mic_name.as_deref(), &extra);
+            let is_mobile = state.is_mobile.get_untracked();
+            let wav_data = encode_wav_with_guano(&file.audio.samples, file.audio.sample_rate, &name_for_save, true, is_mobile, mic_name.as_deref(), &extra);
             let filename = name_for_save;
             wasm_bindgen_futures::spawn_local(async move {
                 if try_tauri_save(&wav_data, &filename).await {

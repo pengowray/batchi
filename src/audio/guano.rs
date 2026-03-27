@@ -102,8 +102,6 @@ pub fn parse_guano_chunk(chunk_body: &[u8]) -> Option<GuanoMetadata> {
 /// Extra recording metadata for GUANO beyond the core fields.
 #[derive(Default)]
 pub struct RecordingGuanoExtra {
-    pub bits_per_sample: Option<u16>,
-    pub is_float: bool,
     pub connection_type: Option<String>,
 }
 
@@ -115,23 +113,41 @@ pub fn build_recording_guano(
     duration_secs: f64,
     filename: &str,
     is_tauri: bool,
+    is_mobile: bool,
     mic_device_name: Option<&str>,
     extra: &RecordingGuanoExtra,
 ) -> GuanoMetadata {
     let now = js_sys::Date::new_0();
     let start_ms = now.get_time() - (duration_secs * 1000.0);
     let start = js_sys::Date::new(&wasm_bindgen::JsValue::from_f64(start_ms));
+
+    // Build ISO 8601 timestamp with UTC offset (GUANO spec strongly recommends this)
+    let tz_offset_minutes = start.get_timezone_offset() as i32; // minutes from UTC (e.g. UTC-5 = 300)
+    let offset_total = -tz_offset_minutes; // negate: UTC-5 → -300 → we want -05:00
+    let offset_sign = if offset_total < 0 { '-' } else { '+' };
+    let offset_abs = offset_total.unsigned_abs();
+    let offset_h = offset_abs / 60;
+    let offset_m = offset_abs % 60;
     let timestamp = format!(
-        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}",
+        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}{}{:02}:{:02}",
         start.get_full_year(),
         start.get_month() + 1,
         start.get_date(),
         start.get_hours(),
         start.get_minutes(),
         start.get_seconds(),
+        offset_sign,
+        offset_h,
+        offset_m,
     );
     let version = env!("CARGO_PKG_VERSION");
-    let model = if is_tauri { "Desktop" } else { "Web" };
+    let model = if is_tauri && is_mobile {
+        "Android"
+    } else if is_tauri {
+        "Desktop"
+    } else {
+        "Web"
+    };
 
     let mut g = GuanoMetadata::new();
     g.add("GUANO|Version", "1.0");
@@ -141,28 +157,24 @@ pub fn build_recording_guano(
     g.add("Make", "Oversample");
     g.add("Model", model);
     g.add("Firmware Version", version);
-    g.add("TE", "1");
     g.add("Original Filename", filename);
     if let Some(mic) = mic_device_name {
         if !mic.is_empty() {
             g.add("Microphone", mic);
         }
     }
-    if let Some(bits) = extra.bits_per_sample {
-        let fmt = if extra.is_float {
-            format!("{}-bit float", bits)
-        } else {
-            format!("{}-bit int", bits)
-        };
-        g.add("Oversample|Bits Per Sample", &bits.to_string());
-        g.add("Oversample|Sample Format", &fmt);
-    }
     if let Some(ref conn) = extra.connection_type {
         if !conn.is_empty() {
             g.add("Oversample|Connection", conn);
         }
     }
-    let platform = if is_tauri { "Tauri" } else { "browser" };
+    let platform = if is_tauri && is_mobile {
+        "Android"
+    } else if is_tauri {
+        "desktop"
+    } else {
+        "browser"
+    };
     g.add("Note", &format!("Recorded with Oversample v{} ({})", version, platform));
     g
 }

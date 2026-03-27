@@ -128,7 +128,7 @@ fn mic_stop_recording(
 
     // Generate filename
     let now = chrono::Local::now();
-    let filename = now.format("batcap_%Y-%m-%d_%H%M%S.wav").to_string();
+    let filename = now.format("batcap_%Y%m%d_%H%M%S.wav").to_string();
 
     // Encode WAV at native bit depth
     let mut wav_data = recording::encode_native_wav(&buf)?;
@@ -513,7 +513,7 @@ fn usb_stop_recording(
     let duration_secs = num_samples as f64 / sample_rate as f64;
 
     let now = chrono::Local::now();
-    let filename = now.format("batcap_%Y-%m-%d_%H%M%S.wav").to_string();
+    let filename = now.format("batcap_%Y%m%d_%H%M%S.wav").to_string();
 
     let mut wav_data = usb_audio::encode_usb_wav(s)?;
     let samples_f32 = usb_audio::get_usb_samples_f32(s);
