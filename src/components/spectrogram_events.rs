@@ -151,6 +151,9 @@ pub fn apply_axis_drag(
     freq: f64,
     shift: bool,
 ) {
+    // Clamp to non-negative frequencies
+    let raw_start = raw_start.max(0.0);
+    let freq = freq.max(0.0);
     // Snap each endpoint independently based on its own frequency zone
     let snap_start = freq_snap(raw_start, shift);
     let snap_end = freq_snap(freq, shift);
@@ -164,6 +167,9 @@ pub fn apply_axis_drag(
         let s = (raw_start / snap_start).round() * snap_start;
         (s, s)
     };
+    // Ensure snapped values don't go below 0
+    let snapped_start = snapped_start.max(0.0);
+    let snapped_end = snapped_end.max(0.0);
     state.axis_drag_start_freq.set(Some(snapped_start));
     state.axis_drag_current_freq.set(Some(snapped_end));
     // Live update FF range
@@ -192,6 +198,25 @@ pub fn resolve_freq_at_pointer(
     let max_freq_val = state.max_display_freq.get_untracked().unwrap_or(file_max_freq);
     let freq = spectrogram_renderer::y_to_freq(px_y, min_freq_val, max_freq_val, ch);
     Some((freq, file_max_freq))
+}
+
+/// Select all frequencies: set FF range to 0..Nyquist and enable HFR.
+/// Used by double-click / double-tap on the y-axis.
+pub fn select_all_frequencies(state: AppState) {
+    let files = state.files.get_untracked();
+    let idx = state.current_file_index.get_untracked();
+    let file_max_freq = idx
+        .and_then(|i| files.get(i))
+        .map(|f| f.spectrogram.max_freq)
+        .unwrap_or(96_000.0);
+    state.set_ff_range(0.0, file_max_freq);
+    let stack = state.focus_stack.get_untracked();
+    if !stack.hfr_enabled() {
+        state.toggle_hfr();
+    }
+    // Clear display zoom so full range is visible
+    state.min_display_freq.set(None);
+    state.max_display_freq.set(None);
 }
 
 /// Finalize axis drag — auto-enable HFR if a meaningful range was selected,
@@ -1002,9 +1027,18 @@ pub fn on_mouseup(
 
 pub fn on_dblclick(
     ev: MouseEvent,
-    _canvas_ref: &NodeRef<leptos::html::Canvas>,
+    canvas_ref: &NodeRef<leptos::html::Canvas>,
     state: AppState,
 ) {
+    // Double-click on y-axis: select all (0 to Nyquist, enable HFR)
+    if let Some((px_x, _, _, _)) = pointer_to_xtf(ev.client_x() as f64, ev.client_y() as f64, canvas_ref, &state) {
+        if px_x < LABEL_AREA_WIDTH && !state.display_transform.get_untracked() {
+            select_all_frequencies(state);
+            ev.prevent_default();
+            return;
+        }
+    }
+
     // Double-click on FF handle toggles HFR (label area tap handled by finalize_axis_drag)
     let has_range = state.ff_freq_hi.get_untracked() > state.ff_freq_lo.get_untracked();
     if !has_range { return; }
@@ -1193,6 +1227,17 @@ pub fn on_touchstart(
     // Check for axis drag — tap to toggle HFR off is deferred to touchend via finalize_axis_drag
     if let Some((px_x, _, _, freq)) = pointer_to_xtf(touch.client_x() as f64, touch.client_y() as f64, canvas_ref, &state) {
         if px_x < LABEL_AREA_WIDTH {
+            // Double-tap on y-axis: select all frequencies (0 to Nyquist)
+            let now = js_sys::Date::now();
+            let last_time = ix.last_tap_time.get_untracked();
+            let last_x = ix.last_tap_x.get_untracked();
+            if now - last_time < 400.0 && last_x < LABEL_AREA_WIDTH {
+                select_all_frequencies(state);
+                // Reset tap tracking to prevent triple-tap re-trigger
+                ix.last_tap_time.set(0.0);
+                ev.prevent_default();
+                return;
+            }
             let snap = freq_snap(freq, false);
             let snapped = (freq / snap).round() * snap;
             ix.axis_drag_raw_start.set(freq);
@@ -1540,7 +1585,7 @@ pub fn on_touchend(
             }
         }
 
-        // Track last tap time/position (currently unused — single-tap toggle handled by finalize_axis_drag)
+        // Track last tap time/position (used for double-tap detection on y-axis)
         if let Some(touch) = ev.changed_touches().get(0) {
             if let Some((px_x, _, _, _)) = pointer_to_xtf(touch.client_x() as f64, touch.client_y() as f64, canvas_ref, &state) {
                 ix.last_tap_time.set(js_sys::Date::now());
