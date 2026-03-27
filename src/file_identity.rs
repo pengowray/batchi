@@ -230,7 +230,7 @@ pub async fn compute_full_sha256(
         }
     }
 
-    Ok(format!("{:x}", hasher.finalize()))
+    Ok(hasher.finalize().iter().map(|b| format!("{b:02x}")).collect())
 }
 
 /// Trait for async range reading (implemented for web File blobs and Tauri paths).

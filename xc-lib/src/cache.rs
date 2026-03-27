@@ -307,7 +307,7 @@ pub fn compute_file_hashes(data: &[u8]) -> FileHashes {
     let sha256 = {
         let mut hasher = sha2::Sha256::new();
         hasher.update(data);
-        format!("{:x}", hasher.finalize())
+        hasher.finalize().iter().map(|b| format!("{b:02x}")).collect::<String>()
     };
 
     // BLAKE3 (full file)
