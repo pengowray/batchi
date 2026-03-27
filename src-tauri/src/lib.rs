@@ -39,6 +39,8 @@ fn mic_open(
     state: tauri::State<MicMutex>,
     max_sample_rate: Option<u32>,
     device_name: Option<String>,
+    max_bit_depth: Option<u16>,
+    channels: Option<u16>,
 ) -> Result<MicInfo, String> {
     let mut mic = state.lock().map_err(|e| e.to_string())?;
     if mic.is_some() {
@@ -55,7 +57,12 @@ fn mic_open(
     }
 
     let requested = max_sample_rate.unwrap_or(0);
-    let m = recording::open_mic(requested, device_name.as_deref())?;
+    let m = recording::open_mic(
+        requested,
+        device_name.as_deref(),
+        max_bit_depth.unwrap_or(0),
+        channels.unwrap_or(0),
+    )?;
     let info = MicInfo {
         device_name: m.device_name.clone(),
         sample_rate: m.sample_rate,

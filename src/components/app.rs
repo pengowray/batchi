@@ -1,7 +1,7 @@
 use leptos::prelude::*;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
-use crate::state::{AppState, DisplayFilterMode, FftMode, FileSettings, GainMode, LayerPanel, MainView, MicMode, PlayStartMode, PlaybackMode, SpectrogramDisplay};
+use crate::state::{AppState, DisplayFilterMode, FftMode, FileSettings, GainMode, LayerPanel, MainView, MicBackend, MicStrategy, MicAcquisitionState, PlayStartMode, PlaybackMode, SpectrogramDisplay};
 use crate::audio::playback;
 use crate::audio::microphone;
 use crate::components::file_sidebar::FileSidebar;
@@ -78,8 +78,8 @@ pub fn App() -> impl IntoView {
         }
     }
 
-    // Auto mic mode: check for USB device at startup (delayed to ensure Tauri internals are ready)
-    if state.is_tauri && state.mic_mode.get_untracked() == MicMode::Auto {
+    // Startup: check for USB device (delayed to ensure Tauri internals are ready)
+    if state.is_tauri && state.mic_strategy.get_untracked() == MicStrategy::Ask {
         wasm_bindgen_futures::spawn_local(async move {
             // Wait 500ms for Tauri plugin system to initialize
             let p = js_sys::Promise::new(&mut |resolve, _| {
@@ -88,19 +88,19 @@ pub fn App() -> impl IntoView {
                 }
             });
             let _ = wasm_bindgen_futures::JsFuture::from(p).await;
-            // Check USB status without requesting permission (don't show dialog at startup)
-            let mode = microphone::check_auto_mode_no_request(&state).await;
+            // Check USB status without requesting permission
+            microphone::check_usb_status(&state).await;
             microphone::query_mic_info(&state).await;
 
             // If no USB found on first try, retry after 2s (device may enumerate slowly)
-            if mode == MicMode::Cpal {
+            if !state.mic_usb_connected.get_untracked() {
                 let p = js_sys::Promise::new(&mut |resolve, _| {
                     if let Some(w) = web_sys::window() {
                         let _ = w.set_timeout_with_callback_and_timeout_and_arguments_0(&resolve, 2000);
                     }
                 });
                 let _ = wasm_bindgen_futures::JsFuture::from(p).await;
-                microphone::check_auto_mode_no_request(&state).await;
+                microphone::check_usb_status(&state).await;
                 microphone::query_mic_info(&state).await;
             }
         });
@@ -145,25 +145,24 @@ pub fn App() -> impl IntoView {
                 // Handle hotplug events
                 if let Some(event) = last_event {
                     if event == "attached" && !was_connected {
-                        if state.mic_mode.get_untracked() == MicMode::Auto {
-                            // Wait 500ms for USB device to fully enumerate
-                            let p = js_sys::Promise::new(&mut |resolve, _| {
-                                if let Some(w) = web_sys::window() {
-                                    let _ = w.set_timeout_with_callback_and_timeout_and_arguments_0(&resolve, 500);
-                                }
-                            });
-                            let _ = wasm_bindgen_futures::JsFuture::from(p).await;
-                            // Check without requesting permission — user presses Record to grant
-                            microphone::check_auto_mode_no_request(&state).await;
-                            microphone::query_mic_info(&state).await;
+                        // Wait 500ms for USB device to fully enumerate
+                        let p = js_sys::Promise::new(&mut |resolve, _| {
+                            if let Some(w) = web_sys::window() {
+                                let _ = w.set_timeout_with_callback_and_timeout_and_arguments_0(&resolve, 500);
+                            }
+                        });
+                        let _ = wasm_bindgen_futures::JsFuture::from(p).await;
+                        microphone::check_usb_status(&state).await;
+                        microphone::query_mic_info(&state).await;
+                    } else if event == "detached" && was_connected {
+                        // If we were using USB, clear backend so user is re-prompted
+                        if state.mic_backend.get_untracked() == Some(MicBackend::RawUsb) {
+                            state.mic_backend.set(None);
+                            state.mic_acquisition_state.set(MicAcquisitionState::Idle);
                         }
-                    } else if event == "detached" && was_connected
-                        && state.mic_mode.get_untracked() == MicMode::Auto {
-                            state.mic_effective_mode.set(MicMode::Cpal);
-                            state.mic_needs_permission.set(false);
-                            state.show_info_toast("USB mic disconnected, using native audio");
-                            microphone::query_mic_info(&state).await;
-                        }
+                        state.show_info_toast("USB mic disconnected");
+                        microphone::query_mic_info(&state).await;
+                    }
                 }
 
                 was_connected = is_connected;
@@ -1116,6 +1115,41 @@ fn MainArea() -> impl IntoView {
                 }
             }}
             <BottomToolbar />
+
+            // Mic chooser modal (position:fixed, shown when show_mic_chooser is true)
+            {move || state.show_mic_chooser.get().then(|| view! {
+                <crate::components::file_sidebar::mic_chooser::MicChooserModal />
+            })}
+
+            // "Ready to record" modal
+            {move || (state.record_ready_state.get() == crate::state::RecordReadyState::AwaitingConfirmation).then(|| {
+                let on_ok = move |_: web_sys::MouseEvent| {
+                    let st = state;
+                    wasm_bindgen_futures::spawn_local(async move {
+                        crate::audio::microphone::confirm_record_start(&st).await;
+                    });
+                };
+                let on_cancel = move |_: web_sys::MouseEvent| {
+                    crate::audio::microphone::cancel_record_start(&state);
+                };
+                view! {
+                    <div class="xc-modal-overlay" on:click=on_cancel>
+                        <div class="xc-modal" style="width: min(90vw, 340px); text-align: center;" on:click=move |ev: web_sys::MouseEvent| ev.stop_propagation()>
+                            <div style="padding: 24px 16px 8px;">
+                                <div style="font-size: 16px; font-weight: 600; margin-bottom: 8px;">"Ready to record"</div>
+                                <div style="font-size: 13px; color: #aaa; margin-bottom: 16px;">
+                                    {move || state.mic_device_info.get().map(|info| info.name.clone()).unwrap_or_else(|| "Microphone".to_string())}
+                                    " is ready"
+                                </div>
+                            </div>
+                            <div style="display: flex; gap: 8px; justify-content: center; padding: 8px 16px 16px;">
+                                <button class="setting-btn" style="padding: 6px 20px;" on:click=on_cancel>"Cancel"</button>
+                                <button class="setting-btn" style="padding: 6px 20px; background: #c44; color: #fff; font-weight: 600;" on:click=on_ok>"Record"</button>
+                            </div>
+                        </div>
+                    </div>
+                }
+            })}
         </div>
     }
 }

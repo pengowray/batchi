@@ -3,7 +3,7 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
 use web_sys::AudioContext;
-use crate::state::{AppState, FileSettings, LoadedFile, MicMode};
+use crate::state::{AppState, FileSettings, LoadedFile, MicStrategy, MicBackend, MicAcquisitionState, MicPendingAction};
 use crate::audio::source::InMemorySource;
 use crate::types::{AudioData, FileMetadata, SpectrogramData};
 use crate::dsp::fft::compute_preview;
@@ -150,15 +150,10 @@ pub async fn query_mic_info(state: &AppState) {
     if !state.is_tauri {
         return;
     }
-    let mode = state.mic_mode.get_untracked();
-    let effective = if mode == MicMode::Auto {
-        state.mic_effective_mode.get_untracked()
-    } else {
-        mode
-    };
+    let backend = state.mic_backend.get_untracked();
 
-    match effective {
-        MicMode::RawUsb => {
+    match backend {
+        Some(MicBackend::RawUsb) => {
             // Query USB device info
             let devices_result = tauri_invoke("plugin:usb-audio|listUsbDevices",
                 &js_sys::Object::new().into()).await;
@@ -183,7 +178,7 @@ pub async fn query_mic_info(state: &AppState) {
             }
             state.mic_usb_connected.set(false);
         }
-        MicMode::Cpal | MicMode::Auto => {
+        Some(MicBackend::Cpal) | None => {
             // Query cpal default device info
             if let Ok(result) = tauri_invoke_no_args("mic_list_devices").await {
                 let devices = js_sys::Array::from(&result);
@@ -240,7 +235,7 @@ pub async fn query_mic_info(state: &AppState) {
                 }
             }
         }
-        _ => {}
+        Some(MicBackend::Browser) => {}
     }
 
     // Also check for USB devices to update usb_connected status
@@ -259,115 +254,11 @@ pub async fn query_mic_info(state: &AppState) {
     }
 }
 
-/// Resolve Auto mode to either RawUsb or Cpal based on USB device availability.
-/// Requests USB permission proactively if a USB audio device is found.
-/// Returns `None` when USB is present but permission was denied (caller should not proceed).
-pub async fn resolve_auto_mode(state: &AppState) -> Option<MicMode> {
-    state.log_debug("info", "resolve_auto_mode: checking for USB devices...");
-
-    // Check for USB audio devices
+/// Check for USB audio devices and update `mic_usb_connected` signal.
+/// Does not open any device or request permissions.
+pub async fn check_usb_status(state: &AppState) {
     let devices_result = tauri_invoke("plugin:usb-audio|listUsbDevices",
         &js_sys::Object::new().into()).await;
-
-    if let Err(ref e) = devices_result {
-        state.log_debug("warn", format!("resolve_auto_mode: listUsbDevices failed: {}", e));
-    }
-
-    if let Ok(devices) = devices_result {
-        let devices_arr = js_sys::Reflect::get(&devices, &JsValue::from_str("devices"))
-            .ok()
-            .map(|v| js_sys::Array::from(&v))
-            .unwrap_or_default();
-
-        state.log_debug("info", format!("resolve_auto_mode: found {} USB device(s)", devices_arr.length()));
-
-        for i in 0..devices_arr.length() {
-            let dev = devices_arr.get(i);
-            let is_audio = js_sys::Reflect::get(&dev, &JsValue::from_str("isAudioDevice"))
-                .ok().and_then(|v| v.as_bool()).unwrap_or(false);
-            if !is_audio {
-                state.log_debug("info", format!("resolve_auto_mode: device {} is not audio, skipping", i));
-                continue;
-            }
-
-            let device_name = js_sys::Reflect::get(&dev, &JsValue::from_str("deviceName"))
-                .ok().and_then(|v| v.as_string());
-            let product_name = js_sys::Reflect::get(&dev, &JsValue::from_str("productName"))
-                .ok().and_then(|v| v.as_string()).unwrap_or_else(|| "USB Audio".into());
-            let has_permission = js_sys::Reflect::get(&dev, &JsValue::from_str("hasPermission"))
-                .ok().and_then(|v| v.as_bool()).unwrap_or(false);
-
-            state.log_debug("info", format!("resolve_auto_mode: audio device '{}', has_permission={}", product_name, has_permission));
-            state.mic_usb_connected.set(true);
-
-            if has_permission {
-                state.mic_effective_mode.set(MicMode::RawUsb);
-                state.mic_needs_permission.set(false);
-                state.show_info_toast(format!("USB mic: {}", product_name));
-                return Some(MicMode::RawUsb);
-            }
-
-            // Request permission proactively
-            if let Some(ref dev_name) = device_name {
-                state.log_debug("info", format!("resolve_auto_mode: requesting USB permission for '{}'...", dev_name));
-                let perm_args = js_sys::Object::new();
-                js_sys::Reflect::set(&perm_args, &JsValue::from_str("deviceName"),
-                    &JsValue::from_str(dev_name)).ok();
-                match tauri_invoke("plugin:usb-audio|requestUsbPermission", &perm_args.into()).await {
-                    Ok(result) => {
-                        let granted = js_sys::Reflect::get(&result, &JsValue::from_str("granted"))
-                            .ok().and_then(|v| v.as_bool()).unwrap_or(false);
-                        if granted {
-                            state.log_debug("info", "resolve_auto_mode: USB permission granted");
-                            state.mic_effective_mode.set(MicMode::RawUsb);
-                            state.mic_needs_permission.set(false);
-                            state.show_info_toast(format!("USB mic: {}", product_name));
-                            return Some(MicMode::RawUsb);
-                        } else {
-                            state.log_debug("warn", "resolve_auto_mode: USB permission denied, not falling back");
-                            state.show_error_toast("Raw USB mic permission denied");
-                            state.mic_effective_mode.set(MicMode::RawUsb);
-                            state.mic_needs_permission.set(true);
-                            return None;
-                        }
-                    }
-                    Err(e) => {
-                        state.log_debug("error", format!("resolve_auto_mode: USB permission request failed: {}", e));
-                        state.show_error_toast("USB permission request failed");
-                        state.mic_effective_mode.set(MicMode::RawUsb);
-                        state.mic_needs_permission.set(true);
-                        return None;
-                    }
-                }
-            } else {
-                state.log_debug("warn", "resolve_auto_mode: no deviceName, cannot request permission");
-                state.mic_effective_mode.set(MicMode::RawUsb);
-                state.mic_needs_permission.set(true);
-                return None;
-            }
-        }
-    }
-
-    // No USB audio device found — fall back to native audio
-    state.log_debug("info", "resolve_auto_mode: no USB audio device, falling back to Cpal (native audio)");
-    state.mic_usb_connected.set(false);
-    state.mic_needs_permission.set(false);
-    state.mic_effective_mode.set(MicMode::Cpal);
-    Some(MicMode::Cpal)
-}
-
-/// Check for USB devices and permission state WITHOUT requesting permission.
-/// Sets `mic_effective_mode` and `mic_needs_permission` accordingly.
-/// Used at startup and on hotplug to avoid showing permission dialog unprompted.
-pub async fn check_auto_mode_no_request(state: &AppState) -> MicMode {
-    state.log_debug("info", "check_auto_mode_no_request: checking USB devices...");
-
-    let devices_result = tauri_invoke("plugin:usb-audio|listUsbDevices",
-        &js_sys::Object::new().into()).await;
-
-    if let Err(ref e) = devices_result {
-        state.log_debug("warn", format!("check_auto_mode_no_request: listUsbDevices failed: {}", e));
-    }
 
     if let Ok(devices) = devices_result {
         let devices_arr = js_sys::Reflect::get(&devices, &JsValue::from_str("devices"))
@@ -379,35 +270,17 @@ pub async fn check_auto_mode_no_request(state: &AppState) -> MicMode {
             let dev = devices_arr.get(i);
             let is_audio = js_sys::Reflect::get(&dev, &JsValue::from_str("isAudioDevice"))
                 .ok().and_then(|v| v.as_bool()).unwrap_or(false);
-            if !is_audio { continue; }
-
-            let product_name = js_sys::Reflect::get(&dev, &JsValue::from_str("productName"))
-                .ok().and_then(|v| v.as_string()).unwrap_or_else(|| "USB Audio".into());
-            let has_permission = js_sys::Reflect::get(&dev, &JsValue::from_str("hasPermission"))
-                .ok().and_then(|v| v.as_bool()).unwrap_or(false);
-
-            state.mic_usb_connected.set(true);
-
-            if has_permission {
-                state.log_debug("info", format!("check_auto_mode_no_request: '{}' already permitted", product_name));
-                state.mic_effective_mode.set(MicMode::RawUsb);
-                state.mic_needs_permission.set(false);
+            if is_audio {
+                let product_name = js_sys::Reflect::get(&dev, &JsValue::from_str("productName"))
+                    .ok().and_then(|v| v.as_string()).unwrap_or_else(|| "USB Audio".into());
+                state.mic_usb_connected.set(true);
                 state.show_info_toast(format!("USB mic: {}", product_name));
-                return MicMode::RawUsb;
-            } else {
-                state.log_debug("info", format!("check_auto_mode_no_request: '{}' needs permission", product_name));
-                state.mic_effective_mode.set(MicMode::RawUsb);
-                state.mic_needs_permission.set(true);
-                state.show_info_toast(format!("USB mic detected: {}", product_name));
-                return MicMode::RawUsb;
+                return;
             }
         }
     }
 
     state.mic_usb_connected.set(false);
-    state.mic_needs_permission.set(false);
-    state.mic_effective_mode.set(MicMode::Cpal);
-    MicMode::Cpal
 }
 
 /// Subscribe to a Tauri event, storing the closure in thread-local state.
@@ -703,6 +576,8 @@ async fn ensure_mic_open_tauri(state: &AppState) -> bool {
     }
 
     let max_sr = state.mic_max_sample_rate.get_untracked();
+    let max_bits = state.mic_max_bit_depth.get_untracked();
+    let channel_mode = state.mic_channel_mode.get_untracked();
     let selected_device = state.mic_selected_device.get_untracked();
     let args = js_sys::Object::new();
     if max_sr > 0 {
@@ -721,12 +596,33 @@ async fn ensure_mic_open_tauri(state: &AppState) -> bool {
         )
         .ok();
     }
+    if max_bits > 0 {
+        js_sys::Reflect::set(
+            &args,
+            &JsValue::from_str("maxBitDepth"),
+            &JsValue::from_f64(max_bits as f64),
+        )
+        .ok();
+    }
+    {
+        use crate::state::ChannelMode;
+        let ch: u16 = match channel_mode {
+            ChannelMode::Mono => 1,
+            ChannelMode::Stereo => 2,
+        };
+        js_sys::Reflect::set(
+            &args,
+            &JsValue::from_str("channels"),
+            &JsValue::from_f64(ch as f64),
+        )
+        .ok();
+    }
     let result = match tauri_invoke("mic_open", &args.into()).await {
         Ok(v) => v,
         Err(e) => {
-            log::warn!("Native mic failed ({}), falling back to Web Audio", e);
+            log::warn!("Native mic failed: {}", e);
             state.status_message.set(Some(format!("Native mic unavailable: {}", e)));
-            return ensure_mic_open_web(state).await;
+            return false;
         }
     };
 
@@ -981,6 +877,7 @@ async fn stop_all_tauri(state: &AppState) {
 /// If a live file exists (from live visualization), updates it in-place.
 fn finalize_recording_tauri(result: JsValue, state: AppState) {
     use crate::canvas::{spectral_store, tile_cache};
+    use crate::state::RecordMode;
 
     let filename = js_sys::Reflect::get(&result, &JsValue::from_str("filename"))
         .ok()
@@ -1085,7 +982,7 @@ fn finalize_recording_tauri(result: JsValue, state: AppState) {
             if let Some(f) = files.get_mut(file_index) {
                 f.audio = audio;
                 f.preview = Some(preview);
-                f.is_recording = false; // Already saved by backend
+                f.is_recording = state.record_mode.get_untracked() == RecordMode::ToMemory;
             }
         });
     } else {
@@ -1116,7 +1013,7 @@ fn finalize_recording_tauri(result: JsValue, state: AppState) {
                 overview_image: None,
                 xc_metadata: None,
                 xc_hashes: None,
-                is_recording: false, // Already saved by backend
+                is_recording: state.record_mode.get_untracked() == RecordMode::ToMemory,
                 settings: FileSettings::default(),
                 add_order: idx,
                 last_modified_ms: None,
@@ -1397,7 +1294,8 @@ async fn ensure_mic_open_usb(state: &AppState) -> bool {
         state_err.mic_recording_start_time.set(None);
         state_err.mic_listening.set(false);
         state_err.mic_usb_connected.set(false);
-        state_err.mic_effective_mode.set(MicMode::Cpal);
+        state_err.mic_backend.set(None);
+        state_err.mic_acquisition_state.set(MicAcquisitionState::Failed);
 
         USB_MIC_OPEN.with(|o| *o.borrow_mut() = false);
 
@@ -1540,54 +1438,164 @@ async fn stop_all_usb(state: &AppState) {
     close_mic_usb(state).await;
 }
 
-// ── Public API (routes by mic_mode) ─────────────────────────────────────
+// ── Unified mic acquisition ─────────────────────────────────────────────
 
-/// Resolve the effective mic mode, handling Auto by resolving on first use.
-/// Returns `None` when USB is present but permission was denied (caller should not proceed).
-async fn effective_mode(state: &AppState) -> Option<MicMode> {
-    let mode = state.mic_mode.get_untracked();
-    if mode == MicMode::Auto && state.is_tauri {
-        // If a mic is already open, use whichever backend is active
-        if usb_mic_is_open() {
-            return Some(MicMode::RawUsb);
+/// Open the appropriate mic backend based on a resolved MicBackend.
+/// Returns true on success, false on failure.
+async fn open_backend(state: &AppState, backend: MicBackend) -> bool {
+    match backend {
+        MicBackend::Browser => ensure_mic_open_web(state).await,
+        MicBackend::Cpal => ensure_mic_open_tauri(state).await,
+        MicBackend::RawUsb => ensure_mic_open_usb(state).await,
+    }
+}
+
+/// Unified mic acquisition. Called by both toggle_record and toggle_listen.
+/// Returns the resolved MicBackend when the mic is ready, or None if the user
+/// cancelled, permission was denied, or the mic failed to open.
+///
+/// When `MicStrategy::Ask` is active and no mic has been chosen yet, this shows
+/// the mic chooser dialog and returns None. The chooser callback will re-trigger
+/// the pending action (listen or record) once the user picks a device.
+pub async fn acquire_mic(state: &AppState, action: MicPendingAction) -> Option<MicBackend> {
+    // If mic is already open and streaming, return current backend immediately
+    if state.mic_acquisition_state.get_untracked() == MicAcquisitionState::Ready {
+        if let Some(backend) = state.mic_backend.get_untracked() {
+            // Verify the backend is actually still open
+            let still_open = match backend {
+                MicBackend::Browser => MIC_CTX.with(|c| c.borrow().is_some()),
+                MicBackend::Cpal => tauri_mic_is_open(),
+                MicBackend::RawUsb => usb_mic_is_open(),
+            };
+            if still_open {
+                return Some(backend);
+            }
+            // Backend closed unexpectedly — fall through to re-acquire
+            state.mic_acquisition_state.set(MicAcquisitionState::Idle);
         }
-        if tauri_mic_is_open() {
-            return Some(MicMode::Cpal);
+    }
+
+    let strategy = state.mic_strategy.get_untracked();
+
+    match strategy {
+        MicStrategy::None => {
+            state.log_debug("info", "acquire_mic: strategy=None, mic disabled");
+            None
         }
-        // Resolve: check for USB device, request permission; None if denied
-        resolve_auto_mode(state).await
-    } else {
-        Some(mode)
+        MicStrategy::Browser => {
+            state.mic_acquisition_state.set(MicAcquisitionState::Acquiring);
+            let t0 = js_sys::Date::now();
+            if ensure_mic_open_web(state).await {
+                let elapsed = js_sys::Date::now() - t0;
+                state.mic_permission_dialog_shown.set(elapsed > 1500.0);
+                state.mic_backend.set(Some(MicBackend::Browser));
+                state.mic_acquisition_state.set(MicAcquisitionState::Ready);
+                Some(MicBackend::Browser)
+            } else {
+                state.mic_acquisition_state.set(MicAcquisitionState::Failed);
+                // Reset to Ask on failure — no fallback (requirement 11)
+                state.mic_strategy.set(MicStrategy::Ask);
+                state.status_message.set(Some("Browser mic failed. Please choose a microphone.".into()));
+                None
+            }
+        }
+        MicStrategy::Ask => {
+            // Check if a mic was already chosen (remembered from chooser)
+            if let Some(backend) = state.mic_backend.get_untracked() {
+                state.mic_acquisition_state.set(MicAcquisitionState::Acquiring);
+                let t0 = js_sys::Date::now();
+                if open_backend(state, backend).await {
+                    let elapsed = js_sys::Date::now() - t0;
+                    state.mic_permission_dialog_shown.set(elapsed > 1500.0);
+                    state.mic_acquisition_state.set(MicAcquisitionState::Ready);
+                    return Some(backend);
+                } else {
+                    // Failure: clear remembered mic, don't fallback
+                    state.mic_backend.set(None);
+                    state.mic_device_info.set(None);
+                    state.mic_selected_device.set(None);
+                    state.mic_acquisition_state.set(MicAcquisitionState::Idle);
+                    state.status_message.set(Some("Microphone failed. Please choose again.".into()));
+                    return None;
+                }
+            }
+
+            // No mic remembered — show chooser dialog and stash the pending action
+            state.mic_pending_action.set(Some(action));
+            state.mic_acquisition_state.set(MicAcquisitionState::AwaitingChoice);
+            state.show_mic_chooser.set(true);
+            // The chooser callback will re-trigger the action when user picks a device
+            None
+        }
     }
 }
 
 /// Toggle live HET listening on/off.
 pub async fn toggle_listen(state: &AppState) {
-    let mode = match effective_mode(state).await {
-        Some(m) => m,
+    // If already listening, stop
+    if state.mic_listening.get_untracked() {
+        state.log_debug("info", "toggle_listen: stopping");
+        stop_listening(state).await;
+        return;
+    }
+
+    // Acquire mic (unified flow)
+    let backend = match acquire_mic(state, MicPendingAction::Listen).await {
+        Some(b) => b,
         None => {
-            state.log_debug("info", "toggle_listen: permission denied, aborting");
+            state.log_debug("info", "toggle_listen: acquire_mic returned None (chooser shown or failed)");
             return;
         }
     };
-    state.log_debug("info", format!("toggle_listen: mode={:?}, listening={}", mode, state.mic_listening.get_untracked()));
-    match mode {
-        MicMode::RawUsb if state.is_tauri => toggle_listen_usb(state).await,
-        MicMode::Cpal if state.is_tauri => toggle_listen_tauri(state).await,
+
+    state.log_debug("info", format!("toggle_listen: backend={:?}, starting listen", backend));
+    start_listening(state, backend).await;
+}
+
+/// Start listening with the given backend (mic already open).
+async fn start_listening(state: &AppState, backend: MicBackend) {
+    match backend {
+        MicBackend::RawUsb if state.is_tauri => {
+            // USB listen uses its own streaming logic
+            if !state.mic_listening.get_untracked() {
+                toggle_listen_usb(state).await;
+            }
+        }
+        MicBackend::Cpal if state.is_tauri => {
+            if !state.mic_listening.get_untracked() {
+                toggle_listen_tauri(state).await;
+            }
+        }
         _ => {
-            // Browser mode or non-Tauri fallback
-            if state.mic_listening.get_untracked() {
-                state.mic_listening.set(false);
-                crate::canvas::live_waterfall::clear();
-                MIC_BUFFER.with(|buf| buf.borrow_mut().clear());
+            // Browser mode
+            MIC_BUFFER.with(|buf| buf.borrow_mut().clear());
+            state.mic_listening.set(true);
+            let sr = state.mic_sample_rate.get_untracked();
+            spawn_live_processing_loop(*state, 0, sr);
+            spawn_smooth_scroll_animation(*state);
+        }
+    }
+}
+
+/// Stop listening without closing the mic (may still be recording).
+async fn stop_listening(state: &AppState) {
+    state.mic_listening.set(false);
+    crate::canvas::live_waterfall::clear();
+
+    // Determine which backend to stop
+    let backend = state.mic_backend.get_untracked();
+    match backend {
+        Some(MicBackend::RawUsb) if state.is_tauri => {
+            // toggle_listen_usb handles the stop case
+            toggle_listen_usb(state).await;
+        }
+        Some(MicBackend::Cpal) if state.is_tauri => {
+            toggle_listen_tauri(state).await;
+        }
+        _ => {
+            MIC_BUFFER.with(|buf| buf.borrow_mut().clear());
+            if !state.mic_recording.get_untracked() {
                 maybe_close_mic_web(state);
-            } else if ensure_mic_open_web(state).await {
-                MIC_BUFFER.with(|buf| buf.borrow_mut().clear());
-                state.mic_listening.set(true);
-                // Start live waterfall processing loop for listening
-                let sr = state.mic_sample_rate.get_untracked();
-                spawn_live_processing_loop(*state, 0, sr);
-                spawn_smooth_scroll_animation(*state);
             }
         }
     }
@@ -1595,34 +1603,101 @@ pub async fn toggle_listen(state: &AppState) {
 
 /// Toggle recording on/off. When stopping, finalizes the recording.
 pub async fn toggle_record(state: &AppState) {
-    let mode = match effective_mode(state).await {
-        Some(m) => m,
+    // If already recording, stop
+    if state.mic_recording.get_untracked() {
+        state.log_debug("info", "toggle_record: stopping");
+        stop_recording(state).await;
+        return;
+    }
+
+    // If already listening, the mic is ready — go straight to recording
+    if state.mic_listening.get_untracked() {
+        if let Some(backend) = state.mic_backend.get_untracked() {
+            state.log_debug("info", format!("toggle_record: already listening, starting immediate with {:?}", backend));
+            start_recording_with_backend(state, backend).await;
+            return;
+        }
+    }
+
+    // Acquire mic (unified flow)
+    let backend = match acquire_mic(state, MicPendingAction::Record).await {
+        Some(b) => b,
         None => {
-            state.log_debug("info", "toggle_record: permission denied, aborting");
+            state.log_debug("info", "toggle_record: acquire_mic returned None (chooser shown or failed)");
             return;
         }
     };
-    state.log_debug("info", format!("toggle_record: mode={:?}, recording={}", mode, state.mic_recording.get_untracked()));
-    match mode {
-        MicMode::RawUsb if state.is_tauri => toggle_record_usb(state).await,
-        MicMode::Cpal if state.is_tauri => toggle_record_tauri(state).await,
+
+    // If OS permission dialog was shown (detected by timing), skip our dialog
+    if state.mic_permission_dialog_shown.get_untracked() {
+        state.log_debug("info", format!("toggle_record: backend={:?}, permission dialog detected, starting immediately", backend));
+        start_recording_with_backend(state, backend).await;
+    } else {
+        // Show "Ready to record" dialog — user must confirm
+        state.log_debug("info", format!("toggle_record: backend={:?}, showing Ready to Record dialog", backend));
+        state.record_ready_state.set(crate::state::RecordReadyState::AwaitingConfirmation);
+        // The dialog's OK button will call confirm_record_start()
+    }
+}
+
+/// Called by the "Ready to record" dialog's OK button.
+pub async fn confirm_record_start(state: &AppState) {
+    state.record_ready_state.set(crate::state::RecordReadyState::None);
+    if let Some(backend) = state.mic_backend.get_untracked() {
+        start_recording_with_backend(state, backend).await;
+    }
+}
+
+/// Called by the "Ready to record" dialog's Cancel button.
+pub fn cancel_record_start(state: &AppState) {
+    state.record_ready_state.set(crate::state::RecordReadyState::None);
+    // Mic stays open — user can still listen or try recording again
+}
+
+/// Start recording with the given backend (mic already open).
+async fn start_recording_with_backend(state: &AppState, backend: MicBackend) {
+    match backend {
+        MicBackend::RawUsb if state.is_tauri => {
+            if !state.mic_recording.get_untracked() {
+                toggle_record_usb(state).await;
+            }
+        }
+        MicBackend::Cpal if state.is_tauri => {
+            if !state.mic_recording.get_untracked() {
+                toggle_record_tauri(state).await;
+            }
+        }
         _ => {
-            // Browser mode or non-Tauri fallback
-            if state.mic_recording.get_untracked() {
-                if let Some((samples, sr)) = stop_recording_web(state) {
-                    finalize_live_recording(samples, sr, *state);
-                }
+            // Browser mode
+            MIC_BUFFER.with(|buf| buf.borrow_mut().clear());
+            state.mic_samples_recorded.set(0);
+            state.mic_recording.set(true);
+            state.mic_recording_start_time.set(Some(js_sys::Date::now()));
+            let sr = state.mic_sample_rate.get_untracked();
+            let file_idx = start_live_recording(state, sr);
+            spawn_live_processing_loop(*state, file_idx, sr);
+            spawn_smooth_scroll_animation(*state);
+            log::info!("Recording started");
+        }
+    }
+}
+
+/// Stop recording and finalize.
+async fn stop_recording(state: &AppState) {
+    let backend = state.mic_backend.get_untracked();
+    match backend {
+        Some(MicBackend::RawUsb) if state.is_tauri => {
+            toggle_record_usb(state).await;
+        }
+        Some(MicBackend::Cpal) if state.is_tauri => {
+            toggle_record_tauri(state).await;
+        }
+        _ => {
+            if let Some((samples, sr)) = stop_recording_web(state) {
+                finalize_live_recording(samples, sr, *state);
+            }
+            if !state.mic_listening.get_untracked() {
                 maybe_close_mic_web(state);
-            } else if ensure_mic_open_web(state).await {
-                MIC_BUFFER.with(|buf| buf.borrow_mut().clear());
-                state.mic_samples_recorded.set(0);
-                state.mic_recording.set(true);
-                state.mic_recording_start_time.set(Some(js_sys::Date::now()));
-                let sr = state.mic_sample_rate.get_untracked();
-                let file_idx = start_live_recording(state, sr);
-                spawn_live_processing_loop(*state, file_idx, sr);
-                spawn_smooth_scroll_animation(*state);
-                log::info!("Recording started");
             }
         }
     }
@@ -1630,33 +1705,31 @@ pub async fn toggle_record(state: &AppState) {
 
 /// Stop both listening and recording, close mic.
 pub fn stop_all(state: &AppState) {
-    let mode = state.mic_mode.get_untracked();
-    let is_tauri = state.is_tauri;
-
-    // For Auto mode, check which backend is actually open
-    let effective = if mode == MicMode::Auto && is_tauri {
+    // Determine which backend is active from new signal first, fall back to old logic
+    let backend = state.mic_backend.get_untracked().or_else(|| {
+        // Legacy: infer from what's open
         if usb_mic_is_open() {
-            MicMode::RawUsb
+            Some(MicBackend::RawUsb)
         } else if tauri_mic_is_open() {
-            MicMode::Cpal
+            Some(MicBackend::Cpal)
         } else {
-            state.mic_effective_mode.get_untracked()
+            None
         }
-    } else {
-        mode
-    };
+    });
 
-    match effective {
-        MicMode::RawUsb if is_tauri => {
+    match backend {
+        Some(MicBackend::RawUsb) if state.is_tauri => {
             let state = *state;
             wasm_bindgen_futures::spawn_local(async move {
                 stop_all_usb(&state).await;
+                state.mic_acquisition_state.set(MicAcquisitionState::Idle);
             });
         }
-        MicMode::Cpal if is_tauri => {
+        Some(MicBackend::Cpal) if state.is_tauri => {
             let state = *state;
             wasm_bindgen_futures::spawn_local(async move {
                 stop_all_tauri(&state).await;
+                state.mic_acquisition_state.set(MicAcquisitionState::Idle);
             });
         }
         _ => {
@@ -1669,6 +1742,7 @@ pub fn stop_all(state: &AppState) {
             state.mic_recording.set(false);
             state.mic_recording_start_time.set(None);
             close_mic_web(state);
+            state.mic_acquisition_state.set(MicAcquisitionState::Idle);
         }
     }
 }

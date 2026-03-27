@@ -1,6 +1,6 @@
 use leptos::prelude::*;
 use wasm_bindgen::prelude::*;
-use crate::state::{AppState, CanvasTool, GainMode, LayerPanel, ListenMode, PeakSource, PlaybackMode, PlayStartMode, RecordMode};
+use crate::state::{AppState, CanvasTool, ChannelMode, GainMode, LayerPanel, ListenMode, MicAcquisitionState, MicStrategy, PeakSource, PlaybackMode, PlayStartMode, RecordMode, RecordReadyState};
 use crate::audio::{microphone, playback};
 use crate::audio::streaming_playback::PV_MODE_BOOST_DB;
 use crate::audio::source::ChannelView;
@@ -171,6 +171,8 @@ pub fn BottomToolbar() -> impl IntoView {
             let now = js_sys::Date::now();
             let secs = (now - start) / 1000.0;
             format!("Rec {}", crate::format_time::format_duration_compact(secs))
+        } else if state.mic_strategy.get() == MicStrategy::Ask && state.mic_backend.get().is_none() {
+            "\u{25CF}?".to_string() // ●? — pressing record will prompt for mic selection
         } else {
             "\u{25CF}".to_string() // ●
         }
@@ -644,10 +646,12 @@ pub fn BottomToolbar() -> impl IntoView {
                 is_open=rec_is_open
                 toggle_menu=rec_toggle_menu
                 left_title="Record"
-                right_title="Record mode"
+                right_title="Record settings"
                 menu_direction="above"
-                panel_style="min-width: 160px;"
+                panel_style="min-width: 280px;"
             >
+                // ── Record mode ──
+                <div class="layer-panel-title">"Record mode"</div>
                 <button
                     class=move || {
                         let active = state.record_mode.get() == RecordMode::ToFile;
@@ -662,14 +666,12 @@ pub fn BottomToolbar() -> impl IntoView {
                     on:click=move |_| {
                         if state.is_tauri {
                             state.record_mode.set(RecordMode::ToFile);
-                            state.layer_panel_open.set(None);
                         }
                     }
                 >"To file"</button>
                 <button class=move || layer_opt_class(state.record_mode.get() == RecordMode::ToMemory)
                     on:click=move |_| {
                         state.record_mode.set(RecordMode::ToMemory);
-                        state.layer_panel_open.set(None);
                     }
                 >"To memory"</button>
                 <button class=move || layer_opt_class(state.record_mode.get() == RecordMode::ListenOnly)
@@ -683,9 +685,129 @@ pub fn BottomToolbar() -> impl IntoView {
                             });
                         }
                         state.record_mode.set(RecordMode::ListenOnly);
-                        state.layer_panel_open.set(None);
                     }
                 >"Listen only"</button>
+
+                // ── Microphone ──
+                <hr />
+                <div class="layer-panel-title">"Microphone"</div>
+                <div style="display: flex; gap: 2px; padding: 0 6px 4px;">
+                    <button class=move || layer_opt_class(state.mic_strategy.get() == MicStrategy::Ask)
+                        on:click=move |_| state.mic_strategy.set(MicStrategy::Ask)
+                    >"Ask"</button>
+                    <button class=move || {
+                        if state.is_tauri {
+                            "layer-panel-opt disabled"
+                        } else {
+                            layer_opt_class(state.mic_strategy.get() == MicStrategy::Browser)
+                        }
+                    }
+                        on:click=move |_| {
+                            if !state.is_tauri {
+                                state.mic_strategy.set(MicStrategy::Browser);
+                            }
+                        }
+                        title=move || if state.is_tauri { "Not available on desktop/mobile" } else { "Use browser Web Audio API" }
+                    >"Browser"</button>
+                    <button class=move || layer_opt_class(state.mic_strategy.get() == MicStrategy::None)
+                        on:click=move |_| state.mic_strategy.set(MicStrategy::None)
+                    >"None"</button>
+                </div>
+
+                // Selected device info + change button
+                <Show when=move || state.mic_strategy.get() == MicStrategy::Ask>
+                    <div style="padding: 2px 8px;">
+                        {move || {
+                            let info = state.mic_device_info.get();
+                            match info {
+                                Some(info) => {
+                                    let rate_str = if !info.supported_rates.is_empty() {
+                                        let max = info.supported_rates.iter().max().copied().unwrap_or(0);
+                                        if max >= 1000 { format!("{}k", max / 1000) } else { format!("{}", max) }
+                                    } else {
+                                        "?".to_string()
+                                    };
+                                    let bits_str = if !info.supported_bit_depths.is_empty() {
+                                        let max = info.supported_bit_depths.iter().max().copied().unwrap_or(0);
+                                        format!("{}-bit", max)
+                                    } else {
+                                        String::new()
+                                    };
+                                    view! {
+                                        <div style="font-size: 11px; color: #ccc; margin-bottom: 4px;">
+                                            <span style="color: #fff;">{info.name.clone()}</span>
+                                            <br />
+                                            <span style="color: #888;">{format!("{} {} {}", info.connection_type, rate_str, bits_str)}</span>
+                                        </div>
+                                    }.into_any()
+                                }
+                                None => view! {
+                                    <div style="font-size: 11px; color: #888; margin-bottom: 4px;">"No mic selected"</div>
+                                }.into_any()
+                            }
+                        }}
+                        <button class="layer-panel-opt"
+                            on:click=move |_| {
+                                state.show_mic_chooser.set(true);
+                            }
+                        >{move || if state.mic_device_info.get().is_some() { "Change\u{2026}" } else { "Select mic\u{2026}" }}</button>
+                    </div>
+                </Show>
+
+                // ── Settings ──
+                <hr />
+                <div class="layer-panel-title">"Settings"</div>
+                <div style="padding: 2px 8px;">
+                    // Max sample rate
+                    <div class="layer-panel-slider-row het-text-row">
+                        <label style="font-size: 11px;">"Max sample rate"</label>
+                        <select style="font-size: 11px; background: #333; color: #ccc; border: 1px solid #555; padding: 1px 2px;"
+                            on:change=move |ev| {
+                                if let Ok(val) = leptos::prelude::event_target_value(&ev).parse::<u32>() {
+                                    state.mic_max_sample_rate.set(val);
+                                }
+                            }
+                        >
+                            <option value="0" selected=move || state.mic_max_sample_rate.get() == 0>"Auto"</option>
+                            <option value="44100" selected=move || state.mic_max_sample_rate.get() == 44100>"44.1k"</option>
+                            <option value="48000" selected=move || state.mic_max_sample_rate.get() == 48000>"48k"</option>
+                            <option value="96000" selected=move || state.mic_max_sample_rate.get() == 96000>"96k"</option>
+                            <option value="192000" selected=move || state.mic_max_sample_rate.get() == 192000>"192k"</option>
+                            <option value="256000" selected=move || state.mic_max_sample_rate.get() == 256000>"256k"</option>
+                            <option value="384000" selected=move || state.mic_max_sample_rate.get() == 384000>"384k"</option>
+                            <option value="500000" selected=move || state.mic_max_sample_rate.get() == 500000>"500k"</option>
+                        </select>
+                    </div>
+                    // Max bit depth
+                    <div class="layer-panel-slider-row het-text-row">
+                        <label style="font-size: 11px;">"Max bit depth"</label>
+                        <select style="font-size: 11px; background: #333; color: #ccc; border: 1px solid #555; padding: 1px 2px;"
+                            on:change=move |ev| {
+                                if let Ok(val) = leptos::prelude::event_target_value(&ev).parse::<u16>() {
+                                    state.mic_max_bit_depth.set(val);
+                                }
+                            }
+                        >
+                            <option value="0" selected=move || state.mic_max_bit_depth.get() == 0>"Auto"</option>
+                            <option value="16" selected=move || state.mic_max_bit_depth.get() == 16>"16-bit"</option>
+                            <option value="24" selected=move || state.mic_max_bit_depth.get() == 24>"24-bit"</option>
+                            <option value="32" selected=move || state.mic_max_bit_depth.get() == 32>"32-bit"</option>
+                        </select>
+                    </div>
+                    // Channels
+                    <div class="layer-panel-slider-row het-text-row">
+                        <label style="font-size: 11px;">"Channels"</label>
+                        <select style="font-size: 11px; background: #333; color: #ccc; border: 1px solid #555; padding: 1px 2px;"
+                            on:change=move |ev| {
+                                let val = leptos::prelude::event_target_value(&ev);
+                                state.mic_channel_mode.set(if val == "stereo" { ChannelMode::Stereo } else { ChannelMode::Mono });
+                            }
+                        >
+                            <option value="mono" selected=move || state.mic_channel_mode.get() == ChannelMode::Mono>"Mono"</option>
+                            <option value="stereo" selected=move || state.mic_channel_mode.get() == ChannelMode::Stereo>"Stereo"</option>
+                        </select>
+                    </div>
+                </div>
             </ComboButton>
 
             // ── Listen combo button ──
@@ -693,7 +815,10 @@ pub fn BottomToolbar() -> impl IntoView {
                 let listen_is_open = Signal::derive(move || state.layer_panel_open.get() == Some(LayerPanel::ListenMode));
 
                 let listen_left_class = Signal::derive(move || {
-                    if state.mic_listening.get() {
+                    let is_listening_ready = state.mic_listening.get()
+                        && state.mic_acquisition_state.get() == MicAcquisitionState::Ready;
+                    let is_rec_ready = state.record_ready_state.get() == RecordReadyState::AwaitingConfirmation;
+                    if is_listening_ready || is_rec_ready {
                         "layer-btn combo-btn-left mic-armed"
                     } else {
                         "layer-btn combo-btn-left"
@@ -704,7 +829,17 @@ pub fn BottomToolbar() -> impl IntoView {
                 });
 
                 let listen_left_value = Signal::derive(move || {
-                    if state.mic_needs_permission.get() && state.is_tauri && !state.mic_listening.get() {
+                    if state.record_ready_state.get() == RecordReadyState::AwaitingConfirmation {
+                        "\u{23F8} Rec ready\u{2026}".to_string() // ⏸ Rec ready…
+                    } else if state.mic_acquisition_state.get() == MicAcquisitionState::Acquiring {
+                        "Readying\u{2026}".to_string()
+                    } else if state.mic_listening.get() && state.listen_mode.get() == ListenMode::ReadyMic {
+                        if state.mic_acquisition_state.get() == MicAcquisitionState::Ready {
+                            "\u{23F8} Ready".to_string() // ⏸ Ready
+                        } else {
+                            "Readying\u{2026}".to_string()
+                        }
+                    } else if state.mic_usb_connected.get() && state.mic_backend.get().is_none() && state.is_tauri && !state.mic_listening.get() {
                         "USB mic".to_string()
                     } else {
                         "\u{1F3A4} Listen".to_string() // 🎤 Listen
@@ -717,6 +852,7 @@ pub fn BottomToolbar() -> impl IntoView {
                         ListenMode::PhaseVocoder => "PV".to_string(),
                         ListenMode::ZeroCrossing => "ZC".to_string(),
                         ListenMode::Normal => "1:1".to_string(),
+                        ListenMode::ReadyMic => "RDY".to_string(),
                     }
                 });
 
@@ -762,6 +898,9 @@ pub fn BottomToolbar() -> impl IntoView {
                         <button class=move || layer_opt_class(state.listen_mode.get() == ListenMode::Normal)
                             on:click=move |_| state.listen_mode.set(ListenMode::Normal)
                         >"1:1 \u{2014} Normal (passthrough)"</button>
+                        <button class=move || layer_opt_class(state.listen_mode.get() == ListenMode::ReadyMic)
+                            on:click=move |_| state.listen_mode.set(ListenMode::ReadyMic)
+                        >"Ready \u{2014} Mic warm-up (no audio)"</button>
 
                         // ── Heterodyne settings ──
                         <Show when=move || state.listen_mode.get() == ListenMode::Heterodyne>

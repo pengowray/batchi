@@ -173,6 +173,7 @@ fn collect_supported_rates(device: &cpal::Device) -> Vec<u32> {
 
 /// Try to find a supported config at the requested rate (or highest rate <= max).
 /// Returns None if no suitable config is found.
+#[allow(dead_code)]
 fn negotiate_sample_rate(
     device: &cpal::Device,
     requested_max_rate: u32,
@@ -181,13 +182,21 @@ fn negotiate_sample_rate(
         Ok(c) => c.collect(),
         Err(_) => return None,
     };
+    negotiate_sample_rate_from(&configs, requested_max_rate)
+}
 
+/// Try to find a supported config from a pre-filtered list at the requested rate
+/// (or highest rate <= max). Returns None if no suitable config is found.
+fn negotiate_sample_rate_from(
+    configs: &[cpal::SupportedStreamConfigRange],
+    requested_max_rate: u32,
+) -> Option<cpal::SupportedStreamConfig> {
     if configs.is_empty() {
         return None;
     }
 
     // Try exact requested rate first — find a config range that contains it
-    for cfg in &configs {
+    for cfg in configs {
         if requested_max_rate >= cfg.min_sample_rate()
             && requested_max_rate <= cfg.max_sample_rate()
         {
@@ -197,7 +206,7 @@ fn negotiate_sample_rate(
 
     // No exact match — find the config with the highest max_rate <= requested
     let mut best: Option<(u32, cpal::SupportedStreamConfig)> = None;
-    for cfg in &configs {
+    for cfg in configs {
         let rate = cfg.max_sample_rate();
         if rate <= requested_max_rate {
             if best.as_ref().map_or(true, |(b, _)| rate > *b) {
@@ -263,10 +272,28 @@ pub fn list_input_devices() -> Vec<DeviceInfo> {
     devices
 }
 
+/// Map a user's max_bit_depth value to a preferred cpal SampleFormat.
+/// Returns None for auto (0) — accept any format.
+fn preferred_format_for_bit_depth(max_bit_depth: u16) -> Option<cpal::SampleFormat> {
+    match max_bit_depth {
+        0 => None,        // auto
+        1..=16 => Some(cpal::SampleFormat::I16),
+        17..=32 => Some(cpal::SampleFormat::I32),
+        _ => None,
+    }
+}
+
 /// Open an input device and create a capture stream.
 /// If `device_name` is Some, look up that device by name; otherwise use the default.
 /// If `requested_max_rate` > 0, try to negotiate the highest rate up to that value.
-pub fn open_mic(requested_max_rate: u32, device_name: Option<&str>) -> Result<MicState, String> {
+/// If `max_bit_depth` > 0, prefer a config with matching bit depth (16 -> I16, 24/32 -> I32).
+/// If `requested_channels` > 0, prefer that channel count (1=mono, 2=stereo).
+pub fn open_mic(
+    requested_max_rate: u32,
+    device_name: Option<&str>,
+    max_bit_depth: u16,
+    requested_channels: u16,
+) -> Result<MicState, String> {
     let host = cpal::default_host();
     let device = if let Some(name) = device_name {
         // Try to find the requested device by name
@@ -290,34 +317,86 @@ pub fn open_mic(requested_max_rate: u32, device_name: Option<&str>) -> Result<Mi
     let device_name = device.description().map(|d| d.name().to_string()).unwrap_or_else(|_| "Unknown".into());
     let supported_rates = collect_supported_rates(&device);
 
-    let config = if requested_max_rate == 0 {
-        // Auto mode: use the device's preferred/native sample rate.
+    let pref_fmt = preferred_format_for_bit_depth(max_bit_depth);
+
+    let config = if requested_max_rate == 0 && pref_fmt.is_none() && requested_channels == 0 {
+        // Full auto mode: use the device's preferred/native config.
         // This avoids Android's Oboe backend reporting inflated max rates
         // (e.g. 192kHz for built-in mic) that trigger silent resampling.
         let default_cfg = device
             .default_input_config()
             .map_err(|e| format!("Failed to get mic config: {}", e))?;
         eprintln!(
-            "Mic rate negotiation: auto mode, using device default {}Hz (supported: {:?})",
+            "Mic config negotiation: full auto, using device default {}Hz {:?} (supported rates: {:?})",
             default_cfg.sample_rate(),
+            default_cfg.sample_format(),
             supported_rates
         );
         default_cfg
     } else {
-        // User explicitly requested a max rate — negotiate the best match
-        match negotiate_sample_rate(&device, requested_max_rate) {
+        // At least one preference set — negotiate from supported configs
+        let all_configs: Vec<_> = device
+            .supported_input_configs()
+            .map_err(|e| format!("Failed to enumerate mic configs: {}", e))?
+            .collect();
+
+        // Filter by preferred format if set
+        let format_filtered: Vec<_> = if let Some(fmt) = pref_fmt {
+            let filtered: Vec<_> = all_configs.iter()
+                .filter(|c| c.sample_format() == fmt)
+                .cloned()
+                .collect();
+            if filtered.is_empty() {
+                eprintln!("Mic config: no configs with format {:?}, ignoring bit depth preference", fmt);
+                all_configs.clone()
+            } else {
+                filtered
+            }
+        } else {
+            all_configs.clone()
+        };
+
+        // Filter by channel count if set
+        let chan_filtered: Vec<_> = if requested_channels > 0 {
+            let filtered: Vec<_> = format_filtered.iter()
+                .filter(|c| c.channels() == requested_channels)
+                .cloned()
+                .collect();
+            if filtered.is_empty() {
+                eprintln!("Mic config: no configs with {} channels, ignoring channel preference", requested_channels);
+                format_filtered
+            } else {
+                filtered
+            }
+        } else {
+            format_filtered
+        };
+
+        // Now negotiate sample rate from the filtered configs
+        let negotiated = if requested_max_rate > 0 {
+            negotiate_sample_rate_from(&chan_filtered, requested_max_rate)
+        } else {
+            // Auto rate: pick the config with the highest max rate
+            chan_filtered.iter()
+                .max_by_key(|c| c.max_sample_rate())
+                .map(|c| {
+                    let rate = c.max_sample_rate();
+                    c.clone().with_sample_rate(rate)
+                })
+        };
+
+        match negotiated {
             Some(cfg) => {
                 eprintln!(
-                    "Mic rate negotiation: requested max {}Hz, got {}Hz",
-                    requested_max_rate,
-                    cfg.sample_rate()
+                    "Mic config negotiation: {}Hz {:?} {}ch (requested: max_rate={}, max_bits={}, channels={})",
+                    cfg.sample_rate(), cfg.sample_format(), cfg.channels(),
+                    requested_max_rate, max_bit_depth, requested_channels,
                 );
                 cfg
             }
             None => {
                 eprintln!(
-                    "Mic rate negotiation: no config for max {}Hz, using device default",
-                    requested_max_rate
+                    "Mic config negotiation: no matching config, using device default"
                 );
                 device
                     .default_input_config()

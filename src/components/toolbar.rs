@@ -1,5 +1,5 @@
 use leptos::prelude::*;
-use crate::state::{AppState, RightSidebarTab, ListenMode};
+use crate::state::{AppState, RightSidebarTab, ListenMode, MicAcquisitionState, RecordReadyState};
 use crate::audio::streaming_source;
 use crate::audio::microphone;
 use crate::components::file_sidebar::file_groups;
@@ -42,12 +42,12 @@ pub fn Toolbar() -> impl IntoView {
         get_xc_field(&meta, "Attribution")
     });
 
-    // Derived: is current file unsaved (web recording)
+    // Derived: is current file unsaved (recording not yet saved by user)
     let is_unsaved = Memo::new(move |_| {
         let files = state.files.get();
         let idx = state.current_file_index.get();
         idx.and_then(|i| files.get(i))
-            .map(|f| f.is_recording && !is_tauri)
+            .map(|f| f.is_recording)
             .unwrap_or(false)
     });
 
@@ -71,7 +71,7 @@ pub fn Toolbar() -> impl IntoView {
             bits_per_sample: f.audio.metadata.bits_per_sample,
             is_float: f.audio.metadata.is_float,
             duration_secs: f.audio.duration_secs,
-            is_unsaved: f.is_recording && !is_tauri,
+            is_unsaved: f.is_recording,
             is_streaming: streaming_source::is_streaming(f.audio.source.as_ref()),
             track: gi.track.clone(),
             sequence: gi.sequence.clone(),
@@ -130,14 +130,27 @@ pub fn Toolbar() -> impl IntoView {
         let recording = state.mic_recording.get();
         let listening = state.mic_listening.get();
         let playing = state.is_playing.get();
+        let rec_ready = state.record_ready_state.get();
+        let listen_mode = state.listen_mode.get();
+        let acq_state = state.mic_acquisition_state.get();
 
         let mut parts = Vec::new();
+
+        // "Ready to record" dialog active
+        if rec_ready == RecordReadyState::AwaitingConfirmation {
+            return Some("\u{23F8} Rec ready\u{2026}".to_string()); // ⏸ Rec ready…
+        }
+
+        // ReadyMic listen mode
+        if listening && listen_mode == ListenMode::ReadyMic && acq_state == MicAcquisitionState::Ready {
+            return Some("\u{23F8} Mic ready\u{2026}".to_string()); // ⏸ Mic ready…
+        }
+
         if recording {
             parts.push("\u{1F534}"); // 🔴
         }
         if listening {
-            let listen_mode = state.listen_mode.get();
-            if listen_mode == ListenMode::Normal {
+            if listen_mode == ListenMode::Normal || listen_mode == ListenMode::ReadyMic {
                 parts.push("\u{1F3A4}"); // 🎤
             } else {
                 parts.push("\u{1F3A4}\u{1F987}"); // 🎤🦇
@@ -224,15 +237,21 @@ pub fn Toolbar() -> impl IntoView {
         track_dropdown_open.set(false);
     });
 
-    // Download handler for toolbar
+    // Download/save handler for toolbar
     let on_toolbar_download = move |_: web_sys::MouseEvent| {
         let files = state.files.get_untracked();
         if let Some(idx) = state.current_file_index.get_untracked() {
             if let Some(f) = files.get(idx) {
-                let total = f.audio.source.total_samples() as usize;
-                let samples = f.audio.source.read_region(crate::audio::source::ChannelView::MonoMix, 0, total);
-                let mic = state.mic_device_name.get_untracked();
-                microphone::download_wav(&samples, f.audio.sample_rate, &f.name, state.is_tauri, mic.as_deref());
+                if is_tauri {
+                    // On Tauri, the backend already saved to disk — just clear unsaved state
+                    state.status_message.set(Some("Recording saved".into()));
+                } else {
+                    // On web, trigger browser download
+                    let total = f.audio.source.total_samples() as usize;
+                    let samples = f.audio.source.read_region(crate::audio::source::ChannelView::MonoMix, 0, total);
+                    let mic = state.mic_device_name.get_untracked();
+                    microphone::download_wav(&samples, f.audio.sample_rate, &f.name, state.is_tauri, mic.as_deref());
+                }
                 // Clear unsaved state
                 state.files.update(|files| {
                     if let Some(f) = files.get_mut(idx) {
@@ -346,13 +365,20 @@ pub fn Toolbar() -> impl IntoView {
                             })}
 
                             // Unsaved badge + download button (toolbar-specific)
-                            {unsaved.then(|| view! {
-                                <span class="toolbar-unsaved-badge">"* File unsaved"</span>
-                                <button
-                                    class="toolbar-download-btn"
-                                    title="Download WAV"
-                                    on:click=on_toolbar_download
-                                >"\u{1F4BE} Download"</button>
+                            {unsaved.then(|| {
+                                let (btn_label, btn_title) = if is_tauri {
+                                    ("\u{1F4BE} Save", "Save recording")
+                                } else {
+                                    ("\u{1F4BE} Download", "Download WAV")
+                                };
+                                view! {
+                                    <span class="toolbar-unsaved-badge">"* File unsaved"</span>
+                                    <button
+                                        class="toolbar-download-btn"
+                                        title=btn_title
+                                        on:click=on_toolbar_download
+                                    >{btn_label}</button>
+                                }
                             })}
 
                             // CC badge or info button
