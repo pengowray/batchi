@@ -361,18 +361,27 @@ pub fn Spectrogram() -> impl IntoView {
                 gain_db: spect_gain - wf_ref_db + display_boost,
             };
 
-            crate::canvas::live_waterfall::render_viewport(
-                &ctx,
-                display_w as f64,
-                display_h as f64,
-                wf_scroll_col,
-                zoom,
-                wf_freq_crop_lo,
-                wf_freq_crop_hi,
-                &wf_display_settings,
-                colormap,
-                live_data_cols,
-            )
+            {
+                let rendered = crate::canvas::live_waterfall::render_viewport(
+                    &ctx,
+                    display_w as f64,
+                    display_h as f64,
+                    wf_scroll_col,
+                    zoom,
+                    wf_freq_crop_lo,
+                    wf_freq_crop_hi,
+                    &wf_display_settings,
+                    colormap,
+                    live_data_cols,
+                );
+                if !rendered {
+                    // No waterfall data yet — clear to black so the old file's
+                    // spectrogram doesn't remain visible.
+                    ctx.set_fill_style_str("#000");
+                    ctx.fill_rect(0.0, 0.0, display_w as f64, display_h as f64);
+                }
+                rendered
+            }
         } else {
 
         // Pre-compute per-frequency dB adjustments for display EQ / noise filter

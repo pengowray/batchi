@@ -512,6 +512,13 @@ pub(crate) async fn cancel_shared_entry() {
 
 /// Subscribe to a Tauri event, storing the closure in the shared native thread-local.
 fn tauri_listen(event_name: &str, callback: Closure<dyn FnMut(JsValue)>) -> Option<()> {
+    // If a listener is already registered, reuse it. The closure reads signals
+    // dynamically on each invocation, so it works correctly across mic
+    // open/close cycles without re-registration.
+    if TAURI_EVENT_CLOSURE.with(|c| c.borrow().is_some()) {
+        return Some(());
+    }
+
     let tauri = get_tauri_internals()?;
 
     let transform_fn = js_sys::Reflect::get(&tauri, &JsValue::from_str("transformCallback")).ok()?;
@@ -657,9 +664,10 @@ fn create_native_chunk_handler(state: AppState) -> Closure<dyn FnMut(JsValue)> {
     })
 }
 
-/// Clean up all native thread-local state (HET context, event closures, buffer).
+/// Clean up all native thread-local state (HET context, buffer).
+/// Note: TAURI_EVENT_CLOSURE is intentionally kept alive — the handler reads
+/// signals dynamically and is reused across mic open/close cycles.
 fn cleanup_native_state() {
-    TAURI_EVENT_CLOSURE.with(|c| { c.borrow_mut().take(); });
     TAURI_UNLISTEN.with(|u| { u.borrow_mut().take(); });
 
     HET_CTX.with(|c| {

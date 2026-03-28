@@ -331,6 +331,9 @@ async fn do_start_recording(state: &AppState, backend: ActiveBackend) {
 
     match backend.start_recording(state).await {
         Ok(()) => {
+            // Reset frequency display so the waterfall shows the full mic range.
+            state.min_display_freq.set(None);
+            state.max_display_freq.set(None);
             state.mic_samples_recorded.set(0);
             state.mic_recording.set(true);
             state.mic_recording_start_time.set(Some(js_sys::Date::now()));
@@ -398,9 +401,15 @@ async fn do_stop_recording(state: &AppState, backend: ActiveBackend) {
 
 /// Start listening with the given backend (mic already open).
 async fn do_start_listening(state: &AppState, backend: ActiveBackend) {
+    // Reset frequency display so the waterfall shows the full mic range
+    // (not a zoomed range from a previously-open high-SR file).
+    state.min_display_freq.set(None);
+    state.max_display_freq.set(None);
+    // Set the frontend signal early so the chunk handler accepts data
+    // as soon as the native side starts streaming.
+    state.mic_listening.set(true);
     backend.set_listening(state, true).await;
     backend.clear_buffer();
-    state.mic_listening.set(true);
     let sr = state.mic_sample_rate.get_untracked();
     // Clear tile caches so previous file's spectrogram doesn't flash
     crate::canvas::tile_cache::clear_all_caches();
