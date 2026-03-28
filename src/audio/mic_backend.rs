@@ -433,6 +433,15 @@ pub fn with_live_samples<R>(is_tauri: bool, f: impl FnOnce(&[f32]) -> R) -> R {
     }
 }
 
+/// Borrow the live recording buffer mutably (e.g. for circular-buffer trimming).
+pub fn with_live_samples_mut<R>(is_tauri: bool, f: impl FnOnce(&mut Vec<f32>) -> R) -> R {
+    if is_tauri {
+        NATIVE_REC_BUFFER.with(|buf| f(&mut buf.borrow_mut()))
+    } else {
+        MIC_BUFFER.with(|buf| f(&mut buf.borrow_mut()))
+    }
+}
+
 /// Extract samples from the native buffer (for error-path finalization).
 pub fn take_native_buffer() -> Vec<f32> {
     NATIVE_REC_BUFFER.with(|buf| std::mem::take(&mut *buf.borrow_mut()))

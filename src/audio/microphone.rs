@@ -315,23 +315,44 @@ pub async fn acquire_mic(state: &AppState, action: MicPendingAction) -> Option<M
 
 /// Start recording with the given backend (mic already open).
 async fn do_start_recording(state: &AppState, backend: ActiveBackend) {
-    backend.clear_buffer();
-    // Clear tile caches so previous file's spectrogram doesn't flash during recording
-    crate::canvas::tile_cache::clear_all_caches();
+    let was_listening = state.mic_listening.get_untracked();
+    let has_listen_file = was_listening && state.mic_live_file_idx.get_untracked().is_some();
+
+    if !has_listen_file {
+        // Fresh recording — clear buffer and tiles
+        backend.clear_buffer();
+        crate::canvas::tile_cache::clear_all_caches();
+    } else {
+        // Listen→record: stop listen mode but keep buffer (pre-roll).
+        // Clear tile caches but don't clear buffer — the listened audio becomes pre-roll.
+        crate::canvas::tile_cache::clear_all_caches();
+    }
+    state.mic_listening.set(false);
+
     match backend.start_recording(state).await {
         Ok(()) => {
             state.mic_samples_recorded.set(0);
             state.mic_recording.set(true);
             state.mic_recording_start_time.set(Some(js_sys::Date::now()));
             let sr = state.mic_sample_rate.get_untracked();
-            let file_idx = start_live_recording(state, sr);
+
+            let file_idx = if has_listen_file {
+                // Convert the existing listening file into a recording file
+                convert_listen_to_recording(state, sr)
+            } else {
+                start_live_recording(state, sr)
+            };
             spawn_live_processing_loop(*state, file_idx, sr);
             spawn_smooth_scroll_animation(*state);
-            log::info!("Recording started ({:?})", backend);
+            log::info!("Recording started ({:?}, pre-roll={})", backend, has_listen_file);
         }
         Err(e) => {
             log::error!("start_recording failed: {}", e);
             state.status_message.set(Some(format!("Failed to start recording: {}", e)));
+            // If we were listening, clean up the orphaned listen file
+            if has_listen_file {
+                cleanup_listen_file(state);
+            }
         }
     }
 }
@@ -381,12 +402,11 @@ async fn do_start_listening(state: &AppState, backend: ActiveBackend) {
     backend.clear_buffer();
     state.mic_listening.set(true);
     let sr = state.mic_sample_rate.get_untracked();
-    // Set zoom for comfortable waterfall viewing (same formula as recording)
-    let canvas_w = state.spectrogram_canvas_width.get_untracked();
-    let live_time_res = 64.0 / sr as f64;
-    state.zoom_level.set(crate::viewport::recording_zoom(canvas_w, live_time_res));
-    state.scroll_offset.set(0.0);
-    spawn_live_processing_loop(*state, 0, sr);
+    // Clear tile caches so previous file's spectrogram doesn't flash
+    crate::canvas::tile_cache::clear_all_caches();
+    // Create the transient listening file in the file list
+    let file_idx = start_live_listening(state, sr);
+    spawn_live_processing_loop(*state, file_idx, sr);
     spawn_smooth_scroll_animation(*state);
 }
 
@@ -394,6 +414,7 @@ async fn do_start_listening(state: &AppState, backend: ActiveBackend) {
 async fn do_stop_listening(state: &AppState, backend: ActiveBackend) {
     state.mic_listening.set(false);
     crate::canvas::live_waterfall::clear();
+    cleanup_listen_file(state);
     backend.clear_buffer();
     backend.set_listening(state, false).await;
     backend.maybe_close(state).await;
@@ -412,6 +433,7 @@ pub async fn toggle_listen(state: &AppState) {
             // Fallback: just clear signals
             state.mic_listening.set(false);
             crate::canvas::live_waterfall::clear();
+            cleanup_listen_file(state);
         }
         return;
     }
@@ -535,13 +557,18 @@ pub fn stop_all(state: &AppState) {
                         }
                     }
                 }
-                state_copy.mic_listening.set(false);
+                if state_copy.mic_listening.get_untracked() {
+                    state_copy.mic_listening.set(false);
+                    cleanup_listen_file(&state_copy);
+                }
+                crate::canvas::live_waterfall::clear();
                 b.close(&state_copy).await;
                 state_copy.mic_acquisition_state.set(MicAcquisitionState::Idle);
             });
         }
         None => {
             // No backend known — just clear state
+            cleanup_listen_file(state);
             state.mic_listening.set(false);
             state.mic_recording.set(false);
             state.mic_recording_start_time.set(None);
@@ -556,7 +583,9 @@ pub fn stop_all(state: &AppState) {
 // Re-export from split modules
 pub use crate::audio::wav_encoder::{encode_wav, download_wav};
 pub(crate) use crate::audio::live_recording::{
-    start_live_recording, spawn_live_processing_loop,
+    start_live_recording, start_live_listening,
+    cleanup_listen_file, convert_listen_to_recording,
+    spawn_live_processing_loop,
     spawn_smooth_scroll_animation, finalize_recording,
     cleanup_failed_recording,
 };

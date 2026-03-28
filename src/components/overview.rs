@@ -550,18 +550,21 @@ pub fn OverviewPanel() -> impl IntoView {
                             &bm_tuples, gain_db, clean_view,
                         );
                     } else if file.is_recording {
-                        // Recording — no samples/preview yet; show elapsed time + VU bar
+                        // Recording/listening — no samples/preview yet; show elapsed time + VU bar
                         ctx.set_fill_style_str("#1a1a1a");
                         ctx.fill_rect(0.0, 0.0, w as f64, h as f64);
+                        let is_listen = file.is_live_listen;
+                        let label = if is_listen { "Listening" } else { "Recording" };
                         let elapsed = file.audio.duration_secs;
                         let text = if elapsed >= 1.0 {
                             let mins = elapsed as u32 / 60;
                             let secs = elapsed as u32 % 60;
-                            format!("\u{25CF} Recording {}:{:02}", mins, secs)
+                            format!("\u{25CF} {} {}:{:02}", label, mins, secs)
                         } else {
-                            "\u{25CF} Recording\u{2026}".to_string()
+                            format!("\u{25CF} {}\u{2026}", label)
                         };
-                        ctx.set_fill_style_str("#f66");
+                        let color = if is_listen { "#6af" } else { "#f66" };
+                        ctx.set_fill_style_str(color);
                         ctx.set_font("11px system-ui");
                         ctx.set_text_align("center");
                         ctx.set_text_baseline("middle");
@@ -570,7 +573,8 @@ pub fn OverviewPanel() -> impl IntoView {
                         let peak = state.mic_peak_level.get_untracked();
                         if peak > 0.01 {
                             let bar_w = (peak as f64 * w as f64).min(w as f64);
-                            ctx.set_fill_style_str("#f44");
+                            let vu_color = if is_listen { "#48f" } else { "#f44" };
+                            ctx.set_fill_style_str(vu_color);
                             ctx.fill_rect(0.0, h as f64 - 2.0, bar_w, 2.0);
                         }
                     } else {

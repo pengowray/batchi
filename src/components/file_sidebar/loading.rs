@@ -177,6 +177,7 @@ pub(crate) async fn load_named_bytes(name: String, bytes: &[u8], xc_metadata: Op
                 xc_metadata,
                 xc_hashes,
                 is_recording: false,
+                is_live_listen: false,
                 settings: FileSettings::default(),
                 add_order: idx,
                 last_modified_ms: None,

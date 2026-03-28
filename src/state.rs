@@ -87,6 +87,9 @@ pub struct LoadedFile {
     /// Hash data from XC sidecar (for verification against computed identity).
     pub xc_hashes: Option<SidecarHashes>,
     pub is_recording: bool,  // true = unsaved recording (show indicator on web)
+    /// Transient listening file — auto-removed when listening stops, converted to
+    /// a recording file when the user hits record.
+    pub is_live_listen: bool,
     /// Per-file gain and noise filter settings.
     pub settings: FileSettings,
     /// Insertion order (index at time of push).

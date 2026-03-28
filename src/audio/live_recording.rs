@@ -4,7 +4,7 @@ use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
 use crate::state::{AppState, FileSettings, LoadedFile};
 use crate::audio::source::InMemorySource;
-use crate::audio::mic_backend::with_live_samples;
+use crate::audio::mic_backend::{with_live_samples, with_live_samples_mut};
 use crate::audio::wav_encoder::{encode_wav_with_guano, try_tauri_save};
 use crate::types::{AudioData, FileMetadata, SpectrogramData};
 use crate::dsp::fft::{compute_preview, compute_spectrogram_partial, compute_stft_columns};
@@ -113,6 +113,7 @@ pub(crate) fn start_live_recording(state: &AppState, sample_rate: u32) -> usize 
             xc_metadata: None,
             xc_hashes: None,
             is_recording: true,
+            is_live_listen: false,
             settings: FileSettings::default(),
             add_order: file_index,
             last_modified_ms: None,
@@ -131,6 +132,152 @@ pub(crate) fn start_live_recording(state: &AppState, sample_rate: u32) -> usize 
     state.mic_live_file_idx.set(Some(file_index));
 
     // Set zoom for comfortable live recording scroll speed
+    let canvas_w = state.spectrogram_canvas_width.get_untracked();
+    let live_time_res = 64.0 / sample_rate as f64;
+    state.zoom_level.set(crate::viewport::recording_zoom(canvas_w, live_time_res));
+    state.scroll_offset.set(0.0);
+
+    file_index
+}
+
+/// Create a transient listening file — appears in the file list, shows the
+/// waterfall / waveform, and is auto-removed when listening stops.
+/// Returns the file index.
+pub(crate) fn start_live_listening(state: &AppState, sample_rate: u32) -> usize {
+    let samples: Arc<Vec<f32>> = Arc::new(Vec::new());
+    let source = Arc::new(InMemorySource {
+        samples: samples.clone(),
+        raw_samples: None,
+        sample_rate,
+        channels: 1,
+    });
+    let audio = AudioData {
+        samples,
+        source,
+        sample_rate,
+        channels: 1,
+        duration_secs: 0.0,
+        metadata: FileMetadata {
+            file_size: 0,
+            format: "MIC",
+            bits_per_sample: 16,
+            is_float: false,
+            guano: None,
+            data_offset: None,
+            data_size: None,
+        },
+    };
+
+    let (live_fft, live_hop) = (256.0, 256.0);
+    let placeholder_spec = SpectrogramData {
+        columns: Arc::new(Vec::new()),
+        total_columns: 0,
+        freq_resolution: sample_rate as f64 / live_fft,
+        time_resolution: live_hop / sample_rate as f64,
+        max_freq: sample_rate as f64 / 2.0,
+        sample_rate,
+    };
+
+    let mut file_index = 0;
+    state.files.update(|files| {
+        file_index = files.len();
+        files.push(LoadedFile {
+            name: "Listening".to_string(),
+            audio,
+            spectrogram: placeholder_spec,
+            preview: None,
+            overview_image: None,
+            xc_metadata: None,
+            xc_hashes: None,
+            is_recording: true, // reuse recording display path for waveform/overview
+            is_live_listen: true,
+            settings: FileSettings::default(),
+            add_order: file_index,
+            last_modified_ms: None,
+            identity: None,
+            file_handle: None,
+            cached_peak_db: None,
+            cached_full_peak_db: None,
+            read_only: false,
+            had_sidecar: false,
+            verify_outcome: crate::state::VerifyOutcome::Pending,
+            all_hashes_verified: false,
+        });
+    });
+
+    state.current_file_index.set(Some(file_index));
+    state.mic_live_file_idx.set(Some(file_index));
+
+    // Set zoom for comfortable waterfall viewing
+    let canvas_w = state.spectrogram_canvas_width.get_untracked();
+    let live_time_res = 64.0 / sample_rate as f64;
+    state.zoom_level.set(crate::viewport::recording_zoom(canvas_w, live_time_res));
+    state.scroll_offset.set(0.0);
+
+    file_index
+}
+
+/// Remove the transient listening file and fix indices.
+pub(crate) fn cleanup_listen_file(state: &AppState) {
+    let live_idx = state.mic_live_file_idx.get_untracked();
+    state.mic_live_file_idx.set(None);
+
+    let Some(idx) = live_idx else { return };
+
+    let is_listen = state.files.with_untracked(|files| {
+        files.get(idx).map_or(false, |f| f.is_live_listen)
+    });
+    if !is_listen { return; }
+
+    state.files.update(|files| {
+        if idx < files.len() {
+            files.remove(idx);
+        }
+    });
+
+    // Fix current_file_index after removal
+    let len = state.files.with_untracked(|f| f.len());
+    match state.current_file_index.get_untracked() {
+        Some(ci) if ci == idx => {
+            state.current_file_index.set(if len > 0 { Some(idx.min(len - 1)) } else { None });
+        }
+        Some(ci) if ci > idx => {
+            state.current_file_index.set(Some(ci - 1));
+        }
+        _ => {}
+    }
+}
+
+/// Convert the listening file into a recording file (listen → record transition).
+/// Returns the existing file index.  Does NOT clear the audio buffer so the
+/// last ≤10 s of listened audio becomes pre-roll in the recording.
+pub(crate) fn convert_listen_to_recording(state: &AppState, sample_rate: u32) -> usize {
+    let file_index = state.mic_live_file_idx.get_untracked()
+        .expect("convert_listen_to_recording: no live file");
+
+    let now = js_sys::Date::new_0();
+    let name = format!(
+        "batcap_{:04}{:02}{:02}_{:02}{:02}{:02}.wav",
+        now.get_full_year(),
+        now.get_month() + 1,
+        now.get_date(),
+        now.get_hours(),
+        now.get_minutes(),
+        now.get_seconds(),
+    );
+
+    state.files.update(|files| {
+        if let Some(f) = files.get_mut(file_index) {
+            f.name = name;
+            f.is_live_listen = false;
+            f.audio.metadata.format = "REC";
+            f.audio.metadata.bits_per_sample = state.mic_bits_per_sample.get_untracked();
+        }
+    });
+
+    state.current_file_index.set(Some(file_index));
+
+    // Set zoom for recording
     let canvas_w = state.spectrogram_canvas_width.get_untracked();
     let live_time_res = 64.0 / sample_rate as f64;
     state.zoom_level.set(crate::viewport::recording_zoom(canvas_w, live_time_res));
@@ -185,8 +332,8 @@ pub(crate) fn spawn_live_processing_loop(state: AppState, file_index: usize, sam
             if !is_recording && !is_listening {
                 break;
             }
-            // Check file still valid (recording mode only)
-            if is_recording && state.mic_live_file_idx.get_untracked() != Some(file_index) {
+            // Check file still valid
+            if state.mic_live_file_idx.get_untracked() != Some(file_index) {
                 break;
             }
 
@@ -220,8 +367,9 @@ pub(crate) fn spawn_live_processing_loop(state: AppState, file_index: usize, sam
                 // Push to waterfall for direct rendering
                 live_waterfall::push_columns(&new_cols);
 
-                // Update file metadata (recording mode)
-                if is_recording {
+                // Update file metadata (recording OR listening with a live file)
+                let has_live_file = state.mic_live_file_idx.get_untracked() == Some(file_index);
+                if has_live_file {
                     let duration = samples.len() as f64 / sample_rate as f64;
                     state.files.update(|files| {
                         if let Some(f) = files.get_mut(file_index) {
@@ -232,7 +380,7 @@ pub(crate) fn spawn_live_processing_loop(state: AppState, file_index: usize, sam
                 }
 
                 // Periodically snapshot for waveform rendering (~1s interval)
-                if is_recording {
+                if has_live_file {
                     let snapshot_threshold = (sample_rate as usize).max(44100);
                     let do_snapshot = samples.len() - last_snapshot_len >= snapshot_threshold || last_snapshot_len == 0;
                     if do_snapshot {
@@ -257,6 +405,21 @@ pub(crate) fn spawn_live_processing_loop(state: AppState, file_index: usize, sam
                 last_processed_col = total_possible_cols;
                 (true, normalized)
             });
+
+            // Trim circular buffer during listen-only (~10 s max).
+            // Must be a separate mutable borrow — the closure above borrows immutably.
+            if any_update && is_listening && !is_recording {
+                with_live_samples_mut(is_tauri, |samples| {
+                    let max_samples = (sample_rate as usize) * 10;
+                    if samples.len() > max_samples {
+                        let trim = samples.len() - max_samples;
+                        samples.drain(..trim);
+                        let trimmed_cols = trim / hop_size;
+                        last_processed_col = last_processed_col.saturating_sub(trimmed_cols);
+                        last_snapshot_len = last_snapshot_len.saturating_sub(trim);
+                    }
+                });
+            }
 
             if any_update {
                 state.mic_peak_level.set(peak_normalized);
@@ -470,6 +633,7 @@ pub(crate) fn finalize_recording(params: FinalizeParams, state: AppState) {
                 xc_metadata: None,
                 xc_hashes: None,
                 is_recording: true,
+                is_live_listen: false,
                 settings: FileSettings::default(),
                 add_order: idx,
                 last_modified_ms: None,
