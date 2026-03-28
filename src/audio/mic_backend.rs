@@ -195,14 +195,25 @@ impl ActiveBackend {
 
     /// Signal the backend to start recording. For browser mode this is a no-op
     /// because the ScriptProcessorNode callback is already accumulating samples.
-    pub async fn start_recording(&self, _state: &AppState) -> Result<(), String> {
+    /// On mobile Tauri, acquires a ContentResolver fd for direct shared storage write.
+    pub async fn start_recording(&self, state: &AppState) -> Result<(), String> {
         match self {
             ActiveBackend::Browser => Ok(()),
             ActiveBackend::Cpal => {
-                tauri_invoke_no_args("mic_start_recording").await.map(|_| ())
+                let fd = try_create_shared_fd(state).await;
+                let args = js_sys::Object::new();
+                if let Some(fd_val) = fd {
+                    js_sys::Reflect::set(&args, &JsValue::from_str("sharedFd"), &JsValue::from_f64(fd_val as f64)).ok();
+                }
+                tauri_invoke("mic_start_recording", &args.into()).await.map(|_| ())
             }
             ActiveBackend::RawUsb => {
-                tauri_invoke_no_args("usb_start_recording").await.map(|_| ())
+                let fd = try_create_shared_fd(state).await;
+                let args = js_sys::Object::new();
+                if let Some(fd_val) = fd {
+                    js_sys::Reflect::set(&args, &JsValue::from_str("sharedFd"), &JsValue::from_f64(fd_val as f64)).ok();
+                }
+                tauri_invoke("usb_start_recording", &args.into()).await.map(|_| ())
             }
         }
     }
@@ -230,22 +241,44 @@ impl ActiveBackend {
                 match tauri_invoke_no_args("mic_stop_recording").await {
                     Ok(result) => {
                         match TauriRecordingResult::from_js(&result) {
-                            Some(r) => StopResult::TauriResult(r),
-                            None => StopResult::Empty,
+                            Some(r) => {
+                                if r.saved_path.starts_with("shared://") {
+                                    finalize_shared_entry().await;
+                                }
+                                StopResult::TauriResult(r)
+                            }
+                            None => {
+                                cancel_shared_entry().await;
+                                StopResult::Empty
+                            }
                         }
                     }
-                    Err(e) => StopResult::Error(e),
+                    Err(e) => {
+                        cancel_shared_entry().await;
+                        StopResult::Error(e)
+                    }
                 }
             }
             ActiveBackend::RawUsb => {
                 match tauri_invoke_no_args("usb_stop_recording").await {
                     Ok(result) => {
                         match TauriRecordingResult::from_js(&result) {
-                            Some(r) => StopResult::TauriResult(r),
-                            None => StopResult::Empty,
+                            Some(r) => {
+                                if r.saved_path.starts_with("shared://") {
+                                    finalize_shared_entry().await;
+                                }
+                                StopResult::TauriResult(r)
+                            }
+                            None => {
+                                cancel_shared_entry().await;
+                                StopResult::Empty
+                            }
                         }
                     }
-                    Err(e) => StopResult::Error(e),
+                    Err(e) => {
+                        cancel_shared_entry().await;
+                        StopResult::Error(e)
+                    }
                 }
             }
         }
@@ -283,6 +316,67 @@ pub fn with_live_samples<R>(is_tauri: bool, f: impl FnOnce(&[f32]) -> R) -> R {
 /// Extract samples from the native buffer (for error-path finalization).
 pub fn take_native_buffer() -> Vec<f32> {
     NATIVE_REC_BUFFER.with(|buf| std::mem::take(&mut *buf.borrow_mut()))
+}
+
+// ── ContentResolver fd-passing (mobile) ─────────────────────────────────
+
+/// On mobile Tauri, ask the MediaStore plugin to create a pending recording entry
+/// and return the raw POSIX fd. Returns `None` on non-mobile, or if the call fails.
+async fn try_create_shared_fd(state: &AppState) -> Option<i32> {
+    if !state.is_mobile.get_untracked() {
+        return None;
+    }
+    // Build filename from the live file if available, otherwise generate one
+    let filename = state.mic_live_file_idx.get_untracked()
+        .and_then(|idx| state.files.with_untracked(|f| f.get(idx).map(|f| f.name.clone())))
+        .unwrap_or_else(|| {
+            let now = js_sys::Date::new_0();
+            format!(
+                "batcap_{:04}{:02}{:02}_{:02}{:02}{:02}.wav",
+                now.get_full_year(), now.get_month() + 1, now.get_date(),
+                now.get_hours(), now.get_minutes(), now.get_seconds(),
+            )
+        });
+
+    let args = js_sys::Object::new();
+    js_sys::Reflect::set(&args, &JsValue::from_str("filename"), &JsValue::from_str(&filename)).ok();
+
+    match tauri_invoke("plugin:media-store|createRecordingEntry", &args.into()).await {
+        Ok(result) => {
+            let fd = js_sys::Reflect::get(&result, &JsValue::from_str("fd"))
+                .ok()
+                .and_then(|v| v.as_f64())
+                .map(|v| v as i32);
+            if let Some(fd) = fd {
+                log::info!("Got shared storage fd={} for {}", fd, filename);
+            }
+            fd
+        }
+        Err(e) => {
+            log::warn!("createRecordingEntry failed (will fall back to internal storage): {}", e);
+            None
+        }
+    }
+}
+
+/// Tell the MediaStore plugin to finalize (set IS_PENDING=0) the recording entry.
+async fn finalize_shared_entry() {
+    let args = js_sys::Object::new();
+    match tauri_invoke("plugin:media-store|finalizeRecordingEntry", &args.into()).await {
+        Ok(_) => log::info!("Finalized shared storage recording entry"),
+        Err(e) => log::warn!("finalizeRecordingEntry failed: {}", e),
+    }
+}
+
+/// Cancel a pending MediaStore recording entry (delete the IS_PENDING=1 row).
+/// Called on error paths to avoid orphaned entries. Safe to call when no entry
+/// is pending (no-op on the Kotlin side).
+pub(crate) async fn cancel_shared_entry() {
+    let args = js_sys::Object::new();
+    match tauri_invoke("plugin:media-store|cancelRecordingEntry", &args.into()).await {
+        Ok(_) => log::info!("Cancelled pending shared storage entry"),
+        Err(e) => log::warn!("cancelRecordingEntry failed: {}", e),
+    }
 }
 
 // ── Tauri event listeners (private) ─────────────────────────────────────
@@ -907,6 +1001,9 @@ async fn open_usb(state: &AppState) -> bool {
         state_err.mic_acquisition_state.set(MicAcquisitionState::Failed);
 
         NATIVE_MIC_OPEN.with(|o| *o.borrow_mut() = None);
+
+        // Cancel any pending shared storage entry (fd was never fully written)
+        wasm_bindgen_futures::spawn_local(async { cancel_shared_entry().await });
 
         // Finalize any in-progress recording with whatever samples we have
         if was_recording {

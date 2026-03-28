@@ -39,6 +39,9 @@ pub struct RecordingBuffer {
     // f32 copies for streaming to frontend
     pub pending_f32: Vec<f32>,
     pub total_samples: usize,
+    /// Raw POSIX fd for writing directly to shared storage (Android ContentResolver).
+    /// Set before recording starts, consumed on stop.
+    pub shared_fd: Option<i32>,
 }
 
 impl RecordingBuffer {
@@ -51,6 +54,7 @@ impl RecordingBuffer {
             samples_f32: Vec::new(),
             pending_f32: Vec::new(),
             total_samples: 0,
+            shared_fd: None,
         }
     }
 
@@ -60,6 +64,8 @@ impl RecordingBuffer {
         self.samples_f32.clear();
         self.pending_f32.clear();
         self.total_samples = 0;
+        // Note: shared_fd is NOT cleared here — it persists across clear()
+        // because it's set before recording starts and consumed on stop.
     }
 
     /// Drain pending f32 samples for streaming to frontend.
@@ -693,6 +699,26 @@ pub fn get_samples_f32(buffer: &RecordingBuffer) -> Vec<f32> {
             .collect(),
         NativeSampleFormat::F32 => buffer.samples_f32.clone(),
     }
+}
+
+/// Write WAV data to a raw POSIX file descriptor (from Android ContentResolver).
+/// Closes the fd after writing. Only used on Android.
+#[cfg(target_os = "android")]
+pub fn write_wav_to_fd(fd: i32, wav_data: &[u8]) -> Result<(), String> {
+    use std::os::unix::io::FromRawFd;
+    use std::io::Write;
+
+    let mut file = unsafe { std::fs::File::from_raw_fd(fd) };
+    file.write_all(wav_data)
+        .map_err(|e| format!("Failed to write WAV to fd {}: {}", fd, e))?;
+    // File is dropped here, which closes the fd
+    Ok(())
+}
+
+/// Stub for non-Android platforms (fd-passing is Android-only).
+#[cfg(not(target_os = "android"))]
+pub fn write_wav_to_fd(_fd: i32, _wav_data: &[u8]) -> Result<(), String> {
+    Err("write_wav_to_fd is only supported on Android".into())
 }
 
 /// Start the background emitter thread that sends audio chunks to the frontend.

@@ -479,9 +479,12 @@ pub(crate) fn finalize_recording(params: FinalizeParams, state: AppState) {
     // Clear live waterfall
     live_waterfall::clear();
 
-    // Set file handle if native backend already saved the file (to internal storage)
+    // Set file handle if native backend saved to internal storage.
+    // "shared://..." means the recording was written directly to shared storage
+    // via ContentResolver fd — no internal path exists, so don't set FileHandle.
+    let shared_saved = saved_path.starts_with("shared://");
     let native_saved = !saved_path.is_empty();
-    if native_saved {
+    if native_saved && !shared_saved {
         state.files.update(|files| {
             if let Some(f) = files.get_mut(file_index) {
                 f.file_handle = Some(crate::audio::streaming_source::FileHandle::TauriPath(saved_path));
@@ -496,7 +499,7 @@ pub(crate) fn finalize_recording(params: FinalizeParams, state: AppState) {
     let is_mobile = state.is_mobile.get_untracked();
     let to_memory = record_mode == crate::state::RecordMode::ToMemory;
 
-    if native_saved && !to_memory {
+    if (native_saved || shared_saved) && !to_memory {
         state.files.update(|files| {
             if let Some(f) = files.get_mut(file_index) {
                 f.is_recording = false;
@@ -516,8 +519,12 @@ pub(crate) fn finalize_recording(params: FinalizeParams, state: AppState) {
     let name_for_save = name_check.clone();
     let needs_save = if to_memory {
         false
+    } else if shared_saved {
+        // Already written directly to shared storage via ContentResolver fd —
+        // no WASM re-encode needed.
+        false
     } else if is_mobile {
-        // On mobile, always save to shared storage (Recordings/Oversample) —
+        // On mobile, save to shared storage (Recordings/Oversample) —
         // even if native backend saved to internal storage, the user needs it
         // in a visible location accessible from their file manager.
         true

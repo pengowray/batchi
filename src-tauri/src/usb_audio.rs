@@ -28,6 +28,8 @@ pub struct UsbRecordingBuffer {
     pending_f32: Vec<f32>,
     pub total_samples: usize,
     pub sample_rate: u32,
+    /// Raw POSIX fd for writing directly to shared storage (Android ContentResolver).
+    pub shared_fd: Option<i32>,
 }
 
 #[allow(dead_code)]
@@ -38,6 +40,7 @@ impl UsbRecordingBuffer {
             pending_f32: Vec::new(),
             total_samples: 0,
             sample_rate,
+            shared_fd: None,
         }
     }
 

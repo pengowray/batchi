@@ -19,6 +19,9 @@ fn main() {
                 tauri_build::InlinedPlugin::new().commands(&[
                     "saveToSharedStorage",
                     "saveWavBytes",
+                    "createRecordingEntry",
+                    "finalizeRecordingEntry",
+                    "cancelRecordingEntry",
                     "exportFile",
                 ]),
             ),

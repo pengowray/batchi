@@ -97,12 +97,13 @@ fn mic_close(state: tauri::State<MicMutex>) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn mic_start_recording(state: tauri::State<MicMutex>) -> Result<(), String> {
+fn mic_start_recording(state: tauri::State<MicMutex>, shared_fd: Option<i32>) -> Result<(), String> {
     let mic = state.lock().map_err(|e| e.to_string())?;
     let m = mic.as_ref().ok_or("Microphone not open")?;
     {
         let mut buf = m.buffer.lock().unwrap();
         buf.clear();
+        buf.shared_fd = shared_fd;
     }
     m.is_recording.store(true, Ordering::Relaxed);
     Ok(())
@@ -117,7 +118,7 @@ fn mic_stop_recording(
     let m = mic.as_ref().ok_or("Microphone not open")?;
     m.is_recording.store(false, Ordering::Relaxed);
 
-    let buf = m.buffer.lock().unwrap();
+    let mut buf = m.buffer.lock().unwrap();
     let num_samples = buf.total_samples;
     if num_samples == 0 {
         return Err("No samples recorded".into());
@@ -125,6 +126,7 @@ fn mic_stop_recording(
 
     let sample_rate = buf.sample_rate;
     let duration_secs = num_samples as f64 / sample_rate as f64;
+    let shared_fd = buf.shared_fd.take();
 
     // Generate filename
     let now = chrono::Local::now();
@@ -148,16 +150,21 @@ fn mic_stop_recording(
     );
     recording::append_guano_chunk(&mut wav_data, &guano_text);
 
-    // Save to disk
-    let dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| e.to_string())?
-        .join("recordings");
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let path = dir.join(&filename);
-    std::fs::write(&path, &wav_data).map_err(|e| e.to_string())?;
-    let saved_path = path.to_string_lossy().to_string();
+    // Write to shared storage fd if available, otherwise to internal storage
+    let saved_path = if let Some(fd) = shared_fd {
+        recording::write_wav_to_fd(fd, &wav_data)?;
+        "shared://recording".to_string() // marker: file is in shared storage
+    } else {
+        let dir = app
+            .path()
+            .app_data_dir()
+            .map_err(|e| e.to_string())?
+            .join("recordings");
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let path = dir.join(&filename);
+        std::fs::write(&path, &wav_data).map_err(|e| e.to_string())?;
+        path.to_string_lossy().to_string()
+    };
 
     Ok(RecordingResult {
         filename,
@@ -477,13 +484,17 @@ fn usb_stop_stream(state: tauri::State<UsbStreamMutex>) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn usb_start_recording(state: tauri::State<UsbStreamMutex>) -> Result<(), String> {
+fn usb_start_recording(state: tauri::State<UsbStreamMutex>, shared_fd: Option<i32>) -> Result<(), String> {
     let usb = state.lock().map_err(|e| e.to_string())?;
     let s = usb.as_ref().ok_or("USB stream not open")?;
     if !s.is_streaming.load(Ordering::Relaxed) {
         return Err("USB stream is not actively streaming — cannot start recording".into());
     }
     usb_audio::clear_usb_buffer(s);
+    {
+        let mut buf = s.buffer.lock().unwrap();
+        buf.shared_fd = shared_fd;
+    }
     s.is_recording.store(true, Ordering::Relaxed);
     Ok(())
 }
@@ -498,9 +509,9 @@ fn usb_stop_recording(
     s.is_recording.store(false, Ordering::Relaxed);
     let still_streaming = s.is_streaming.load(Ordering::Relaxed);
 
-    let (num_samples, sample_rate) = {
-        let buf = s.buffer.lock().unwrap();
-        (buf.total_samples, buf.sample_rate)
+    let (num_samples, sample_rate, shared_fd) = {
+        let mut buf = s.buffer.lock().unwrap();
+        (buf.total_samples, buf.sample_rate, buf.shared_fd.take())
     };
 
     if num_samples == 0 {
@@ -525,16 +536,21 @@ fn usb_stop_recording(
     );
     recording::append_guano_chunk(&mut wav_data, &guano_text);
 
-    // Save to disk
-    let dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| e.to_string())?
-        .join("recordings");
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let path = dir.join(&filename);
-    std::fs::write(&path, &wav_data).map_err(|e| e.to_string())?;
-    let saved_path = path.to_string_lossy().to_string();
+    // Write to shared storage fd if available, otherwise to internal storage
+    let saved_path = if let Some(fd) = shared_fd {
+        recording::write_wav_to_fd(fd, &wav_data)?;
+        "shared://recording".to_string()
+    } else {
+        let dir = app
+            .path()
+            .app_data_dir()
+            .map_err(|e| e.to_string())?
+            .join("recordings");
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let path = dir.join(&filename);
+        std::fs::write(&path, &wav_data).map_err(|e| e.to_string())?;
+        path.to_string_lossy().to_string()
+    };
 
     Ok(RecordingResult {
         filename,

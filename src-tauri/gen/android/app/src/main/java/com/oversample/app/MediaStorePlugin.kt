@@ -34,6 +34,9 @@ data class SaveWavBytesArgs(val filename: String = "", val data: ByteArray = Byt
 
 
 @InvokeArg
+data class CreateRecordingEntryArgs(val filename: String = "")
+
+@InvokeArg
 data class ExportFileArgs(val internalPath: String = "", val suggestedName: String = "")
 
 @TauriPlugin
@@ -43,6 +46,9 @@ class MediaStorePlugin(private val activity: Activity) : Plugin(activity) {
     private var pendingExportInvoke: Invoke? = null
     private var pendingExportBytes: ByteArray? = null
     private var pendingExportMimeType: String? = null
+
+    // For fd-passing recording: Kotlin holds the MediaStore entry open
+    private var pendingRecordingUri: Uri? = null
 
     companion object {
         const val EXPORT_REQUEST_CODE = 9002
@@ -127,6 +133,146 @@ class MediaStorePlugin(private val activity: Activity) : Plugin(activity) {
         } catch (e: Exception) {
             Log.e(TAG, "saveWavBytes failed", e)
             invoke.reject("Failed to save: ${e.message}")
+        }
+    }
+
+    // ── ContentResolver fd-passing for direct recording ─────────────────
+
+    /**
+     * Create a MediaStore entry for a new recording and return a raw POSIX fd
+     * that Rust can write WAV data to directly. The entry starts with
+     * IS_PENDING=1; call finalizeRecordingEntry when writing is complete.
+     *
+     * On API < 29, creates the file directly and returns its fd.
+     */
+    @Command
+    fun createRecordingEntry(invoke: Invoke) {
+        val args = invoke.parseArgs(CreateRecordingEntryArgs::class.java)
+        val filename = args.filename.ifEmpty { "recording.wav" }
+
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val resolver = activity.contentResolver
+                val values = ContentValues().apply {
+                    put(MediaStore.Audio.Media.DISPLAY_NAME, filename)
+                    put(MediaStore.Audio.Media.MIME_TYPE, "audio/wav")
+                    put(MediaStore.Audio.Media.RELATIVE_PATH, "Recordings/$SUBFOLDER")
+                    put(MediaStore.Audio.Media.IS_PENDING, 1)
+                }
+                val collection = MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+                val uri = resolver.insert(collection, values)
+                    ?: throw Exception("Failed to create MediaStore entry for $filename")
+
+                pendingRecordingUri = uri
+
+                val pfd = resolver.openFileDescriptor(uri, "w")
+                    ?: throw Exception("Failed to open fd for $uri")
+                val fd = pfd.detachFd() // caller (Rust) owns the fd now
+
+                Log.i(TAG, "Created recording entry: $filename -> $uri (fd=$fd)")
+                val result = JSObject()
+                result.put("fd", fd)
+                result.put("uri", uri.toString())
+                invoke.resolve(result)
+            } else {
+                // Pre-Q: create file directly
+                if (!hasWritePermission()) {
+                    pendingPermissionInvoke = invoke
+                    requestWritePermission()
+                    return
+                }
+                @Suppress("DEPRECATION")
+                val baseDir = File(Environment.getExternalStorageDirectory(), "Recordings")
+                val appDir = File(baseDir, SUBFOLDER)
+                appDir.mkdirs()
+                val destFile = File(appDir, filename)
+                // Create empty file and open fd
+                destFile.createNewFile()
+                val pfd = android.os.ParcelFileDescriptor.open(
+                    destFile,
+                    android.os.ParcelFileDescriptor.MODE_WRITE_ONLY or android.os.ParcelFileDescriptor.MODE_TRUNCATE
+                )
+                val fd = pfd.detachFd()
+
+                pendingRecordingUri = null // not needed for pre-Q
+
+                Log.i(TAG, "Created recording file: ${destFile.absolutePath} (fd=$fd)")
+                val result = JSObject()
+                result.put("fd", fd)
+                result.put("uri", destFile.absolutePath)
+                invoke.resolve(result)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "createRecordingEntry failed", e)
+            invoke.reject("Failed to create recording entry: ${e.message}")
+        }
+    }
+
+    /**
+     * Finalize a recording entry created by createRecordingEntry.
+     * Sets IS_PENDING=0 on API 29+ so the file becomes visible.
+     * On pre-Q, triggers a MediaScanner scan.
+     */
+    @Command
+    fun finalizeRecordingEntry(invoke: Invoke) {
+        try {
+            val uri = pendingRecordingUri
+            if (uri != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val resolver = activity.contentResolver
+                val values = ContentValues().apply {
+                    put(MediaStore.Audio.Media.IS_PENDING, 0)
+                }
+                resolver.update(uri, values, null, null)
+                Log.i(TAG, "Finalized recording entry: $uri")
+                pendingRecordingUri = null
+            } else {
+                // Pre-Q: scan via MediaScanner (the file path was returned as uri)
+                // No-op needed here; the file is already visible
+                Log.i(TAG, "Finalized recording entry (pre-Q, no-op)")
+            }
+            val result = JSObject()
+            result.put("ok", true)
+            invoke.resolve(result)
+        } catch (e: Exception) {
+            Log.e(TAG, "finalizeRecordingEntry failed", e)
+            invoke.reject("Failed to finalize: ${e.message}")
+        }
+    }
+
+    /**
+     * Cancel a pending recording entry created by createRecordingEntry.
+     * Deletes the MediaStore row so no orphaned IS_PENDING=1 entry remains.
+     * Safe to call even if no entry is pending (no-op).
+     */
+    @Command
+    fun cancelRecordingEntry(invoke: Invoke) {
+        try {
+            val uri = pendingRecordingUri
+            if (uri != null) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    activity.contentResolver.delete(uri, null, null)
+                    Log.i(TAG, "Cancelled pending recording entry: $uri")
+                } else {
+                    // Pre-Q: delete the file directly
+                    val path = uri.path
+                    if (path != null) {
+                        val file = File(path)
+                        if (file.exists()) file.delete()
+                        Log.i(TAG, "Cancelled pending recording file: $path")
+                    }
+                }
+                pendingRecordingUri = null
+            } else {
+                Log.i(TAG, "cancelRecordingEntry: no pending entry")
+            }
+            val result = JSObject()
+            result.put("ok", true)
+            invoke.resolve(result)
+        } catch (e: Exception) {
+            Log.e(TAG, "cancelRecordingEntry failed", e)
+            // Still clear the reference — best effort
+            pendingRecordingUri = null
+            invoke.reject("Failed to cancel: ${e.message}")
         }
     }
 
