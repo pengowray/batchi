@@ -320,8 +320,9 @@ pub fn OverviewPanel() -> impl IntoView {
         let bookmarks = state.bookmarks.get();
         let main_canvas_w = state.spectrogram_canvas_width.get();
         let cv = state.channel_view.get();
-        // Subscribe to recording state so overview redraws on start/stop
+        // Subscribe to mic state so overview redraws on start/stop
         let _mic_recording = state.mic_recording.get();
+        let _mic_listening = state.mic_listening.get();
         let auto_gain = state.auto_gain.get();
         let gain_db = if auto_gain { state.compute_auto_gain() } else { state.gain_db.get() };
         // Re-read canvas dimensions when sidebar layout changes
@@ -461,8 +462,32 @@ pub fn OverviewPanel() -> impl IntoView {
             }
         } else {
             // ── Single file overview ──
-            let Some(i) = idx else { return };
-            let Some(file) = files.get(i) else { return };
+            let file_opt = idx.and_then(|i| files.get(i));
+
+            // If no file is available, show listening/recording feedback
+            if file_opt.is_none() {
+                let is_rec = state.mic_recording.get_untracked();
+                let is_lis = state.mic_listening.get_untracked();
+                if is_rec || is_lis {
+                    ctx.set_fill_style_str("#1a1a1a");
+                    ctx.fill_rect(0.0, 0.0, w as f64, h as f64);
+                    let label = if is_rec { "Recording" } else { "Listening" };
+                    let color = if is_rec { "#f66" } else { "#6cf" };
+                    ctx.set_fill_style_str(color);
+                    ctx.set_font("11px system-ui");
+                    ctx.set_text_align("center");
+                    ctx.set_text_baseline("middle");
+                    let _ = ctx.fill_text(&format!("\u{25CF} {}\u{2026}", label), w as f64 / 2.0, h as f64 / 2.0);
+                    let peak = state.mic_peak_level.get_untracked();
+                    if peak > 0.01 {
+                        let bar_w = (peak as f64 * w as f64).min(w as f64);
+                        ctx.set_fill_style_str(color);
+                        ctx.fill_rect(0.0, h as f64 - 2.0, bar_w, 2.0);
+                    }
+                }
+                return;
+            }
+            let file = file_opt.unwrap();
 
             let bm_tuples: Vec<(f64,)> = bookmarks.iter().map(|b| (b.time,)).collect();
             let max_freq = if file.spectrogram.max_freq > 0.0 {

@@ -149,6 +149,10 @@ pub(crate) fn spawn_live_processing_loop(state: AppState, file_index: usize, sam
     let (fft_size, hop_size): (usize, usize) = (256, 256);
     const PROCESS_INTERVAL_MS: i32 = 50;
 
+    // Bump the generation counter so any previous processing loop will exit.
+    let gen = state.mic_processing_gen.get_untracked().wrapping_add(1);
+    state.mic_processing_gen.set(gen);
+
     // Initialize waterfall synchronously so the renderer sees it immediately
     // (before any async yield that could allow a spectrogram draw)
     live_waterfall::create(fft_size, hop_size, sample_rate);
@@ -167,6 +171,13 @@ pub(crate) fn spawn_live_processing_loop(state: AppState, file_index: usize, sam
                 }
             });
             let _ = JsFuture::from(p).await;
+
+            // A newer processing loop has started — this one is stale.
+            if state.mic_processing_gen.get_untracked() != gen {
+                log::info!("Processing loop superseded (gen {} vs {}), exiting",
+                    gen, state.mic_processing_gen.get_untracked());
+                break;
+            }
 
             // Check if still recording/listening
             let is_recording = state.mic_recording.get_untracked();
