@@ -554,8 +554,9 @@ pub fn Toolbar() -> impl IntoView {
             {move || show_about.get().then(|| view! {
                 <div class="about-overlay" on:click=move |_| show_about.set(false)>
                     <div class="about-dialog" on:click=move |ev: web_sys::MouseEvent| ev.stop_propagation()>
-                        <div class="about-header">
-                            <span class="about-title"><b>"Oversample for Bats"</b></span>
+                        <img src="about-icon.png" alt="Oversample" style="width: 200px; height: 200px; display: block; margin: 0 auto 12px auto;"/>
+                        <div class="about-header" style="text-align: center;">
+                            <span class="about-title"><b>"Oversample"</b></span>
                             <div style="font-size: 12px; color: #bbb; margin-top: 4px;">
                                 {
                                     let ver = env!("CARGO_PKG_VERSION");
@@ -584,6 +585,7 @@ pub fn Toolbar() -> impl IntoView {
                                 <div><a href="https://crates.io/crates/web-sys" target="_blank" style="color: #8cf; text-decoration: none;">"web-sys"</a></div>
                             </div>
                             <div style="margin-top: 8px;">"and "<a href="https://github.com/jmears63/batgizmo-app-public" target="_blank" style="color: #8cf; text-decoration: none;">"batgizmo"</a>"."</div>
+                            <div style="margin-top: 8px;">"App icon by "<a href="https://twitter.com/lordspikyfish" target="_blank" style="color: #8cf; text-decoration: none;">"spiky.fish"</a>"."</div>
                         </div>
                         <button class="about-close" on:click=move |_| show_about.set(false)>"Close"</button>
                     </div>
