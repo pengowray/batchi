@@ -274,7 +274,7 @@ pub fn Toolbar() -> impl IntoView {
                             state.sidebar_collapsed.update(|c| *c = !*c);
                         }
                         title="Menu"
-                    >"\u{24D8}"</button>
+                    >"\u{2630}"</button>
                 })
             } else {
                 None
@@ -285,10 +285,24 @@ pub fn Toolbar() -> impl IntoView {
                 <div class="toolbar-title-row">
                     <span
                         class="toolbar-brand"
-                        style=move || if !is_mobile && state.sidebar_collapsed.get() { "margin-left: 24px; cursor: pointer" } else { "cursor: pointer" }
+                        style=move || {
+                            let mut s = String::from("cursor: pointer");
+                            if !is_mobile && state.sidebar_collapsed.get() {
+                                s.push_str("; margin-left: 24px");
+                            }
+                            if is_mobile {
+                                let has_file = file_name.get().is_some();
+                                let recording = state.mic_recording.get();
+                                let listening = state.mic_listening.get();
+                                if has_file || recording || listening {
+                                    s.push_str("; display: none");
+                                }
+                            }
+                            s
+                        }
                         on:click=move |_| show_about.set(true)
                         title="About"
-                    ><b>"Oversample"</b></span>
+                    ><b>"Oversample"</b>" "<span style="font-style: italic; opacity: 0.45; font-weight: 300;">"beta"</span></span>
 
                     <span class="toolbar-status-icons">
                         {move || state.mic_recording.get().then(|| view! {
@@ -491,7 +505,7 @@ pub fn Toolbar() -> impl IntoView {
                             }
                         }
                         title="Info panel"
-                    >"\u{2630}"</button>
+                    >"\u{24D8}"</button>
                 })
             } else {
                 None
@@ -501,8 +515,17 @@ pub fn Toolbar() -> impl IntoView {
                 <div class="about-overlay" on:click=move |_| show_about.set(false)>
                     <div class="about-dialog" on:click=move |ev: web_sys::MouseEvent| ev.stop_propagation()>
                         <div class="about-header">
-                            <span class="about-title"><b>"Oversample"</b></span>
-                            <span class="about-version">{concat!("v", env!("CARGO_PKG_VERSION"))}</span>
+                            <span class="about-title"><b>"Oversample for Bats"</b></span>
+                            <div style="font-size: 12px; color: #bbb; margin-top: 4px;">
+                                {
+                                    let ver = env!("CARGO_PKG_VERSION");
+                                    if ver.starts_with("0.") {
+                                        format!("v{} (beta)", ver)
+                                    } else {
+                                        format!("v{}", ver)
+                                    }
+                                }
+                            </div>
                             <div style="font-size: 11px; color: #aaa; margin-top: 2px;">"by Pengo Wray"</div>
                         </div>
                         <p class="about-desc">"Bat call viewer and acoustic analysis tool."</p>

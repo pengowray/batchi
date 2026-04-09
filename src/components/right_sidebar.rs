@@ -116,7 +116,7 @@ pub fn RightSidebar() -> impl IntoView {
                                 state.right_sidebar_collapsed.update(|c| *c = !*c);
                                 dropdown_open.set(false);
                             }
-                            title=move || if state.right_sidebar_collapsed.get() { "Show settings" } else { "Hide settings" }
+                            title=move || if state.right_sidebar_collapsed.get() { "Show right sidebar" } else { "Hide right sidebar" }
                         >
                             {"\u{25E8}"}
                         </button>

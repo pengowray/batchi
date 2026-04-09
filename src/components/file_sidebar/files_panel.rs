@@ -511,8 +511,21 @@ pub(super) fn FilesPanel() -> impl IntoView {
                         }
                     };
 
+                    let is_mobile = state.is_mobile.get_untracked();
+
                     view! {
                         <div class="file-list">
+                            {if is_mobile {
+                                Some(view! {
+                                    <div style="padding: 8px 12px 4px; user-select: none; -webkit-user-select: none; pointer-events: none;">
+                                        <span style="font-weight: bold; font-size: 14px; color: #ddd;">"Oversample"</span>
+                                        " "
+                                        <span style="font-style: italic; font-size: 14px; opacity: 0.45; font-weight: 300; color: #ddd;">"beta"</span>
+                                    </div>
+                                })
+                            } else {
+                                None
+                            }}
                             {if show_sort {
                                 Some(view! { <SortBar sort_mode=sort_mode /> })
                             } else {

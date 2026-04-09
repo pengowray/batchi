@@ -120,7 +120,7 @@ pub fn FileSidebar() -> impl IntoView {
                             on:click=move |_| {
                                 state.sidebar_collapsed.update(|c| *c = !*c);
                             }
-                            title=move || if state.sidebar_collapsed.get() { "Show sidebar" } else { "Hide sidebar" }
+                            title=move || if state.sidebar_collapsed.get() { "Show files and settings" } else { "Hide left sidebar" }
                         >
                             {"\u{25E7}"}
                         </button>
