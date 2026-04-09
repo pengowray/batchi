@@ -14,6 +14,7 @@ pub fn Toolbar() -> impl IntoView {
 
     let is_mobile = state.is_mobile.get_untracked();
     let is_tauri = state.is_tauri;
+    let overflow_menu_open = RwSignal::new(false);
 
     // Derived: current file name
     let file_name = Memo::new(move |_| {
@@ -341,20 +342,26 @@ pub fn Toolbar() -> impl IntoView {
                         {move || center_text.get()}
                     </span>
 
-                    <div class="toolbar-undo-redo">
-                        <button
-                            class="toolbar-undo-btn"
-                            title="Undo (Ctrl+Z)"
-                            on:click=move |_| state.undo_annotations()
-                            disabled=move || !state.can_undo()
-                        >{"\u{21B6}"}</button>
-                        <button
-                            class="toolbar-undo-btn"
-                            title="Redo (Ctrl+Shift+Z)"
-                            on:click=move |_| state.redo_annotations()
-                            disabled=move || !state.can_redo()
-                        >{"\u{21B7}"}</button>
-                    </div>
+                    {if !is_mobile {
+                        Some(view! {
+                            <div class="toolbar-undo-redo">
+                                <button
+                                    class="toolbar-undo-btn"
+                                    title="Undo (Ctrl+Z)"
+                                    on:click=move |_| state.undo_annotations()
+                                    disabled=move || !state.can_undo()
+                                >{"\u{21B6}"}</button>
+                                <button
+                                    class="toolbar-undo-btn"
+                                    title="Redo (Ctrl+Shift+Z)"
+                                    on:click=move |_| state.redo_annotations()
+                                    disabled=move || !state.can_redo()
+                                >{"\u{21B7}"}</button>
+                            </div>
+                        })
+                    } else {
+                        None
+                    }}
                 </div>
 
                 // Row 2: badge row (replaces old info-row)
@@ -492,20 +499,53 @@ pub fn Toolbar() -> impl IntoView {
                 </div>
             </div>
 
-            // Right sidebar button (mobile only)
+            // Overflow menu + Right sidebar button (mobile only)
             {if is_mobile {
                 Some(view! {
-                    <button
-                        class="toolbar-menu-btn"
-                        on:click=move |ev: web_sys::MouseEvent| {
-                            ev.stop_propagation();
-                            state.right_sidebar_collapsed.update(|c| *c = !*c);
-                            if !state.right_sidebar_collapsed.get_untracked() {
-                                state.sidebar_collapsed.set(true);
+                    <div class="toolbar-mobile-right">
+                        <div class="toolbar-overflow-wrap">
+                            <button
+                                class="toolbar-overflow-btn"
+                                on:click=move |ev: web_sys::MouseEvent| {
+                                    ev.stop_propagation();
+                                    overflow_menu_open.update(|v| *v = !*v);
+                                }
+                                title="More actions"
+                            >"\u{2026}"</button>
+                            {move || overflow_menu_open.get().then(|| view! {
+                                <div class="toolbar-overflow-backdrop" on:click=move |_| overflow_menu_open.set(false)></div>
+                                <div class="toolbar-overflow-menu" on:click=move |_| overflow_menu_open.set(false)>
+                                    <button
+                                        class="toolbar-overflow-item"
+                                        on:click=move |_| state.undo_annotations()
+                                        disabled=move || !state.can_undo()
+                                    >
+                                        <span class="toolbar-overflow-icon">{"\u{21B6}"}</span>
+                                        "Undo"
+                                    </button>
+                                    <button
+                                        class="toolbar-overflow-item"
+                                        on:click=move |_| state.redo_annotations()
+                                        disabled=move || !state.can_redo()
+                                    >
+                                        <span class="toolbar-overflow-icon">{"\u{21B7}"}</span>
+                                        "Redo"
+                                    </button>
+                                </div>
+                            })}
+                        </div>
+                        <button
+                            class="toolbar-menu-btn"
+                            on:click=move |ev: web_sys::MouseEvent| {
+                                ev.stop_propagation();
+                                state.right_sidebar_collapsed.update(|c| *c = !*c);
+                                if !state.right_sidebar_collapsed.get_untracked() {
+                                    state.sidebar_collapsed.set(true);
+                                }
                             }
-                        }
-                        title="Info panel"
-                    >"\u{24D8}"</button>
+                            title="Info panel"
+                        >"\u{24D8}"</button>
+                    </div>
                 })
             } else {
                 None
