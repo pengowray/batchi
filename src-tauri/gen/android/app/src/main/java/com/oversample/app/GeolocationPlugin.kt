@@ -217,14 +217,14 @@ class GeolocationPlugin(private val activity: Activity) : Plugin(activity) {
         try {
             val wifiManager = activity.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
             if (wifiManager == null) {
-                result.put("ssid", JSObject.NULL)
+                result.put("ssid", org.json.JSONObject.NULL)
                 invoke.resolve(result)
                 return
             }
             @Suppress("DEPRECATION")
             val info = wifiManager.connectionInfo
             if (info == null || info.networkId == -1) {
-                result.put("ssid", JSObject.NULL)
+                result.put("ssid", org.json.JSONObject.NULL)
                 invoke.resolve(result)
                 return
             }
@@ -235,13 +235,13 @@ class GeolocationPlugin(private val activity: Activity) : Plugin(activity) {
             }
             // <unknown ssid> means location permission not granted or not connected
             if (ssid.isEmpty() || ssid == "<unknown ssid>") {
-                result.put("ssid", JSObject.NULL)
+                result.put("ssid", org.json.JSONObject.NULL)
             } else {
                 result.put("ssid", ssid)
             }
         } catch (e: Exception) {
             Log.w(TAG, "Failed to get WiFi SSID", e)
-            result.put("ssid", JSObject.NULL)
+            result.put("ssid", org.json.JSONObject.NULL)
         }
         invoke.resolve(result)
     }
