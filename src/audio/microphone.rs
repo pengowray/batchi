@@ -13,6 +13,13 @@ use crate::tauri_bridge::{tauri_invoke, tauri_invoke_no_args};
 
 // ── GPS location acquisition ────────────────────────────────────────────
 
+/// Query the current WiFi SSID from the native plugin.
+/// Returns None if not connected or unavailable.
+async fn get_wifi_ssid() -> Option<String> {
+    let result = tauri_invoke("plugin:geolocation|getWifiSsid", &JsValue::from(js_sys::Object::new())).await.ok()?;
+    js_sys::Reflect::get(&result, &JsValue::from_str("ssid")).ok().and_then(|v| v.as_string())
+}
+
 /// Request a one-shot GPS fix from the native geolocation plugin.
 /// Returns None if the plugin is unavailable, permission denied, or location times out.
 async fn acquire_gps_location() -> Option<GpsLocation> {
@@ -341,9 +348,22 @@ async fn do_start_recording(state: &AppState, backend: ActiveBackend) {
     let was_listening = state.mic_listening.get_untracked();
     let has_listen_file = was_listening && state.mic_live_file_idx.get_untracked().is_some();
 
-    // Acquire GPS location if enabled (one-shot, non-blocking)
+    // Acquire GPS location if enabled (one-shot, non-blocking).
+    // Skip if connected to a home WiFi network (geofencing).
     if state.gps_location_enabled.get_untracked() && state.is_tauri && state.is_mobile.get_untracked() {
-        state.recording_location.set(acquire_gps_location().await);
+        let on_home_wifi = if state.home_wifi_ssids.with_untracked(|list| !list.is_empty()) {
+            get_wifi_ssid().await
+                .map(|ssid| state.home_wifi_ssids.with_untracked(|list| list.contains(&ssid)))
+                .unwrap_or(false)
+        } else {
+            false
+        };
+        if on_home_wifi {
+            log::info!("On home WiFi — skipping location embedding");
+            state.recording_location.set(None);
+        } else {
+            state.recording_location.set(acquire_gps_location().await);
+        }
     } else {
         state.recording_location.set(None);
     }

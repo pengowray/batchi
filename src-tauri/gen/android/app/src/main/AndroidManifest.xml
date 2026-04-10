@@ -4,6 +4,7 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
 
     <!-- Shared storage write access for saving recordings (API 24-28 only; not needed on 29+) -->
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"

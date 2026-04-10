@@ -7,6 +7,7 @@ import android.content.pm.PackageManager
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
+import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Bundle
 import android.os.CancellationSignal
@@ -200,6 +201,41 @@ class GeolocationPlugin(private val activity: Activity) : Plugin(activity) {
         if (b == null) return a
         // Prefer more recent, then more accurate
         return if (a.time >= b.time - 30_000 && a.accuracy <= b.accuracy) a else b
+    }
+
+    @Command
+    fun getWifiSsid(invoke: Invoke) {
+        val result = JSObject()
+        try {
+            val wifiManager = activity.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+            if (wifiManager == null) {
+                result.put("ssid", JSObject.NULL)
+                invoke.resolve(result)
+                return
+            }
+            @Suppress("DEPRECATION")
+            val info = wifiManager.connectionInfo
+            if (info == null || info.networkId == -1) {
+                result.put("ssid", JSObject.NULL)
+                invoke.resolve(result)
+                return
+            }
+            var ssid = info.ssid ?: ""
+            // WifiInfo.getSSID() returns the SSID surrounded by double quotes
+            if (ssid.startsWith("\"") && ssid.endsWith("\"")) {
+                ssid = ssid.substring(1, ssid.length - 1)
+            }
+            // <unknown ssid> means location permission not granted or not connected
+            if (ssid.isEmpty() || ssid == "<unknown ssid>") {
+                result.put("ssid", JSObject.NULL)
+            } else {
+                result.put("ssid", ssid)
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to get WiFi SSID", e)
+            result.put("ssid", JSObject.NULL)
+        }
+        invoke.resolve(result)
     }
 
     private fun locationToJSObject(location: Location): JSObject {

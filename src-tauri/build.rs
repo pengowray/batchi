@@ -29,6 +29,7 @@ fn main() {
                 "geolocation",
                 tauri_build::InlinedPlugin::new().commands(&[
                     "getCurrentLocation",
+                    "getWifiSsid",
                 ]),
             ),
     )

@@ -997,6 +997,13 @@ body.sidebar-resizing {
     min-width: 70px;
 }
 
+.setting-hint {
+    font-size: 10px;
+    color: #666;
+    padding: 2px 12px 4px;
+    line-height: 1.4;
+}
+
 .setting-select {
     background: #222;
     color: #ccc;

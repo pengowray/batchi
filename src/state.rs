@@ -1016,6 +1016,8 @@ pub struct AppState {
     pub gps_location_enabled: RwSignal<bool>,
     /// GPS location acquired at recording start (cleared after finalization).
     pub recording_location: RwSignal<Option<GpsLocation>>,
+    /// WiFi SSIDs where location embedding is suppressed (home networks, persisted).
+    pub home_wifi_ssids: RwSignal<Vec<String>>,
     /// Whether a USB audio device is currently connected.
     pub mic_usb_connected: RwSignal<bool>,
     /// What Auto mode resolved to (Cpal or RawUsb). Ignored when mode is not Auto.
@@ -1444,6 +1446,18 @@ impl AppState {
                     .unwrap_or(false)
             }),
             recording_location: RwSignal::new(None),
+            home_wifi_ssids: RwSignal::new({
+                web_sys::window()
+                    .and_then(|w| w.local_storage().ok().flatten())
+                    .and_then(|ls| ls.get_item("oversample_home_wifi").ok().flatten())
+                    .map(|v| {
+                        v.split('\n')
+                            .filter(|s| !s.is_empty())
+                            .map(|s| s.to_string())
+                            .collect()
+                    })
+                    .unwrap_or_default()
+            }),
             mic_usb_connected: RwSignal::new(false),
             mic_effective_mode: RwSignal::new(if detect_tauri() { MicMode::Cpal } else { MicMode::Browser }),
             mic_recording_target_scroll: RwSignal::new(0.0),
