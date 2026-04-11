@@ -35,6 +35,7 @@ pub fn MicChooserModal() -> impl IntoView {
     let state = expect_context::<AppState>();
 
     let cpal_devices: RwSignal<Vec<CpalDevice>> = RwSignal::new(Vec::new());
+    let cpal_host_name: RwSignal<String> = RwSignal::new(String::new());
     let usb_devices: RwSignal<Vec<UsbDevice>> = RwSignal::new(Vec::new());
     let browser_devices: RwSignal<Vec<BrowserDevice>> = RwSignal::new(Vec::new());
     let browser_needs_permission = RwSignal::new(false);
@@ -49,10 +50,18 @@ pub fn MicChooserModal() -> impl IntoView {
 
     // Fetch devices on mount
     spawn_local(async move {
-        // Fetch cpal devices
+        // Fetch cpal devices (response is { devices: [...], host_name: "..." })
         match tauri_invoke_no_args("mic_list_devices").await {
             Ok(val) => {
-                let arr = js_sys::Array::from(&val);
+                // Extract host_name from response
+                if let Some(hn) = js_sys::Reflect::get(&val, &JsValue::from_str("host_name"))
+                    .ok().and_then(|v| v.as_string())
+                {
+                    cpal_host_name.set(hn);
+                }
+                let devices_val = js_sys::Reflect::get(&val, &JsValue::from_str("devices"))
+                    .ok().unwrap_or(val.clone());
+                let arr = js_sys::Array::from(&devices_val);
                 let mut devs = Vec::new();
                 for i in 0..arr.length() {
                     let item = arr.get(i);
@@ -246,8 +255,18 @@ pub fn MicChooserModal() -> impl IntoView {
                         if devs.is_empty() {
                             return None;
                         }
+                        let host = cpal_host_name.get();
+                        let title = if host.is_empty() {
+                            "System audio".to_string()
+                        } else {
+                            let category = match host.as_str() {
+                                "Oboe" => "Android audio",
+                                _ => "System audio",
+                            };
+                            format!("{}: {}", category, host)
+                        };
                         Some(view! {
-                            <div class="mic-chooser-group-title" style="margin-top: 8px;">"Native Audio"</div>
+                            <div class="mic-chooser-group-title" style="margin-top: 8px;">{title}</div>
                             {devs.into_iter().map(|dev| {
                                 let dev_name = dev.name.clone();
                                 let dev_name2 = dev.name.clone();

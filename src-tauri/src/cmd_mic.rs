@@ -83,9 +83,19 @@ pub fn mic_open(
     Ok(info)
 }
 
+#[derive(serde::Serialize)]
+pub struct DeviceListResult {
+    pub devices: Vec<DeviceInfo>,
+    /// Audio host backend: "WASAPI", "Oboe", "CoreAudio", "ALSA", "JACK", etc.
+    pub host_name: String,
+}
+
 #[tauri::command]
-pub fn mic_list_devices() -> Vec<DeviceInfo> {
-    recording::list_input_devices()
+pub fn mic_list_devices() -> DeviceListResult {
+    DeviceListResult {
+        devices: recording::list_input_devices(),
+        host_name: cpal_host_name(),
+    }
 }
 
 #[tauri::command]
