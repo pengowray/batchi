@@ -559,10 +559,11 @@ pub fn Toolbar() -> impl IntoView {
                             <div style="font-size: 12px; color: #bbb; margin-top: 4px;">
                                 {
                                     let ver = env!("CARGO_PKG_VERSION");
+                                    let hash = env!("GIT_HASH");
                                     if ver.starts_with("0.") {
-                                        format!("v{} (beta)", ver)
+                                        format!("v{ver} (beta) [{hash}]")
                                     } else {
-                                        format!("v{}", ver)
+                                        format!("v{ver} [{hash}]")
                                     }
                                 }
                             </div>
