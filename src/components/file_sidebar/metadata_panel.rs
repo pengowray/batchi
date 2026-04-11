@@ -347,8 +347,12 @@ pub(crate) fn MetadataPanel() -> impl IntoView {
                             } else {
                                 view! { <span></span> }.into_any()
                             }}
-                            // File Identity / Hash section
-                            {file_identity_section(f)}
+                            // File Identity / Hash section — hidden while recording in progress
+                            {if !f.is_recording {
+                                file_identity_section(f).into_any()
+                            } else {
+                                view! { <span></span> }.into_any()
+                            }}
                         }.into_any()
                     }
                 }

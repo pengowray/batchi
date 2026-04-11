@@ -603,6 +603,15 @@ pub(crate) fn finalize_recording(params: FinalizeParams, state: AppState) {
         sample_rate,
         channels: 1,
     });
+    // Compute exact WAV file size: header + audio data + GUANO chunk
+    let num_samples = samples.len() as u64;
+    let audio_data_size = num_samples * (bits_per_sample as u64 / 8);
+    let guano_text = guano.to_text();
+    let guano_text_len = guano_text.len() as u64;
+    // GUANO chunk: 4 ("guan") + 4 (size u32) + text + optional pad byte
+    let guano_chunk_size = 8 + guano_text_len + (guano_text_len % 2);
+    let exact_file_size = (44 + audio_data_size + guano_chunk_size) as usize;
+
     let audio = AudioData {
         samples,
         source,
@@ -610,13 +619,13 @@ pub(crate) fn finalize_recording(params: FinalizeParams, state: AppState) {
         channels: 1,
         duration_secs,
         metadata: FileMetadata {
-            file_size: 0,
+            file_size: exact_file_size,
             format: "REC",
             bits_per_sample,
             is_float,
             guano: Some(guano),
-            data_offset: None,
-            data_size: None,
+            data_offset: Some(44),
+            data_size: Some(audio_data_size),
         },
     };
 
@@ -717,12 +726,10 @@ pub(crate) fn finalize_recording(params: FinalizeParams, state: AppState) {
         });
     }
 
-    // Set Layer 1 identity (estimated WAV size)
-    let num_samples_est = (duration_secs * sample_rate as f64).ceil() as u64;
-    let estimated_size = 44 + num_samples_est * (bits_per_sample as u64 / 8);
+    // Set Layer 1 identity with exact WAV file size
     crate::file_identity::start_identity_computation(
-        state, file_index, name_check.clone(), estimated_size, None,
-        None, None, None,
+        state, file_index, name_check.clone(), exact_file_size as u64, None,
+        Some(44), Some(audio_data_size), None,
     );
 
     // Save WAV to appropriate destination (skip for ToMemory mode)
