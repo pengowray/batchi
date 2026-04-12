@@ -1,17 +1,7 @@
 use leptos::prelude::*;
-use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
-use wasm_bindgen_futures::spawn_local;
 use crate::canvas::spectrogram_renderer::Colormap;
 use crate::state::{AppState, ChromaColormap};
-use crate::tauri_bridge::tauri_invoke;
-
-fn persist_home_wifi(state: &AppState) {
-    if let Some(ls) = web_sys::window().and_then(|w| w.local_storage().ok().flatten()) {
-        let val = state.home_wifi_ssids.with_untracked(|list| list.join("\n"));
-        let _ = ls.set_item("oversample_home_wifi", &val);
-    }
-}
 
 fn parse_colormap_pref(s: &str) -> Colormap {
     match s {
@@ -194,38 +184,11 @@ pub(super) fn ConfigPanel() -> impl IntoView {
 
             {move || {
                 if state.is_mobile.get() {
-                    let add_current_wifi = move |_: web_sys::MouseEvent| {
-                        spawn_local(async move {
-                            let Ok(result) = tauri_invoke(
-                                "plugin:geolocation|getWifiSsid",
-                                &JsValue::from(js_sys::Object::new()),
-                            ).await else { return };
-                            let ssid = js_sys::Reflect::get(&result, &JsValue::from_str("ssid"))
-                                .ok().and_then(|v| v.as_string());
-                            if let Some(ssid) = ssid {
-                                let already = state.home_wifi_ssids.with_untracked(|list| list.contains(&ssid));
-                                if !already {
-                                    state.home_wifi_ssids.update(|list| list.push(ssid));
-                                    persist_home_wifi(&state);
-                                    state.show_info_toast("Home network added");
-                                } else {
-                                    state.show_info_toast("Network already added");
-                                }
-                            } else {
-                                state.show_info_toast("Not connected to WiFi");
-                            }
-                        });
-                    };
-                    let clear_home_wifi = move |_: web_sys::MouseEvent| {
-                        state.home_wifi_ssids.set(Vec::new());
-                        persist_home_wifi(&state);
-                    };
-
                     view! {
                         <div class="setting-group">
                             <div class="setting-group-title">"Recording"</div>
                             <div class="setting-row">
-                                <span class="setting-label">"Embed GPS location"</span>
+                                <span class="setting-label">"Location tags"</span>
                                 <input
                                     type="checkbox"
                                     class="setting-checkbox"
@@ -243,60 +206,27 @@ pub(super) fn ConfigPanel() -> impl IntoView {
                                     }
                                 />
                             </div>
+                            <div class="setting-hint">"Add location data to recorded audio"</div>
                             {move || {
                                 if !state.gps_location_enabled.get() {
                                     return view! { <span></span> }.into_any();
                                 }
                                 let count = state.home_wifi_ssids.with(|list| list.len());
-                                view! {
-                                    <div class="setting-row" style="flex-wrap:wrap;gap:4px">
-                                        <span class="setting-label" style="flex:1">
-                                            {if count == 0 {
-                                                "No home networks".to_string()
-                                            } else {
-                                                format!("{} home network{}", count, if count == 1 { "" } else { "s" })
-                                            }}
-                                        </span>
-                                        <button
-                                            class="analysis-full-btn"
-                                            on:click=add_current_wifi
-                                            title="Mark current WiFi as a home network \u{2014} location will not be embedded when connected"
-                                        >"+ Add current"</button>
-                                        {if count > 0 {
-                                            view! {
-                                                <button
-                                                    class="analysis-full-btn"
-                                                    on:click=clear_home_wifi
-                                                    title="Remove all home networks"
-                                                >"Clear"</button>
-                                            }.into_any()
-                                        } else {
-                                            view! { <span></span> }.into_any()
-                                        }}
-                                    </div>
-                                    <div class="setting-hint">
-                                        "Location is skipped on home networks. Check recordings before sharing."
-                                    </div>
-                                }.into_any()
+                                if count > 0 {
+                                    view! {
+                                        <div class="setting-hint" style="color: #8cf;">
+                                            {format!("{} privacy zone{} configured", count, if count == 1 { "" } else { "s" })}
+                                        </div>
+                                    }.into_any()
+                                } else {
+                                    view! { <span></span> }.into_any()
+                                }
                             }}
-                            <div class="setting-row">
-                                <span class="setting-label">"Include phone model"</span>
-                                <input
-                                    type="checkbox"
-                                    class="setting-checkbox"
-                                    prop:checked=move || state.device_model_enabled.get()
-                                    on:change=move |ev: web_sys::Event| {
-                                        let target = ev.target().unwrap();
-                                        let input: web_sys::HtmlInputElement = target.unchecked_into();
-                                        let checked = input.checked();
-                                        state.device_model_enabled.set(checked);
-                                        if let Some(ls) = web_sys::window()
-                                            .and_then(|w| w.local_storage().ok().flatten())
-                                        {
-                                            let _ = ls.set_item("oversample_device_model", if checked { "true" } else { "false" });
-                                        }
-                                    }
-                                />
+                            <div style="padding: 2px 12px 6px;">
+                                <button
+                                    class="analysis-full-btn"
+                                    on:click=move |_| { state.show_privacy_settings.set(true); }
+                                >"Privacy settings\u{2026}"</button>
                             </div>
                         </div>
                     }.into_any()

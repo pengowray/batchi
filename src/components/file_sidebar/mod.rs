@@ -15,6 +15,7 @@ pub mod pulse_panel;
 mod loading;
 mod streaming_load;
 pub mod mic_chooser;
+pub mod privacy_settings;
 
 use leptos::prelude::*;
 use wasm_bindgen::prelude::*;

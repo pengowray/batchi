@@ -3979,6 +3979,105 @@ body.sidebar-resizing {
     color: #fff;
 }
 
+/* ── Privacy Settings Modal ─────────────────────────────────────── */
+
+.privacy-section {
+    padding: 12px 16px;
+    border-bottom: 1px solid #2a2a3a;
+}
+
+.privacy-section-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #ccc;
+    margin-bottom: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.privacy-section-desc {
+    font-size: 11px;
+    color: #888;
+    line-height: 1.5;
+    margin-bottom: 12px;
+}
+
+.privacy-status-banner {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    background: #1a1a2a;
+    border-radius: 6px;
+    margin-bottom: 12px;
+    font-size: 12px;
+}
+
+.privacy-refresh-btn {
+    margin-left: auto;
+    font-size: 11px;
+    color: #8cf;
+    background: none;
+    border: 1px solid #446;
+    border-radius: 4px;
+    padding: 3px 8px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.privacy-refresh-btn:hover {
+    background: #223;
+    border-color: #668;
+}
+
+.privacy-btn {
+    font-size: 13px;
+    color: #8cf;
+    background: none;
+    border: 1px solid #446;
+    border-radius: 6px;
+    padding: 10px 16px;
+    cursor: pointer;
+    width: 100%;
+    text-align: center;
+    margin-bottom: 8px;
+}
+
+.privacy-btn:hover {
+    background: #223;
+    border-color: #668;
+}
+
+.privacy-btn:disabled {
+    color: #666;
+    border-color: #333;
+    cursor: default;
+}
+
+.privacy-btn.danger {
+    color: #f88;
+    border-color: #644;
+}
+
+.privacy-btn.danger:hover {
+    background: #322;
+    border-color: #866;
+}
+
+.privacy-ssid-list {
+    font-size: 12px;
+    color: #aaa;
+    padding: 4px 0;
+    margin-bottom: 8px;
+}
+
+.privacy-ssid-item {
+    padding: 6px 8px;
+    background: #252535;
+    border-radius: 4px;
+    margin-bottom: 4px;
+}
+
 .xc-section {
     padding: 10px 16px;
     border-bottom: 1px solid #2a2a3a;

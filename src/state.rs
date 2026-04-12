@@ -1032,6 +1032,8 @@ pub struct AppState {
     pub mic_selected_device: RwSignal<Option<String>>,
     /// Whether the mic chooser modal dialog is visible.
     pub show_mic_chooser: RwSignal<bool>,
+    /// Whether the privacy settings modal dialog is visible.
+    pub show_privacy_settings: RwSignal<bool>,
     /// Whether the about dialog is visible.
     pub show_about: RwSignal<bool>,
     /// Peak audio level from mic (0.0..1.0).
@@ -1471,6 +1473,7 @@ impl AppState {
             mic_needs_permission: RwSignal::new(false),
             mic_selected_device: RwSignal::new(None),
             show_mic_chooser: RwSignal::new(false),
+            show_privacy_settings: RwSignal::new(false),
             show_about: RwSignal::new(false),
             mic_peak_level: RwSignal::new(0.0),
             mic_strategy: RwSignal::new(if detect_tauri() { MicStrategy::Ask } else { MicStrategy::Browser }),

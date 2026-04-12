@@ -1128,6 +1128,11 @@ fn MainArea() -> impl IntoView {
                 <crate::components::file_sidebar::mic_chooser::MicChooserModal />
             })}
 
+            // Privacy settings modal
+            {move || state.show_privacy_settings.get().then(|| view! {
+                <crate::components::file_sidebar::privacy_settings::PrivacySettingsModal />
+            })}
+
             // "Ready to record" modal
             {move || (state.record_ready_state.get() == crate::state::RecordReadyState::AwaitingConfirmation).then(|| {
                 let on_ok = move |_: web_sys::MouseEvent| {
