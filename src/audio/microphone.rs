@@ -415,14 +415,21 @@ async fn do_start_recording(state: &AppState, backend: ActiveBackend) {
             let sr = state.mic_sample_rate.get_untracked();
 
             let file_idx = if has_listen_file {
-                // Convert the existing listening file into a recording file
+                // Convert the existing listening file into a recording file.
+                // Don't respawn the processing loop or recreate the waterfall —
+                // the listen loop is already running on the same buffer and its
+                // exit condition (`!recording && !listening`) is no longer true
+                // because we just set mic_recording=true.  Recreating the
+                // waterfall would discard all accumulated columns and cause a
+                // visible flash/glitch.
                 convert_listen_to_recording(state, sr)
             } else {
-                start_live_recording(state, sr)
+                let idx = start_live_recording(state, sr);
+                spawn_live_processing_loop(*state, idx, sr);
+                spawn_smooth_scroll_animation(*state);
+                idx
             };
-            spawn_live_processing_loop(*state, file_idx, sr);
-            spawn_smooth_scroll_animation(*state);
-            log::info!("Recording started ({:?}, pre-roll={})", backend, has_listen_file);
+            log::info!("Recording started ({:?}, pre-roll={}, file_idx={})", backend, has_listen_file, file_idx);
         }
         Err(e) => {
             log::error!("start_recording failed: {}", e);

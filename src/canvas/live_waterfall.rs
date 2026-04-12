@@ -11,8 +11,8 @@ use crate::canvas::spectrogram_renderer::{ColormapMode, SpectDisplaySettings};
 use crate::types::SpectrogramColumn;
 
 /// Maximum columns to keep in the circular buffer.
-/// 30k columns ≈ 120s at 48kHz/hop256, or ≈ 20s at 384kHz/hop256.
-/// Memory: 30000 × 129 × 4 bytes ≈ 15 MB.
+/// 30k columns ≈ 160s at 48kHz/hop256, or ≈ 20s at 384kHz/hop256.
+/// Memory: 30000 × 257 × 4 bytes ≈ 31 MB (with FFT=512).
 const DEFAULT_CAPACITY: usize = 30_000;
 
 pub struct LiveWaterfall {
@@ -176,20 +176,33 @@ pub fn render_viewport(
         // Clamp rendering to live_data_cols so we don't draw past actual data.
         let data_end = live_data_cols.min(wf.total_written);
 
-        // For each canvas column, find the corresponding waterfall column.
+        // Columns per pixel — when zoomed out (cols_per_px > 1) we average
+        // multiple waterfall columns into each canvas pixel to avoid aliasing
+        // shimmer caused by point-sampling with fractional scroll offsets.
+        let cols_per_px = 1.0 / zoom;
+
+        // For each canvas column, find the corresponding waterfall column(s).
         for px in 0..img_w {
-            let col_f = scroll_col + px as f64 / zoom;
-            let col_idx = col_f.floor() as usize;
-            if col_idx >= data_end || col_idx < oldest_available {
-                continue; // black (already initialized)
-            }
+            let col_start_f = scroll_col + px as f64 * cols_per_px;
+            let col_end_f = col_start_f + cols_per_px;
+            let col_lo = col_start_f.floor().max(oldest_available as f64) as usize;
+            let col_hi = col_end_f.ceil().min(data_end as f64) as usize;
+            if col_lo >= col_hi { continue; }
 
-            let buf_idx = col_idx % wf.capacity;
-            let col_offset = buf_idx * wf.freq_bins;
-
-            // For each canvas row, look up the magnitude and convert to pixel.
+            let n_cols = col_hi - col_lo;
+            // For each canvas row, average the magnitude across contributing columns.
             for (py, &bin) in bin_map.iter().enumerate() {
-                let mag = wf.magnitudes[col_offset + bin];
+                let mag = if n_cols == 1 {
+                    let buf_idx = col_lo % wf.capacity;
+                    wf.magnitudes[buf_idx * wf.freq_bins + bin]
+                } else {
+                    let mut sum = 0.0f32;
+                    for c in col_lo..col_hi {
+                        let buf_idx = c % wf.capacity;
+                        sum += wf.magnitudes[buf_idx * wf.freq_bins + bin];
+                    }
+                    sum / n_cols as f32
+                };
                 let db = magnitude_to_db(mag);
                 let grey = db_to_greyscale(
                     db,

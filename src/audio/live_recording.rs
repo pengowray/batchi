@@ -134,7 +134,7 @@ pub(crate) fn start_live_recording(state: &AppState, sample_rate: u32) -> usize 
 
     // Set zoom for comfortable live recording scroll speed
     let canvas_w = state.spectrogram_canvas_width.get_untracked();
-    let live_time_res = 64.0 / sample_rate as f64;
+    let live_time_res = 128.0 / sample_rate as f64;
     state.zoom_level.set(crate::viewport::recording_zoom(canvas_w, live_time_res));
     state.scroll_offset.set(0.0);
 
@@ -212,7 +212,7 @@ pub(crate) fn start_live_listening(state: &AppState, sample_rate: u32) -> usize 
 
     // Set zoom for comfortable waterfall viewing
     let canvas_w = state.spectrogram_canvas_width.get_untracked();
-    let live_time_res = 64.0 / sample_rate as f64;
+    let live_time_res = 128.0 / sample_rate as f64;
     state.zoom_level.set(crate::viewport::recording_zoom(canvas_w, live_time_res));
     state.scroll_offset.set(0.0);
 
@@ -291,7 +291,7 @@ pub(crate) fn convert_listen_to_recording(state: &AppState, sample_rate: u32) ->
 
     // Set zoom for recording
     let canvas_w = state.spectrogram_canvas_width.get_untracked();
-    let live_time_res = 64.0 / sample_rate as f64;
+    let live_time_res = 128.0 / sample_rate as f64;
     state.zoom_level.set(crate::viewport::recording_zoom(canvas_w, live_time_res));
     state.scroll_offset.set(0.0);
 
@@ -304,8 +304,8 @@ pub(crate) fn convert_listen_to_recording(state: &AppState, sample_rate: u32) ->
 pub(crate) fn spawn_live_processing_loop(state: AppState, file_index: usize, sample_rate: u32) {
     use crate::canvas::live_waterfall;
 
-    // FFT=256 for low latency, hop=256 for reasonable column rate.
-    let (fft_size, hop_size): (usize, usize) = (256, 256);
+    // FFT=512 for better frequency resolution, hop=256 for smooth scrolling.
+    let (fft_size, hop_size): (usize, usize) = (512, 256);
     const PROCESS_INTERVAL_MS: i32 = 50;
 
     // Bump the generation counter so any previous processing loop will exit.
