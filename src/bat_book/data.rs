@@ -2908,6 +2908,7 @@ const SOUTHEAST_ASIA_BOOK: &[BookEntryDef] = &[
     BookEntryDef { species: &species::MEGADERMA_LYRA, commonness: None, description: None, name: None },
     BookEntryDef { species: &species::MEGADERMA_SPASMA, commonness: None, description: None, name: None },
     // ── Emballonuridae ──
+    BookEntryDef { species: &species::SACCOLAIMUS_SACCOLAIMUS, commonness: None, description: Some("Largest sheathtail bat in the region. Narrowband QCF calls ~19\u{2013}25 kHz; multi-harmonic. Dark fur flecked with white; bare rump diagnostic. High above-canopy forager in tropical lowland forests. Widespread but rarely recorded."), name: Some("Bare-rumped Sheathtail Bat") },
     BookEntryDef { species: &species::TAPHOZOUS_LONGIMANUS, commonness: None, description: None, name: None },
     BookEntryDef { species: &species::TAPHOZOUS_THEOBALDI, commonness: None, description: None, name: None },
     BookEntryDef { species: &species::EMBALLONURA_MONTICOLA, commonness: None, description: None, name: None },
@@ -2971,6 +2972,7 @@ const SOUTH_ASIA_BOOK: &[BookEntryDef] = &[
     // ── Rhinopomatidae ──
     BookEntryDef { species: &species::RHINOPOMA_HARDWICKII, commonness: None, description: Some("Widespread in Pakistan and NW/central India. QCF ~30\u{2013}35 kHz. Arid and semi-arid zones; ruins and rock crevices."), name: None },
     // ── Emballonuridae ──
+    BookEntryDef { species: &species::SACCOLAIMUS_SACCOLAIMUS, commonness: None, description: Some("Largest sheathtail bat in South Asia. Narrowband QCF calls ~19\u{2013}25 kHz; multi-harmonic. Dark fur flecked with white; bare rump. Fast above-canopy forager. Tree hollows, caves, buildings. India, Sri Lanka, Bangladesh."), name: Some("Bare-rumped Sheathtail Bat") },
     BookEntryDef { species: &species::TAPHOZOUS_MELANOPOGON, commonness: None, description: Some("FM ~28\u{2013}35 kHz. Very widespread; often the most abundant bat at study sites in Sri Lanka. Rock walls, cliffs, cave ceilings."), name: None },
     BookEntryDef { species: &species::TAPHOZOUS_LONGIMANUS, commonness: None, description: Some("Common across peninsular India and Sri Lanka. FM-QCF ~28\u{2013}35 kHz. Exposed surfaces of buildings and rock faces."), name: None },
     BookEntryDef { species: &species::TAPHOZOUS_PERFORATUS, commonness: None, description: Some("Pakistan and NW India arid zones. FM ~25\u{2013}35 kHz. Ruins, rock crevices, old temples."), name: None },
