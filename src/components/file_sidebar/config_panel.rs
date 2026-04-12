@@ -30,12 +30,6 @@ pub(super) fn ConfigPanel() -> impl IntoView {
         }
     };
 
-    let on_always_show_view_range = move |ev: web_sys::Event| {
-        let target = ev.target().unwrap();
-        let input: web_sys::HtmlInputElement = target.unchecked_into();
-        state.always_show_view_range.set(input.checked());
-    };
-
     let on_colormap_change = move |ev: web_sys::Event| {
         let target = ev.target().unwrap();
         let select: web_sys::HtmlSelectElement = target.unchecked_into();
@@ -127,15 +121,6 @@ pub(super) fn ConfigPanel() -> impl IntoView {
                     </select>
                 </div>
                 <div class="setting-row">
-                    <span class="setting-label">"Always show view range"</span>
-                    <input
-                        type="checkbox"
-                        class="setting-checkbox"
-                        prop:checked=move || state.always_show_view_range.get()
-                        on:change=on_always_show_view_range
-                    />
-                </div>
-                <div class="setting-row">
                     <span class="setting-label">"Show clock time"</span>
                     <input
                         type="checkbox"
@@ -152,33 +137,6 @@ pub(super) fn ConfigPanel() -> impl IntoView {
                                 .is_none()
                         }
                     />
-                </div>
-                <div class="setting-row">
-                    <span class="setting-label">"Max freq"</span>
-                    <select
-                        class="setting-select"
-                        on:change=move |ev: web_sys::Event| {
-                            let target = ev.target().unwrap();
-                            let select: web_sys::HtmlSelectElement = target.unchecked_into();
-                            let freq = match select.value().as_str() {
-                                "auto" => None,
-                                v => v.parse::<f64>().ok().map(|khz| khz * 1000.0),
-                            };
-                            state.max_display_freq.set(freq);
-                            state.min_display_freq.set(None);
-                        }
-                        prop:value=move || match state.max_display_freq.get() {
-                            None => "auto".to_string(),
-                            Some(hz) => format!("{}", (hz / 1000.0) as u32),
-                        }
-                    >
-                        <option value="auto">"Auto"</option>
-                        <option value="50">"50 kHz"</option>
-                        <option value="100">"100 kHz"</option>
-                        <option value="150">"150 kHz"</option>
-                        <option value="200">"200 kHz"</option>
-                        <option value="250">"250 kHz"</option>
-                    </select>
                 </div>
             </div>
 

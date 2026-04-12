@@ -1963,8 +1963,6 @@ impl AppState {
             let saved = self.focus_stack.get_untracked().saved_bandpass_mode();
             self.bandpass_mode.set(saved.unwrap_or(BandpassMode::Auto));
         }
-        self.min_display_freq.set(None);
-        self.max_display_freq.set(None);
         self.sync_focus_outputs();
     }
 
@@ -1984,8 +1982,6 @@ impl AppState {
             }
         }
         // If adopted (restore is None): user range is correct, HFR stays as-is
-        self.min_display_freq.set(None);
-        self.max_display_freq.set(None);
         self.sync_focus_outputs();
     }
 
@@ -2006,8 +2002,6 @@ impl AppState {
             let saved = self.focus_stack.get_untracked().saved_bandpass_mode();
             self.bandpass_mode.set(saved.unwrap_or(BandpassMode::Auto));
         }
-        self.min_display_freq.set(None);
-        self.max_display_freq.set(None);
         self.sync_focus_outputs();
     }
 
@@ -2025,8 +2019,6 @@ impl AppState {
                 self.bandpass_mode.set(BandpassMode::Off);
             }
         }
-        self.min_display_freq.set(None);
-        self.max_display_freq.set(None);
         self.sync_focus_outputs();
     }
 
@@ -2128,8 +2120,6 @@ impl AppState {
                 stack.saved_bandpass_mode().unwrap_or(BandpassMode::Auto),
             );
         }
-        self.min_display_freq.set(None);
-        self.max_display_freq.set(None);
         self.sync_focus_outputs();
     }
 

@@ -228,9 +228,6 @@ pub fn select_all_frequencies(state: AppState) {
     if !stack.hfr_enabled() {
         state.toggle_hfr();
     }
-    // Clear display zoom so full range is visible
-    state.min_display_freq.set(None);
-    state.max_display_freq.set(None);
 }
 
 /// Select all time: create a full-duration selection on the x-axis.

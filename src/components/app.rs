@@ -13,7 +13,6 @@ use crate::components::analysis_panel::AnalysisPanel;
 use crate::components::overview::OverviewPanel;
 use crate::components::play_controls::{ToastDisplay, BookmarkPopup};
 use crate::components::bottom_toolbar::BottomToolbar;
-use crate::components::freq_range_button::FreqRangeButton;
 use crate::components::xc_browser::XcBrowser;
 use crate::components::zc_chart::ZcDotChart;
 use crate::components::chromagram_view::ChromagramView;
@@ -1083,7 +1082,6 @@ fn MainArea() -> impl IntoView {
                                 }}
                                 <BookmarkPopup />
                                 <ViewAndDspButtons />
-                                <FreqRangeButton />
                                 <SelectionComboButton />
                                 <BatBookTab />
                             </div>
@@ -1490,6 +1488,56 @@ fn MainViewButton() -> impl IntoView {
                             }).collect::<Vec<_>>()
                         }}
                     </select>
+                }
+            })}
+
+            // Frequency range selector (for spectrogram views)
+            {move || matches!(state.main_view.get(), MainView::Spectrogram | MainView::XformedSpec).then(|| {
+                let file_max = move || {
+                    let files = state.files.get();
+                    let idx = state.current_file_index.get();
+                    idx.and_then(|i| files.get(i))
+                        .map(|f| f.spectrogram.max_freq)
+                        .unwrap_or(96_000.0)
+                };
+                let set_range = move |lo: Option<f64>, hi: Option<f64>| {
+                    move |_: web_sys::MouseEvent| {
+                        state.min_display_freq.set(lo);
+                        state.max_display_freq.set(hi);
+                    }
+                };
+                let is_range = move |lo: Option<f64>, hi: Option<f64>| -> bool {
+                    let cur_min = state.min_display_freq.get();
+                    let cur_max = state.max_display_freq.get();
+                    match (lo, hi) {
+                        (None, None) => {
+                            let fm = file_max();
+                            (cur_min.is_none() || cur_min == Some(0.0))
+                                && (cur_max.is_none() || cur_max.is_some_and(|m| (m - fm).abs() < 100.0))
+                        }
+                        (_, Some(h)) => cur_max.is_some_and(|m| (m - h).abs() < 100.0)
+                            && (lo.is_none() || cur_min.is_none() || cur_min == lo),
+                        _ => false,
+                    }
+                };
+                view! {
+                    <hr />
+                    <div class="layer-panel-title">"Freq Range"</div>
+                    <button class=move || layer_opt_class(is_range(None, None))
+                        on:click=set_range(None, None)
+                    >"Full"</button>
+                    <button class=move || layer_opt_class(is_range(Some(0.0), Some(22_000.0)))
+                        on:click=set_range(Some(0.0), Some(22_000.0))
+                    >"0 – 22 kHz"</button>
+                    <button class=move || layer_opt_class(is_range(Some(0.0), Some(50_000.0)))
+                        on:click=set_range(Some(0.0), Some(50_000.0))
+                    >"0 – 50 kHz"</button>
+                    <button class=move || layer_opt_class(is_range(Some(0.0), Some(100_000.0)))
+                        on:click=set_range(Some(0.0), Some(100_000.0))
+                    >"0 – 100 kHz"</button>
+                    <button class=move || layer_opt_class(is_range(Some(0.0), Some(192_000.0)))
+                        on:click=set_range(Some(0.0), Some(192_000.0))
+                    >"0 – 192 kHz"</button>
                 }
             })}
 
