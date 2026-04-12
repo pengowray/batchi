@@ -134,6 +134,7 @@ pub fn mic_stop_recording(
     device_make: Option<String>,
     device_model: Option<String>,
     app_version: Option<String>,
+    skip_native_save: Option<bool>,
 ) -> Result<RecordingResult, String> {
     let mic = state.lock().map_err(|e| e.to_string())?;
     let m = mic.as_ref().ok_or("Microphone not open")?;
@@ -147,68 +148,88 @@ pub fn mic_stop_recording(
 
     let sample_rate = buf.sample_rate;
     let duration_secs = num_samples as f64 / sample_rate as f64;
-    let shared_fd = buf.shared_fd.take();
-
-    // Generate filename
-    let now = chrono::Local::now();
-    let filename = now.format("batcap_%Y%m%d_%H%M%S.wav").to_string();
-
-    // Encode WAV at native bit depth
-    let mut wav_data = recording::encode_native_wav(&buf)?;
-
-    // Get f32 samples for frontend display
-    let samples_f32 = recording::get_samples_f32(&buf);
-
     let bits_per_sample = buf.format.bits_per_sample();
     let is_float = buf.format.is_float();
 
-    drop(buf);
+    // Get f32 samples for frontend display/finalization
+    let samples_f32 = recording::get_samples_f32(&buf);
 
-    // Build location struct if coordinates were provided
-    let location = match (loc_latitude, loc_longitude) {
-        (Some(lat), Some(lon)) => Some(recording::RecordingLocation {
-            latitude: lat,
-            longitude: lon,
-            elevation: loc_elevation,
-            accuracy: loc_accuracy,
-        }),
-        _ => None,
-    };
+    // When the WASM side will re-encode (e.g. pre-roll capture), skip the
+    // expensive native WAV encode + file write to avoid wasted work and
+    // orphaned files.
+    let skip_save = skip_native_save.unwrap_or(false);
 
-    let is_mobile = cfg!(target_os = "android");
-    let host_name = cpal_host_name();
-
-    // Append GUANO metadata using shared builder
-    let guano_params = recording::TauriGuanoParams {
-        connection_type: Some(host_name),
-        location,
-        device_make,
-        device_model,
-        mic_name: Some("Internal".to_string()),
-        mic_make: None,
-        app_version: app_version.unwrap_or_else(|| env!("CARGO_PKG_VERSION").to_string()),
-        is_mobile,
-    };
-    let guano = recording::build_tauri_guano(
-        sample_rate, num_samples, &filename, &now, &guano_params,
-    );
-    oversample_core::audio::guano::append_guano_chunk(&mut wav_data, &guano.to_text());
-    let file_size_bytes = wav_data.len();
-
-    // Write to shared storage fd if available, otherwise to internal storage
-    let saved_path = if let Some(fd) = shared_fd {
-        recording::write_wav_to_fd(fd, &wav_data)?;
-        "shared://recording".to_string() // marker: file is in shared storage
+    let (saved_path, file_size_bytes) = if skip_save {
+        let _ = buf.shared_fd.take(); // discard any pending fd
+        drop(buf);
+        (String::new(), 0)
     } else {
-        let dir = app
-            .path()
-            .app_data_dir()
-            .map_err(|e| e.to_string())?
-            .join("recordings");
-        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-        let path = dir.join(&filename);
-        std::fs::write(&path, &wav_data).map_err(|e| e.to_string())?;
-        path.to_string_lossy().to_string()
+        let shared_fd = buf.shared_fd.take();
+
+        // Encode WAV at native bit depth
+        let mut wav_data = recording::encode_native_wav(&buf)?;
+        drop(buf);
+
+        // Generate filename
+        let now = chrono::Local::now();
+        let filename_ts = now.format("batcap_%Y%m%d_%H%M%S.wav").to_string();
+
+        // Build location struct if coordinates were provided
+        let location = match (loc_latitude, loc_longitude) {
+            (Some(lat), Some(lon)) => Some(recording::RecordingLocation {
+                latitude: lat,
+                longitude: lon,
+                elevation: loc_elevation,
+                accuracy: loc_accuracy,
+            }),
+            _ => None,
+        };
+
+        let is_mobile = cfg!(target_os = "android");
+        let host_name = cpal_host_name();
+
+        // Append GUANO metadata using shared builder
+        let guano_params = recording::TauriGuanoParams {
+            connection_type: Some(host_name),
+            location,
+            device_make,
+            device_model,
+            mic_name: Some("Internal".to_string()),
+            mic_make: None,
+            app_version: app_version.unwrap_or_else(|| env!("CARGO_PKG_VERSION").to_string()),
+            is_mobile,
+        };
+        let guano = recording::build_tauri_guano(
+            sample_rate, num_samples, &filename_ts, &now, &guano_params,
+        );
+        oversample_core::audio::guano::append_guano_chunk(&mut wav_data, &guano.to_text());
+        let file_size_bytes = wav_data.len();
+
+        // Write to shared storage fd if available, otherwise to internal storage
+        let path = if let Some(fd) = shared_fd {
+            recording::write_wav_to_fd(fd, &wav_data)?;
+            "shared://recording".to_string()
+        } else {
+            let dir = app
+                .path()
+                .app_data_dir()
+                .map_err(|e| e.to_string())?
+                .join("recordings");
+            std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+            let full_path = dir.join(&filename_ts);
+            std::fs::write(&full_path, &wav_data).map_err(|e| e.to_string())?;
+            full_path.to_string_lossy().to_string()
+        };
+        (path, file_size_bytes)
+    };
+
+    // Filename is generated by the WASM side (convert_listen_to_recording)
+    // when pre-roll is active, so return empty to let it use its own.
+    let filename = if skip_save {
+        String::new()
+    } else {
+        let now = chrono::Local::now();
+        now.format("batcap_%Y%m%d_%H%M%S.wav").to_string()
     };
 
     Ok(RecordingResult {

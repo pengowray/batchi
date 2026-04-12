@@ -3,6 +3,109 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
 
+use crate::types::WavMarker;
+
+/// Build WAV `cue ` and `LIST`/`adtl` chunks for the given markers.
+/// Returns the raw bytes to insert into the RIFF stream (before the GUANO chunk).
+pub fn encode_wav_cue_chunks(markers: &[WavMarker]) -> Vec<u8> {
+    if markers.is_empty() {
+        return Vec::new();
+    }
+
+    let mut buf = Vec::new();
+
+    // ── cue chunk ──
+    // cue chunk body: u32 num_cue_points, then per point:
+    //   u32 id, u32 position, 4-byte data_id ("data"), u32 chunk_start, u32 block_start, u32 sample_offset
+    let num_points = markers.len() as u32;
+    let cue_body_size = 4 + num_points * 24;
+    buf.extend_from_slice(b"cue ");
+    buf.extend_from_slice(&cue_body_size.to_le_bytes());
+    buf.extend_from_slice(&num_points.to_le_bytes());
+    for m in markers {
+        buf.extend_from_slice(&m.id.to_le_bytes());          // id
+        buf.extend_from_slice(&(m.position as u32).to_le_bytes()); // position
+        buf.extend_from_slice(b"data");                       // fcc_chunk
+        buf.extend_from_slice(&0u32.to_le_bytes());           // chunk_start
+        buf.extend_from_slice(&0u32.to_le_bytes());           // block_start
+        buf.extend_from_slice(&(m.position as u32).to_le_bytes()); // sample_offset
+    }
+
+    // ── LIST/adtl chunk with labl and note sub-chunks ──
+    let mut adtl_body = Vec::new();
+    adtl_body.extend_from_slice(b"adtl");
+    for m in markers {
+        if let Some(ref label) = m.label {
+            let text_bytes = label.as_bytes();
+            // labl sub-chunk: u32 cue_id + null-terminated string
+            let sub_size = 4 + text_bytes.len() as u32 + 1; // +1 for null terminator
+            adtl_body.extend_from_slice(b"labl");
+            adtl_body.extend_from_slice(&sub_size.to_le_bytes());
+            adtl_body.extend_from_slice(&m.id.to_le_bytes());
+            adtl_body.extend_from_slice(text_bytes);
+            adtl_body.push(0); // null terminator
+            // RIFF word-alignment padding
+            if sub_size % 2 != 0 {
+                adtl_body.push(0);
+            }
+        }
+        if let Some(ref note) = m.note {
+            let text_bytes = note.as_bytes();
+            let sub_size = 4 + text_bytes.len() as u32 + 1;
+            adtl_body.extend_from_slice(b"note");
+            adtl_body.extend_from_slice(&sub_size.to_le_bytes());
+            adtl_body.extend_from_slice(&m.id.to_le_bytes());
+            adtl_body.extend_from_slice(text_bytes);
+            adtl_body.push(0);
+            if sub_size % 2 != 0 {
+                adtl_body.push(0);
+            }
+        }
+    }
+
+    // Only write the LIST chunk if there are labl/note sub-chunks
+    if adtl_body.len() > 4 {
+        let list_size = adtl_body.len() as u32;
+        buf.extend_from_slice(b"LIST");
+        buf.extend_from_slice(&list_size.to_le_bytes());
+        buf.extend_from_slice(&adtl_body);
+        // Word-align the LIST chunk
+        if list_size % 2 != 0 {
+            buf.push(0);
+        }
+    }
+
+    buf
+}
+
+/// Insert cue marker chunks into an already-encoded WAV byte buffer.
+/// The chunks are inserted just before the GUANO chunk (if present) or at end of RIFF.
+/// Also updates the RIFF file size field.
+pub fn insert_cue_chunks(wav: &mut Vec<u8>, cue_bytes: &[u8]) {
+    if cue_bytes.is_empty() || wav.len() < 44 {
+        return;
+    }
+
+    // Find insertion point: just before "guan" chunk, or at end
+    let mut insert_pos = wav.len();
+    let mut pos = 12; // skip RIFF header
+    while pos + 8 <= wav.len() {
+        let chunk_id = &wav[pos..pos + 4];
+        let chunk_size = u32::from_le_bytes(wav[pos + 4..pos + 8].try_into().unwrap()) as usize;
+        if chunk_id == b"guan" {
+            insert_pos = pos;
+            break;
+        }
+        pos += 8 + ((chunk_size + 1) & !1);
+    }
+
+    wav.splice(insert_pos..insert_pos, cue_bytes.iter().copied());
+
+    // Update RIFF file size (bytes 4..8)
+    let riff_size = (wav.len() - 8) as u32;
+    wav[4..8].copy_from_slice(&riff_size.to_le_bytes());
+}
+
 /// Encode f32 samples as a 16-bit PCM WAV file (web mode fallback).
 pub fn encode_wav(samples: &[f32], sample_rate: u32) -> Vec<u8> {
     let num_samples = samples.len();

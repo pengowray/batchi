@@ -118,6 +118,9 @@ pub struct RecordingGuanoExtra {
     pub device_make: Option<String>,
     /// Android device model (e.g. "SM-A556E"). Privacy-controlled.
     pub device_model: Option<String>,
+    /// Pre-roll duration in seconds (listen buffer captured before user pressed record).
+    /// None or 0.0 = no pre-roll.
+    pub preroll_secs: Option<f64>,
 }
 
 /// Build GUANO metadata for a recording.
@@ -214,6 +217,13 @@ pub fn build_recording_guano(
     if let Some(ref name) = extra.mic_name {
         if !name.is_empty() {
             g.add("Oversample|Mic|Name", name);
+        }
+    }
+
+    // Pre-roll: seconds of listen buffer captured before the user pressed record.
+    if let Some(preroll) = extra.preroll_secs {
+        if preroll > 0.0 {
+            g.add("Oversample|Audio|Preroll", &format!("{:.3}", preroll));
         }
     }
 

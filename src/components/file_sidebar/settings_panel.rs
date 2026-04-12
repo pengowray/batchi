@@ -303,10 +303,19 @@ pub(crate) fn SelectionPanel() -> impl IntoView {
         if set.annotations.is_empty() { None } else { Some(()) }
     };
 
+    let has_wav_markers = move || {
+        let idx = state.current_file_index.get()?;
+        let files = state.files.get();
+        let file = files.get(idx)?;
+        if file.wav_markers.is_empty() { None } else { Some(()) }
+    };
+
+    let has_nothing = move || has_annotations().is_none() && has_wav_markers().is_none();
+
     view! {
         <div class="sidebar-panel">
             {move || {
-                if has_annotations().is_none() {
+                if has_nothing() {
                     view! {
                         <div class="sidebar-panel-empty">"No annotations"</div>
                     }.into_any()
@@ -314,8 +323,69 @@ pub(crate) fn SelectionPanel() -> impl IntoView {
                     view! { <span></span> }.into_any()
                 }
             }}
+            <WavMarkersList />
             <AnnotationsList />
         </div>
+    }
+}
+
+/// Read-only list of WAV cue-point markers parsed from the file.
+#[component]
+fn WavMarkersList() -> impl IntoView {
+    let state = expect_context::<AppState>();
+
+    let markers = move || {
+        let idx = state.current_file_index.get()?;
+        let files = state.files.get();
+        let file = files.get(idx)?;
+        if file.wav_markers.is_empty() { return None; }
+        let sr = file.audio.sample_rate;
+        Some(file.wav_markers.iter().map(|m| {
+            let time_secs = m.position as f64 / sr as f64;
+            let time_str = crate::format_time::format_time_display(time_secs, 3);
+            let label = m.label.clone().unwrap_or_else(|| format!("Cue {}", m.id));
+            (m.position, time_str, label)
+        }).collect::<Vec<_>>())
+    };
+
+    view! {
+        {move || {
+            if let Some(items) = markers() {
+                view! {
+                    <div class="setting-group">
+                        <div class="setting-group-title">"WAV Markers"</div>
+                        <div class="annotation-tree">
+                            {items.into_iter().map(|(pos, time_str, label)| {
+                                let state2 = state;
+                                view! {
+                                    <div
+                                        class="annotation-tree-item wav-marker-item"
+                                        title=format!("Sample {}", pos)
+                                        on:click=move |_| {
+                                            // Set playhead to this marker position
+                                            let sr = state2.files.with_untracked(|files| {
+                                                state2.current_file_index.get_untracked()
+                                                    .and_then(|i| files.get(i))
+                                                    .map(|f| f.audio.sample_rate)
+                                                    .unwrap_or(1)
+                                            });
+                                            let time = pos as f64 / sr as f64;
+                                            state2.playhead_time.set(time);
+                                        }
+                                    >
+                                        <span class="annotation-icon">{"\u{25C6} "}</span>
+                                        <span class="annotation-label">{label}</span>
+                                        <span class="annotation-time">{time_str}</span>
+                                    </div>
+                                }
+                            }).collect::<Vec<_>>()}
+                        </div>
+                    </div>
+                }.into_any()
+            } else {
+                view! { <div></div> }.into_any()
+            }
+        }}
     }
 }
 

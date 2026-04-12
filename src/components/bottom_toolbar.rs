@@ -207,6 +207,21 @@ pub fn BottomToolbar() -> impl IntoView {
             microphone::toggle_record(&st).await;
         });
     });
+    // Long-press on record button while listening: start recording with pre-roll
+    // buffer (works even in ListenOnly mode).
+    let rec_long_press = Callback::new(move |_: web_sys::MouseEvent| {
+        if state.mic_strategy.get_untracked() == MicStrategy::None {
+            return;
+        }
+        // Only meaningful when currently listening
+        if !state.mic_listening.get_untracked() {
+            return;
+        }
+        let st = state;
+        wasm_bindgen_futures::spawn_local(async move {
+            microphone::toggle_record_with_preroll(&st).await;
+        });
+    });
     let rec_toggle_menu = Callback::new(move |()| {
         toggle_panel(&state, LayerPanel::RecordMode);
     });
@@ -652,6 +667,7 @@ pub fn BottomToolbar() -> impl IntoView {
                 left_label=""
                 left_value=rec_left_value
                 left_click=rec_left_click
+                left_long_press=rec_long_press
                 left_class=rec_left_class
                 right_value=rec_right_value
                 right_class=rec_right_class
@@ -832,6 +848,24 @@ pub fn BottomToolbar() -> impl IntoView {
                         >
                             <option value="mono" selected=move || state.mic_channel_mode.get() == ChannelMode::Mono>"Mono"</option>
                             <option value="stereo" selected=move || state.mic_channel_mode.get() == ChannelMode::Stereo>"Stereo"</option>
+                        </select>
+                    </div>
+                    // Pre-roll buffer
+                    <div class="layer-panel-slider-row het-text-row">
+                        <label style="font-size: 11px;">"Pre-roll buffer"</label>
+                        <select style="font-size: 11px; background: #333; color: #ccc; border: 1px solid #555; padding: 1px 2px;"
+                            on:change=move |ev| {
+                                if let Ok(val) = leptos::prelude::event_target_value(&ev).parse::<u32>() {
+                                    state.mic_preroll_buffer_secs.set(val);
+                                }
+                            }
+                        >
+                            <option value="2" selected=move || state.mic_preroll_buffer_secs.get() == 2>"2s"</option>
+                            <option value="5" selected=move || state.mic_preroll_buffer_secs.get() == 5>"5s"</option>
+                            <option value="10" selected=move || state.mic_preroll_buffer_secs.get() == 10>"10s"</option>
+                            <option value="15" selected=move || state.mic_preroll_buffer_secs.get() == 15>"15s"</option>
+                            <option value="20" selected=move || state.mic_preroll_buffer_secs.get() == 20>"20s"</option>
+                            <option value="30" selected=move || state.mic_preroll_buffer_secs.get() == 30>"30s"</option>
                         </select>
                     </div>
                 </div>

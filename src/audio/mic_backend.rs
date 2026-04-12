@@ -41,6 +41,11 @@ fn build_stop_recording_args(state: &AppState) -> JsValue {
     }
     // Pass the app version so the Tauri backend can embed the correct version in GUANO
     let _ = js_sys::Reflect::set(&args, &JsValue::from_str("appVersion"), &JsValue::from_str(env!("CARGO_PKG_VERSION")));
+    // When pre-roll is active, tell the native backend to skip WAV encoding and
+    // file saving — the WASM side will re-encode with the full buffer + cue markers.
+    if state.mic_preroll_samples.get_untracked() > 0 {
+        let _ = js_sys::Reflect::set(&args, &JsValue::from_str("skipNativeSave"), &JsValue::TRUE);
+    }
     args.into()
 }
 

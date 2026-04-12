@@ -836,6 +836,12 @@ body.sidebar-resizing {
 .annotation-group-children {
     /* Children are indented via padding-left on each item */
 }
+.wav-marker-item .annotation-time {
+    font-size: 11px;
+    color: #777;
+    flex-shrink: 0;
+    margin-left: auto;
+}
 .annotation-toolbar-btn {
     font-size: 11px;
     padding: 2px 5px;

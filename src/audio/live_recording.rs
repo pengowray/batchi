@@ -5,7 +5,7 @@ use wasm_bindgen_futures::JsFuture;
 use crate::state::{AppState, FileSettings, LoadedFile};
 use crate::audio::source::InMemorySource;
 use crate::audio::mic_backend::{with_live_samples, with_live_samples_mut};
-use crate::audio::wav_encoder::{encode_wav_with_guano, try_tauri_save};
+use crate::audio::wav_encoder::try_tauri_save;
 use crate::types::{AudioData, FileMetadata, SpectrogramData};
 use crate::dsp::fft::{compute_preview, compute_spectrogram_partial, compute_stft_columns};
 use std::sync::Arc;
@@ -125,6 +125,7 @@ pub(crate) fn start_live_recording(state: &AppState, sample_rate: u32) -> usize 
             had_sidecar: false,
             verify_outcome: crate::state::VerifyOutcome::Pending,
             all_hashes_verified: false,
+            wav_markers: Vec::new(),
         });
     });
 
@@ -202,6 +203,7 @@ pub(crate) fn start_live_listening(state: &AppState, sample_rate: u32) -> usize 
             had_sidecar: false,
             verify_outcome: crate::state::VerifyOutcome::Pending,
             all_hashes_verified: false,
+            wav_markers: Vec::new(),
         });
     });
 
@@ -255,15 +257,25 @@ pub(crate) fn convert_listen_to_recording(state: &AppState, sample_rate: u32) ->
     let file_index = state.mic_live_file_idx.get_untracked()
         .expect("convert_listen_to_recording: no live file");
 
-    let now = js_sys::Date::new_0();
+    // When pre-roll is active, backdate the filename to reflect the actual
+    // start of audio data (i.e. the beginning of the pre-roll buffer).
+    let preroll = state.mic_preroll_samples.get_untracked();
+    let preroll_ms = if preroll > 0 && sample_rate > 0 {
+        (preroll as f64 / sample_rate as f64) * 1000.0
+    } else {
+        0.0
+    };
+    let ts = js_sys::Date::new(&wasm_bindgen::JsValue::from_f64(
+        js_sys::Date::now() - preroll_ms,
+    ));
     let name = format!(
         "batcap_{:04}{:02}{:02}_{:02}{:02}{:02}.wav",
-        now.get_full_year(),
-        now.get_month() + 1,
-        now.get_date(),
-        now.get_hours(),
-        now.get_minutes(),
-        now.get_seconds(),
+        ts.get_full_year(),
+        ts.get_month() + 1,
+        ts.get_date(),
+        ts.get_hours(),
+        ts.get_minutes(),
+        ts.get_seconds(),
     );
 
     state.files.update(|files| {
@@ -406,11 +418,12 @@ pub(crate) fn spawn_live_processing_loop(state: AppState, file_index: usize, sam
                 (true, normalized)
             });
 
-            // Trim circular buffer during listen-only (~10 s max).
+            // Trim circular buffer during listen-only (configurable max).
             // Must be a separate mutable borrow — the closure above borrows immutably.
             if any_update && is_listening && !is_recording {
                 with_live_samples_mut(is_tauri, |samples| {
-                    let max_samples = (sample_rate as usize) * 10;
+                    let buf_secs = state.mic_preroll_buffer_secs.get_untracked().max(2) as usize;
+                    let max_samples = (sample_rate as usize) * buf_secs;
                     if samples.len() > max_samples {
                         let trim = samples.len() - max_samples;
                         samples.drain(..trim);
@@ -575,17 +588,23 @@ pub(crate) fn finalize_recording(params: FinalizeParams, state: AppState) {
         mic_name.clone()
     };
 
-    // Clone values needed again for the WAV save path below
-    let dev_make_save = dev_make.clone();
+    // Compute pre-roll duration for GUANO metadata
+    let preroll = state.mic_preroll_samples.get_untracked();
+    let preroll_secs = if preroll > 0 && sample_rate > 0 {
+        Some(preroll as f64 / sample_rate as f64)
+    } else {
+        None
+    };
     let guano_extra = crate::audio::guano::RecordingGuanoExtra {
-        mic_interface: conn_type.clone(),
-        mic_name: guano_mic_name.clone(),
-        mic_make: mic_manufacturer.clone(),
+        mic_interface: conn_type,
+        mic_name: guano_mic_name,
+        mic_make: mic_manufacturer,
         loc_position: loc.as_ref().map(|l| (l.latitude, l.longitude)),
         loc_elevation: loc.as_ref().and_then(|l| l.elevation),
         loc_accuracy: loc.as_ref().and_then(|l| l.accuracy),
         device_make: dev_make,
-        device_model: dev_model.clone(),
+        device_model: dev_model,
+        preroll_secs,
     };
     let guano = crate::audio::guano::build_recording_guano(
         sample_rate, duration_secs,
@@ -691,11 +710,29 @@ pub(crate) fn finalize_recording(params: FinalizeParams, state: AppState) {
                 had_sidecar: false,
                 verify_outcome: crate::state::VerifyOutcome::Pending,
                 all_hashes_verified: false,
+                wav_markers: Vec::new(),
             });
         });
         state.current_file_index.set(Some(idx));
         (idx, name)
     };
+
+    // Store pre-roll marker on the file if applicable.
+    // Note: `preroll` is also used later by the WAV save path (cue chunks),
+    // so don't reset the signal until after saving.
+    let preroll = state.mic_preroll_samples.get_untracked();
+    if preroll > 0 {
+        state.files.update(|files| {
+            if let Some(f) = files.get_mut(file_index) {
+                f.wav_markers = vec![crate::types::WavMarker {
+                    id: 1,
+                    position: preroll as u64,
+                    label: Some("Recording start".to_string()),
+                    note: None,
+                }];
+            }
+        });
+    }
 
     // Clear live waterfall
     live_waterfall::clear();
@@ -754,17 +791,27 @@ pub(crate) fn finalize_recording(params: FinalizeParams, state: AppState) {
     if needs_save {
         let samples_ref = state.files.get_untracked();
         if let Some(file) = samples_ref.get(file_index) {
-            let extra = crate::audio::guano::RecordingGuanoExtra {
-                mic_interface: conn_type,
-                mic_name: guano_mic_name.clone(),
-                mic_make: mic_manufacturer,
-                loc_position: loc.as_ref().map(|l| (l.latitude, l.longitude)),
-                loc_elevation: loc.as_ref().and_then(|l| l.elevation),
-                loc_accuracy: loc.as_ref().and_then(|l| l.accuracy),
-                device_make: dev_make_save,
-                device_model: dev_model,
-            };
-            let wav_data = encode_wav_with_guano(&file.audio.samples, file.audio.sample_rate, &name_for_save, true, is_mobile, &extra);
+            // Re-use the GUANO text already computed above instead of
+            // rebuilding RecordingGuanoExtra a second time.
+            use crate::audio::wav_encoder::encode_wav;
+            let mut wav_data = encode_wav(&file.audio.samples, file.audio.sample_rate);
+
+            // Insert cue marker for pre-roll boundary if applicable
+            if preroll > 0 {
+                use crate::audio::wav_encoder::{encode_wav_cue_chunks, insert_cue_chunks};
+                use crate::types::WavMarker;
+                let marker = WavMarker {
+                    id: 1,
+                    position: preroll as u64,
+                    label: Some("Recording start".to_string()),
+                    note: None,
+                };
+                let cue_bytes = encode_wav_cue_chunks(&[marker]);
+                insert_cue_chunks(&mut wav_data, &cue_bytes);
+            }
+
+            crate::audio::guano::append_guano_chunk(&mut wav_data, &guano_text);
+
             let filename = name_for_save;
             wasm_bindgen_futures::spawn_local(async move {
                 if is_mobile {
@@ -780,6 +827,11 @@ pub(crate) fn finalize_recording(params: FinalizeParams, state: AppState) {
                 });
             });
         }
+    }
+
+    // Reset pre-roll state now that saving is done
+    if preroll > 0 {
+        state.mic_preroll_samples.set(0);
     }
 
     // Zoom to fit the entire recording

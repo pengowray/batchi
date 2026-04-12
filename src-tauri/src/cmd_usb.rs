@@ -90,6 +90,7 @@ pub fn usb_stop_recording(
     device_make: Option<String>,
     device_model: Option<String>,
     app_version: Option<String>,
+    skip_native_save: Option<bool>,
 ) -> Result<RecordingResult, String> {
     let usb = state.lock().map_err(|e| e.to_string())?;
     let s = usb.as_ref().ok_or("USB stream not open")?;
@@ -109,68 +110,74 @@ pub fn usb_stop_recording(
     }
 
     let duration_secs = num_samples as f64 / sample_rate as f64;
+    let skip_save = skip_native_save.unwrap_or(false);
 
-    let now = chrono::Local::now();
-    let filename = now.format("batcap_%Y%m%d_%H%M%S.wav").to_string();
-
-    let mut wav_data = usb_audio::encode_usb_wav(s)?;
     let samples_f32 = usb_audio::get_usb_samples_f32(s);
 
-    let location = match (loc_latitude, loc_longitude) {
-        (Some(lat), Some(lon)) => Some(recording::RecordingLocation {
-            latitude: lat,
-            longitude: lon,
-            elevation: loc_elevation,
-            accuracy: loc_accuracy,
-        }),
-        _ => None,
-    };
-
-    // USB interface label based on UAC version / device type
-    let device_lower = s.device_name.to_lowercase();
-    let interface_label = if device_lower.contains("echo meter") || device_lower.contains("emt2") {
-        "USB (EMT2)".to_string()
+    let (saved_path, file_size_bytes, filename) = if skip_save {
+        let _ = shared_fd;
+        (String::new(), 0, String::new())
     } else {
-        match s.uac_version {
-            2 => "USB (UAC2)".to_string(),
-            1 => "USB (UAC1)".to_string(),
-            _ => "USB (UAC)".to_string(),
-        }
-    };
+        let now = chrono::Local::now();
+        let filename = now.format("batcap_%Y%m%d_%H%M%S.wav").to_string();
 
-    let is_mobile = cfg!(target_os = "android");
+        let mut wav_data = usb_audio::encode_usb_wav(s)?;
 
-    // Append GUANO metadata using shared builder
-    let guano_params = recording::TauriGuanoParams {
-        connection_type: Some(interface_label),
-        location,
-        device_make,
-        device_model,
-        mic_name: Some(s.device_name.clone()),
-        mic_make: None, // USB manufacturer not available in UsbStreamState currently
-        app_version: app_version.unwrap_or_else(|| env!("CARGO_PKG_VERSION").to_string()),
-        is_mobile,
-    };
-    let guano = recording::build_tauri_guano(
-        sample_rate, num_samples, &filename, &now, &guano_params,
-    );
-    oversample_core::audio::guano::append_guano_chunk(&mut wav_data, &guano.to_text());
-    let file_size_bytes = wav_data.len();
+        let location = match (loc_latitude, loc_longitude) {
+            (Some(lat), Some(lon)) => Some(recording::RecordingLocation {
+                latitude: lat,
+                longitude: lon,
+                elevation: loc_elevation,
+                accuracy: loc_accuracy,
+            }),
+            _ => None,
+        };
 
-    // Write to shared storage fd if available, otherwise to internal storage
-    let saved_path = if let Some(fd) = shared_fd {
-        recording::write_wav_to_fd(fd, &wav_data)?;
-        "shared://recording".to_string()
-    } else {
-        let dir = app
-            .path()
-            .app_data_dir()
-            .map_err(|e| e.to_string())?
-            .join("recordings");
-        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-        let path = dir.join(&filename);
-        std::fs::write(&path, &wav_data).map_err(|e| e.to_string())?;
-        path.to_string_lossy().to_string()
+        // USB interface label based on UAC version / device type
+        let device_lower = s.device_name.to_lowercase();
+        let interface_label = if device_lower.contains("echo meter") || device_lower.contains("emt2") {
+            "USB (EMT2)".to_string()
+        } else {
+            match s.uac_version {
+                2 => "USB (UAC2)".to_string(),
+                1 => "USB (UAC1)".to_string(),
+                _ => "USB (UAC)".to_string(),
+            }
+        };
+
+        let is_mobile = cfg!(target_os = "android");
+
+        let guano_params = recording::TauriGuanoParams {
+            connection_type: Some(interface_label),
+            location,
+            device_make,
+            device_model,
+            mic_name: Some(s.device_name.clone()),
+            mic_make: None,
+            app_version: app_version.unwrap_or_else(|| env!("CARGO_PKG_VERSION").to_string()),
+            is_mobile,
+        };
+        let guano = recording::build_tauri_guano(
+            sample_rate, num_samples, &filename, &now, &guano_params,
+        );
+        oversample_core::audio::guano::append_guano_chunk(&mut wav_data, &guano.to_text());
+        let file_size_bytes = wav_data.len();
+
+        let path = if let Some(fd) = shared_fd {
+            recording::write_wav_to_fd(fd, &wav_data)?;
+            "shared://recording".to_string()
+        } else {
+            let dir = app
+                .path()
+                .app_data_dir()
+                .map_err(|e| e.to_string())?
+                .join("recordings");
+            std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+            let full_path = dir.join(&filename);
+            std::fs::write(&full_path, &wav_data).map_err(|e| e.to_string())?;
+            full_path.to_string_lossy().to_string()
+        };
+        (path, file_size_bytes, filename)
     };
 
     Ok(RecordingResult {

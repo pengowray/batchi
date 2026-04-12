@@ -672,6 +672,7 @@ pub fn build_tauri_guano(
         loc_accuracy: params.location.as_ref().and_then(|l| l.accuracy),
         device_make: if params.is_mobile { params.device_make.clone() } else { None },
         device_model: if params.is_mobile { params.device_model.clone() } else { None },
+        preroll_secs: None, // Pre-roll handled on the WASM side
     };
 
     guano::build_recording_guano(

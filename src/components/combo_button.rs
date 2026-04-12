@@ -44,6 +44,11 @@ pub fn ComboButton(
     /// Extra inline style for the dropdown panel (e.g. "min-width: 210px;")
     #[prop(default = "")]
     panel_style: &'static str,
+    /// Optional callback for long-press on the left button.  When provided
+    /// and the callback returns, the long-press fires this instead of opening
+    /// the dropdown menu.
+    #[prop(optional, into)]
+    left_long_press: Option<Callback<web_sys::MouseEvent>>,
     /// Dropdown panel content
     children: Children,
 ) -> impl IntoView {
@@ -59,9 +64,15 @@ pub fn ComboButton(
         hold_fired.set(false);
         let window = web_sys::window().unwrap();
         let toggle = toggle_menu;
+        let long_press = left_long_press;
         let cb = Closure::wrap(Box::new(move || {
             hold_fired.set(true);
-            toggle.run(());
+            if let Some(lp) = long_press {
+                let me = web_sys::MouseEvent::new("longpress").unwrap();
+                lp.run(me);
+            } else {
+                toggle.run(());
+            }
         }) as Box<dyn Fn()>);
         if let Ok(id) = window.set_timeout_with_callback_and_timeout_and_arguments_0(
             cb.as_ref().unchecked_ref(),
@@ -103,7 +114,10 @@ pub fn ComboButton(
                 title=left_title
                 on:click=move |ev: web_sys::MouseEvent| {
                     cancel_hold();
-                    left_click.run(ev);
+                    // Don't fire click if long-press already fired
+                    if !hold_fired.get_untracked() {
+                        left_click.run(ev);
+                    }
                 }
                 on:mousedown=move |_| start_hold()
                 on:mouseup=move |_| cancel_hold()

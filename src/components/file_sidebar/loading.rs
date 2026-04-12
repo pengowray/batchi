@@ -108,6 +108,7 @@ pub(super) async fn read_and_load_file(file: File, state: AppState, load_id: u64
 }
 
 pub(crate) async fn load_named_bytes(name: String, bytes: &[u8], xc_metadata: Option<Vec<(String, String)>>, xc_hashes: Option<crate::state::SidecarHashes>, state: AppState, load_id: u64) -> Result<(), String> {
+    let wav_markers = crate::audio::loader::parse_wav_markers(bytes);
     let audio = load_audio(bytes)?;
     log::info!(
         "Loaded {}: {} samples, {} Hz, {:.2}s",
@@ -189,6 +190,7 @@ pub(crate) async fn load_named_bytes(name: String, bytes: &[u8], xc_metadata: Op
                 had_sidecar: false,
                 verify_outcome: crate::state::VerifyOutcome::Pending,
                 all_hashes_verified: false,
+                wav_markers,
             });
             if files.len() == 1 {
                 state.current_file_index.set(Some(0));

@@ -122,6 +122,19 @@ impl Default for SpectDisplaySettings {
     }
 }
 
+/// A cue-point marker embedded in a WAV file (from the `cue ` and `LIST`/`adtl` chunks).
+#[derive(Clone, Debug)]
+pub struct WavMarker {
+    /// Cue point ID (from the WAV cue chunk).
+    pub id: u32,
+    /// Sample position within the data chunk.
+    pub position: u64,
+    /// Label text from the `labl` sub-chunk, if present.
+    pub label: Option<String>,
+    /// Note text from the `note` sub-chunk, if present.
+    pub note: Option<String>,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
 pub enum FlowColorScheme {
     #[default]

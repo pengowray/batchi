@@ -393,9 +393,10 @@ async fn do_start_recording(state: &AppState, backend: ActiveBackend) {
     }
 
     if !has_listen_file {
-        // Fresh recording — clear buffer and tiles
+        // Fresh recording — clear buffer, tiles, and any stale pre-roll count
         backend.clear_buffer();
         crate::canvas::tile_cache::clear_all_caches();
+        state.mic_preroll_samples.set(0);
     } else {
         // Listen→record: stop listen mode but keep buffer (pre-roll).
         // Clear tile caches but don't clear buffer — the listened audio becomes pre-roll.
@@ -434,15 +435,45 @@ async fn do_start_recording(state: &AppState, backend: ActiveBackend) {
     }
 }
 
-/// Stop recording and finalize.
-async fn do_stop_recording(state: &AppState, backend: ActiveBackend) {
-    state.mic_recording.set(false);
-    state.mic_recording_start_time.set(None);
-    state.mic_samples_recorded.set(0);
+/// Convert a Tauri recording result into FinalizeParams.  When pre-roll is
+/// active, the Tauri backend's buffer only has samples from `is_recording=true`,
+/// but the WASM-side `NATIVE_REC_BUFFER` has the full picture (pre-roll +
+/// recording).  In that case we use the WASM buffer and force a WASM-side
+/// re-save so the written WAV includes the pre-roll + cue marker.
+fn tauri_result_to_params(rec: crate::audio::mic_backend::TauriRecordingResult, state: &AppState) -> FinalizeParams {
+    let preroll = state.mic_preroll_samples.get_untracked();
+    if preroll > 0 {
+        // Use the full WASM buffer (which includes pre-roll) instead of the
+        // Tauri-only samples. Clear saved_path to force a WASM-side re-encode.
+        let full_samples = crate::audio::mic_backend::take_native_buffer();
+        log::info!(
+            "Pre-roll active: using WASM buffer ({} samples, {} pre-roll) instead of Tauri buffer ({} samples)",
+            full_samples.len(), preroll, rec.samples.len(),
+        );
+        FinalizeParams {
+            samples: full_samples,
+            sample_rate: rec.sample_rate,
+            bits_per_sample: rec.bits_per_sample,
+            is_float: rec.is_float,
+            saved_path: String::new(),
+            file_size: None,
+        }
+    } else {
+        FinalizeParams {
+            samples: rec.samples,
+            sample_rate: rec.sample_rate,
+            bits_per_sample: rec.bits_per_sample,
+            is_float: rec.is_float,
+            saved_path: rec.saved_path,
+            file_size: rec.file_size_bytes,
+        }
+    }
+}
 
+/// Dispatch a StopResult into finalize_recording or cleanup.
+/// Shared by both `do_stop_recording` and `stop_all`.
+fn handle_stop_result(result: StopResult, state: &AppState) {
     let bits_per_sample = state.mic_bits_per_sample.get_untracked();
-
-    let result = backend.stop_recording(state).await;
     match result {
         StopResult::Samples { samples, sample_rate } => {
             finalize_recording(FinalizeParams {
@@ -451,14 +482,7 @@ async fn do_stop_recording(state: &AppState, backend: ActiveBackend) {
             }, *state);
         }
         StopResult::TauriResult(rec) => {
-            finalize_recording(FinalizeParams {
-                samples: rec.samples,
-                sample_rate: rec.sample_rate,
-                bits_per_sample: rec.bits_per_sample,
-                is_float: rec.is_float,
-                saved_path: rec.saved_path,
-                file_size: rec.file_size_bytes,
-            }, *state);
+            finalize_recording(tauri_result_to_params(rec, state), *state);
         }
         StopResult::Empty => {
             log::warn!("No samples recorded");
@@ -470,6 +494,16 @@ async fn do_stop_recording(state: &AppState, backend: ActiveBackend) {
             cleanup_failed_recording(state);
         }
     }
+}
+
+/// Stop recording and finalize.
+async fn do_stop_recording(state: &AppState, backend: ActiveBackend) {
+    state.mic_recording.set(false);
+    state.mic_recording_start_time.set(None);
+    state.mic_samples_recorded.set(0);
+
+    let result = backend.stop_recording(state).await;
+    handle_stop_result(result, state);
 
     backend.maybe_close(state).await;
 }
@@ -578,6 +612,35 @@ pub async fn toggle_record(state: &AppState) {
     }
 }
 
+/// Toggle recording via long-press while listening.  Works even in ListenOnly mode.
+/// Captures the current listen buffer as pre-roll and records the buffer length
+/// so a WAV cue marker can be written at finalization time.
+pub async fn toggle_record_with_preroll(state: &AppState) {
+    // If already recording, just stop (same as toggle_record)
+    if state.mic_recording.get_untracked() {
+        if let Some(backend) = resolve_active_backend(state) {
+            do_stop_recording(state, backend).await;
+        }
+        return;
+    }
+
+    // Must be listening to have a pre-roll buffer
+    if !state.mic_listening.get_untracked() {
+        // Not listening — fall back to normal toggle_record
+        toggle_record(state).await;
+        return;
+    }
+
+    // Capture the current listen buffer length as pre-roll
+    let preroll = crate::audio::mic_backend::with_live_samples(state.is_tauri, |s| s.len());
+    state.mic_preroll_samples.set(preroll);
+
+    if let Some(backend) = resolve_active_backend(state) {
+        log::info!("Long-press record: capturing {} pre-roll samples", preroll);
+        do_start_recording(state, backend).await;
+    }
+}
+
 /// Called by the "Ready to record" dialog's OK button.
 pub async fn confirm_record_start(state: &AppState) {
     state.record_ready_state.set(crate::state::RecordReadyState::None);
@@ -605,7 +668,6 @@ pub fn stop_all(state: &AppState) {
     });
 
     let state_copy = *state;
-    let bits_per_sample = state.mic_bits_per_sample.get_untracked();
 
     match backend {
         Some(b) => {
@@ -616,31 +678,7 @@ pub fn stop_all(state: &AppState) {
                     state_copy.mic_samples_recorded.set(0);
 
                     let result = b.stop_recording(&state_copy).await;
-                    match result {
-                        StopResult::Samples { samples, sample_rate } => {
-                            finalize_recording(FinalizeParams {
-                                samples, sample_rate, bits_per_sample, is_float: false,
-                                saved_path: String::new(), file_size: None,
-                            }, state_copy);
-                        }
-                        StopResult::TauriResult(rec) => {
-                            finalize_recording(FinalizeParams {
-                                samples: rec.samples,
-                                sample_rate: rec.sample_rate,
-                                bits_per_sample: rec.bits_per_sample,
-                                is_float: rec.is_float,
-                                saved_path: rec.saved_path,
-                                file_size: rec.file_size_bytes,
-                            }, state_copy);
-                        }
-                        StopResult::Error(e) => {
-                            log::error!("stop_recording failed: {}", e);
-                            cleanup_failed_recording(&state_copy);
-                        }
-                        StopResult::Empty => {
-                            cleanup_failed_recording(&state_copy);
-                        }
-                    }
+                    handle_stop_result(result, &state_copy);
                 }
                 if state_copy.mic_listening.get_untracked() {
                     state_copy.mic_listening.set(false);

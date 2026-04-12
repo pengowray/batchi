@@ -113,6 +113,8 @@ pub struct LoadedFile {
     pub verify_outcome: VerifyOutcome,
     /// True after user clicks "Calculate all hashes" — enables indicators on all hash rows.
     pub all_hashes_verified: bool,
+    /// WAV cue-point markers parsed from the file (read-only display).
+    pub wav_markers: Vec<crate::types::WavMarker>,
 }
 
 impl LoadedFile {
@@ -983,6 +985,8 @@ pub struct AppState {
     pub mic_samples_recorded: RwSignal<usize>,
     pub mic_bits_per_sample: RwSignal<u16>,
     pub mic_max_sample_rate: RwSignal<u32>, // 0 = auto (device default)
+    /// Maximum seconds of listen buffer to capture on long-press record.
+    pub mic_preroll_buffer_secs: RwSignal<u32>,
     pub mic_mode: RwSignal<MicMode>,
     pub mic_supported_rates: RwSignal<Vec<u32>>, // actual rates from cpal device query
     /// File index of the currently-recording live file (None if not recording).
@@ -993,6 +997,9 @@ pub struct AppState {
     /// they've been superseded, preventing duplicate-loop races (e.g. listen →
     /// record with no files open used to spawn two loops on the same file_index).
     pub mic_processing_gen: RwSignal<u32>,
+    /// Number of pre-roll samples captured from the listen buffer when the user
+    /// long-pressed record.  Zero = no pre-roll.  Used to write a WAV cue marker.
+    pub mic_preroll_samples: RwSignal<usize>,
     /// Wall-clock time (Date.now()) when recording started, for timer display.
     pub mic_recording_start_time: RwSignal<Option<f64>>,
     /// Wrapping counter incremented by setInterval(100ms) while recording.
@@ -1428,10 +1435,12 @@ impl AppState {
             mic_samples_recorded: RwSignal::new(0),
             mic_bits_per_sample: RwSignal::new(16),
             mic_max_sample_rate: RwSignal::new(0),
+            mic_preroll_buffer_secs: RwSignal::new(10),
             mic_mode: RwSignal::new(if detect_tauri() { MicMode::Auto } else { MicMode::Browser }),
             mic_supported_rates: RwSignal::new(Vec::new()),
             mic_live_file_idx: RwSignal::new(None),
             mic_processing_gen: RwSignal::new(0),
+            mic_preroll_samples: RwSignal::new(0),
             mic_recording_start_time: RwSignal::new(None),
             mic_timer_tick: RwSignal::new(0),
             mic_device_name: RwSignal::new(None),

@@ -1,6 +1,6 @@
 use crate::audio::guano::{self, parse_guano, GuanoMetadata};
 use crate::audio::source::InMemorySource;
-use crate::types::{AudioData, FileMetadata};
+use crate::types::{AudioData, FileMetadata, WavMarker};
 use std::io::Cursor;
 use std::sync::Arc;
 
@@ -15,6 +15,8 @@ pub struct WavHeader {
     pub data_size: u64,         // byte length of PCM data
     pub total_frames: u64,      // data_size / (channels * bytes_per_sample / 8)
     pub guano: Option<GuanoMetadata>,
+    /// Cue-point markers from `cue ` + `LIST`/`adtl` chunks, if present.
+    pub wav_markers: Vec<WavMarker>,
 }
 
 /// Parse only the WAV header from the given bytes (typically first 8-64KB of file).
@@ -48,6 +50,9 @@ pub fn parse_wav_header_with_file_size(header_bytes: &[u8], file_size: Option<u6
     let mut data_offset: Option<u64> = None;
     let mut data_size: Option<u64> = None;
     let mut guano: Option<GuanoMetadata> = None;
+    let mut cue_points: Vec<(u32, u64)> = Vec::new(); // (id, sample_position)
+    let mut labels: Vec<(u32, String)> = Vec::new();   // (cue_id, text)
+    let mut notes: Vec<(u32, String)> = Vec::new();    // (cue_id, text)
 
     // RF64: 64-bit sizes from the ds64 chunk (must appear before fmt/data)
     let mut ds64_data_size: Option<u64> = None;
@@ -111,6 +116,32 @@ pub fn parse_wav_header_with_file_size(header_bytes: &[u8], file_size: Option<u6
                     guano = guano::parse_guano_chunk(guan_bytes);
                 }
             }
+            b"cue " => {
+                if chunk_fits && chunk_size >= 4 {
+                    let body_end = body_end_u64 as usize;
+                    let cue_data = &header_bytes[body_start..body_end];
+                    let num_points = u32::from_le_bytes([cue_data[0], cue_data[1], cue_data[2], cue_data[3]]);
+                    let mut cp = 4usize;
+                    for _ in 0..num_points {
+                        if cp + 24 > cue_data.len() { break; }
+                        let id = u32::from_le_bytes(cue_data[cp..cp + 4].try_into().unwrap());
+                        // sample_offset is at offset 20 within the cue point struct
+                        let sample_offset = u32::from_le_bytes(cue_data[cp + 20..cp + 24].try_into().unwrap());
+                        cue_points.push((id, sample_offset as u64));
+                        cp += 24;
+                    }
+                }
+            }
+            b"LIST" => {
+                if chunk_fits && chunk_size >= 4 {
+                    let body_end = body_end_u64 as usize;
+                    let list_data = &header_bytes[body_start..body_end];
+                    let list_type = &list_data[0..4];
+                    if list_type == b"adtl" {
+                        parse_adtl_subchunks(&list_data[4..], &mut labels, &mut notes);
+                    }
+                }
+            }
             _ => {}
         }
 
@@ -160,6 +191,13 @@ pub fn parse_wav_header_with_file_size(header_bytes: &[u8], file_size: Option<u6
 
     let total_frames = data_size / bytes_per_frame;
 
+    // Build WAV markers from parsed cue points + labels/notes
+    let wav_markers: Vec<WavMarker> = cue_points.iter().map(|&(id, position)| {
+        let label = labels.iter().find(|(cid, _)| *cid == id).map(|(_, t)| t.clone());
+        let note = notes.iter().find(|(cid, _)| *cid == id).map(|(_, t)| t.clone());
+        WavMarker { id, position, label, note }
+    }).collect();
+
     Ok(WavHeader {
         sample_rate,
         channels,
@@ -169,7 +207,35 @@ pub fn parse_wav_header_with_file_size(header_bytes: &[u8], file_size: Option<u6
         data_size,
         total_frames,
         guano,
+        wav_markers,
     })
+}
+
+/// Parse `labl` and `note` sub-chunks from a LIST/adtl body.
+fn parse_adtl_subchunks(data: &[u8], labels: &mut Vec<(u32, String)>, notes: &mut Vec<(u32, String)>) {
+    let mut pos = 0;
+    while pos + 8 <= data.len() {
+        let sub_id = &data[pos..pos + 4];
+        let sub_size = u32::from_le_bytes(data[pos + 4..pos + 8].try_into().unwrap()) as usize;
+        let body_start = pos + 8;
+        let body_end = (body_start + sub_size).min(data.len());
+        if body_end - body_start >= 4 {
+            let cue_id = u32::from_le_bytes(data[body_start..body_start + 4].try_into().unwrap());
+            // Text follows the cue_id, null-terminated
+            let text_bytes = &data[body_start + 4..body_end];
+            let text = std::str::from_utf8(text_bytes)
+                .unwrap_or("")
+                .trim_end_matches('\0')
+                .to_string();
+            match sub_id {
+                b"labl" => labels.push((cue_id, text)),
+                b"note" => notes.push((cue_id, text)),
+                _ => {}
+            }
+        }
+        // Advance (word-aligned)
+        pos = body_start + ((sub_size + 1) & !1);
+    }
 }
 
 /// Parsed FLAC header — enough info to stream without loading all samples.
@@ -335,6 +401,19 @@ pub fn parse_mp3_header(header_bytes: &[u8], file_size: u64) -> Result<Mp3Header
 }
 
 /// Load audio from raw file bytes. Detects WAV, W4V, FLAC, OGG, or MP3 by header magic bytes.
+/// Extract WAV markers from raw file bytes (for non-streaming loads).
+/// Returns an empty Vec for non-WAV files or files without cue markers.
+pub fn parse_wav_markers(bytes: &[u8]) -> Vec<WavMarker> {
+    if bytes.len() < 12 { return Vec::new(); }
+    match &bytes[0..4] {
+        b"RIFF" | b"RF64" => {}
+        _ => return Vec::new(),
+    }
+    parse_wav_header_with_file_size(bytes, None)
+        .map(|h| h.wav_markers)
+        .unwrap_or_default()
+}
+
 pub fn load_audio(bytes: &[u8]) -> Result<AudioData, String> {
     if bytes.len() < 4 {
         return Err("File too small".into());
