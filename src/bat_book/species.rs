@@ -4874,9 +4874,9 @@ pub const RHINOLOPHUS_ACUMINATUS: BatSpecies = BatSpecies {
     scientific_name: "Rhinolophus acuminatus",
     family: "Rhinolophidae",
     call_type: "CF",
-    freq_lo_hz: 58_000.0,
-    freq_hi_hz: 74_000.0,
-    description: "CF ~63\u{2013}68 kHz. Philippines and Sunda shelf islands (Indonesia). Forest interior species. Closely related to R. stheno.",
+    freq_lo_hz: 65_000.0,
+    freq_hi_hz: 90_000.0,
+    description: "CF2 ~73 kHz (72\u{2013}76 kHz across range). Philippines and Sunda shelf islands (Indonesia, Malaysia). Forest interior species. Closely related to R. stheno.",
     echolocates: true,
 };
 
