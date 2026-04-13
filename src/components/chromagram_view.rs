@@ -272,6 +272,7 @@ pub fn ChromagramView() -> impl IntoView {
         let n = touches.length();
 
         if n == 2 {
+            if state.viewport_zoomed.get_untracked() { return; }
             ev.prevent_default();
             use crate::components::pinch::{two_finger_geometry, PinchState};
             if let Some((mid_x, dist)) = two_finger_geometry(&touches) {
@@ -309,6 +310,7 @@ pub fn ChromagramView() -> impl IntoView {
         let n = touches.length();
 
         if n == 2 {
+            if state.viewport_zoomed.get_untracked() { return; }
             if let Some(ps) = pinch_state.get_untracked() {
                 ev.prevent_default();
                 use crate::components::pinch::{two_finger_geometry, apply_pinch};

@@ -33,7 +33,7 @@ fn should_stream_from_decoded_size(decoded_bytes: u64, force_streaming: bool) ->
 /// Attempt to open a large WAV file using the streaming path.
 /// Returns Ok(()) if successful, Err if the file is not suitable for streaming
 /// (not WAV, decoded size below threshold, unsupported format).
-pub(super) async fn try_streaming_wav(file: &File, name: &str, state: AppState, force_streaming: bool) -> Result<(), String> {
+pub(super) async fn try_streaming_wav(file: &File, name: &str, state: AppState, force_streaming: bool, load_id: u64) -> Result<(), String> {
     // Read first 64KB for header parsing
     let header_size = 65536.0f64.min(file.size());
     let header_bytes = read_blob_range(file, 0.0, header_size).await?;
@@ -222,10 +222,9 @@ pub(super) async fn try_streaming_wav(file: &File, name: &str, state: AppState, 
                 verify_outcome: crate::state::VerifyOutcome::Pending,
                 all_hashes_verified: false,
                 wav_markers,
+                loading_id: Some(load_id),
             });
-            if files.len() == 1 {
-                state.current_file_index.set(Some(0));
-            }
+            state.current_file_index.set(Some(idx));
         });
         file_index = idx;
     }
@@ -288,7 +287,7 @@ pub(super) async fn try_streaming_wav(file: &File, name: &str, state: AppState, 
 
 /// Attempt to open a large FLAC file using the streaming path.
 /// Returns Ok(()) if successful, Err if the file is not suitable for streaming.
-pub(super) async fn try_streaming_flac(file: &File, name: &str, state: AppState, force_streaming: bool) -> Result<(), String> {
+pub(super) async fn try_streaming_flac(file: &File, name: &str, state: AppState, force_streaming: bool, load_id: u64) -> Result<(), String> {
     // Read first 64KB for header parsing
     let header_size = 65536.0f64.min(file.size());
     let header_bytes = read_blob_range(file, 0.0, header_size).await?;
@@ -516,10 +515,9 @@ pub(super) async fn try_streaming_flac(file: &File, name: &str, state: AppState,
                 verify_outcome: crate::state::VerifyOutcome::Pending,
                 all_hashes_verified: false,
                 wav_markers: Vec::new(),
+                loading_id: Some(load_id),
             });
-            if files.len() == 1 {
-                state.current_file_index.set(Some(0));
-            }
+            state.current_file_index.set(Some(idx));
         });
         file_index = idx;
     }
@@ -634,7 +632,7 @@ async fn background_flac_decode(
 
 /// Attempt to open a large MP3 file using the streaming path.
 /// Returns Ok(()) if successful, Err if the file is not suitable for streaming.
-pub(super) async fn try_streaming_mp3(file: &File, name: &str, state: AppState, force_streaming: bool) -> Result<(), String> {
+pub(super) async fn try_streaming_mp3(file: &File, name: &str, state: AppState, force_streaming: bool, load_id: u64) -> Result<(), String> {
     // Read first 64KB for initial detection
     let initial_size = 65536.0f64.min(file.size());
     let initial_bytes = read_blob_range(file, 0.0, initial_size).await?;
@@ -899,10 +897,9 @@ pub(super) async fn try_streaming_mp3(file: &File, name: &str, state: AppState, 
                 verify_outcome: crate::state::VerifyOutcome::Pending,
                 all_hashes_verified: false,
                 wav_markers: Vec::new(),
+                loading_id: Some(load_id),
             });
-            if files.len() == 1 {
-                state.current_file_index.set(Some(0));
-            }
+            state.current_file_index.set(Some(idx));
         });
         file_index = idx;
     }
@@ -1036,7 +1033,7 @@ async fn background_mp3_decode(
 
 /// Attempt to open a large OGG file using the streaming path.
 /// Returns Ok(()) if successful, Err if the file is not suitable for streaming.
-pub(super) async fn try_streaming_ogg(file: &File, name: &str, state: AppState, force_streaming: bool) -> Result<(), String> {
+pub(super) async fn try_streaming_ogg(file: &File, name: &str, state: AppState, force_streaming: bool, load_id: u64) -> Result<(), String> {
     // Read first 64KB for header probing
     let header_size = 65536.0f64.min(file.size());
     let header_bytes = read_blob_range(file, 0.0, header_size).await?;
@@ -1289,10 +1286,9 @@ pub(super) async fn try_streaming_ogg(file: &File, name: &str, state: AppState, 
                 verify_outcome: crate::state::VerifyOutcome::Pending,
                 all_hashes_verified: false,
                 wav_markers: Vec::new(),
+                loading_id: Some(load_id),
             });
-            if files.len() == 1 {
-                state.current_file_index.set(Some(0));
-            }
+            state.current_file_index.set(Some(idx));
         });
         file_index = idx;
     }

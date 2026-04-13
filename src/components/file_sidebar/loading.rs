@@ -63,25 +63,25 @@ pub(super) async fn read_and_load_file(file: File, state: AppState, load_id: u64
     // files, attempt the streaming path for supported formats.
     if size > STREAMING_CHECK_SIZE || force_streaming {
         state.loading_update(load_id, crate::state::LoadingStage::Streaming);
-        match try_streaming_wav(&file, &name, state, force_streaming).await {
+        match try_streaming_wav(&file, &name, state, force_streaming, load_id).await {
             Ok(()) => { finalize_loaded_file(state, last_modified_ms); return Ok(()); }
             Err(e) => {
                 log::info!("WAV streaming not applicable for {}: {}", name, e);
             }
         }
-        match try_streaming_flac(&file, &name, state, force_streaming).await {
+        match try_streaming_flac(&file, &name, state, force_streaming, load_id).await {
             Ok(()) => { finalize_loaded_file(state, last_modified_ms); return Ok(()); }
             Err(e) => {
                 log::info!("FLAC streaming not applicable for {}: {}", name, e);
             }
         }
-        match try_streaming_mp3(&file, &name, state, force_streaming).await {
+        match try_streaming_mp3(&file, &name, state, force_streaming, load_id).await {
             Ok(()) => { finalize_loaded_file(state, last_modified_ms); return Ok(()); }
             Err(e) => {
                 log::info!("MP3 streaming not applicable for {}: {}", name, e);
             }
         }
-        match try_streaming_ogg(&file, &name, state, force_streaming).await {
+        match try_streaming_ogg(&file, &name, state, force_streaming, load_id).await {
             Ok(()) => { finalize_loaded_file(state, last_modified_ms); return Ok(()); }
             Err(e) => {
                 log::info!("OGG streaming not applicable for {}: {}", name, e);
@@ -191,10 +191,9 @@ pub(crate) async fn load_named_bytes(name: String, bytes: &[u8], xc_metadata: Op
                 verify_outcome: crate::state::VerifyOutcome::Pending,
                 all_hashes_verified: false,
                 wav_markers,
+                loading_id: Some(load_id),
             });
-            if files.len() == 1 {
-                state.current_file_index.set(Some(0));
-            }
+            state.current_file_index.set(Some(idx));
         });
         file_index = idx;
     }

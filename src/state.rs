@@ -115,6 +115,9 @@ pub struct LoadedFile {
     pub all_hashes_verified: bool,
     /// WAV cue-point markers parsed from the file (read-only display).
     pub wav_markers: Vec<crate::types::WavMarker>,
+    /// Loading entry ID while this file is still loading (for inline progress display).
+    /// Set when the file is pushed to `files`, cleared by `loading_done`.
+    pub loading_id: Option<u64>,
 }
 
 impl LoadedFile {
@@ -1098,6 +1101,10 @@ pub struct AppState {
     pub is_mobile: RwSignal<bool>,
     pub is_tauri: bool,
 
+    /// True when the browser viewport is pinch-zoomed in (visualViewport.scale > 1).
+    /// Used to show a zoom-out button and disable custom pinch handlers.
+    pub viewport_zoomed: RwSignal<bool>,
+
     // XC browser
     pub xc_browser_open: RwSignal<bool>,
 
@@ -1519,6 +1526,7 @@ impl AppState {
             debug_log_entries: RwSignal::new(Vec::new()),
             is_mobile: RwSignal::new(detect_mobile()),
             is_tauri: detect_tauri(),
+            viewport_zoomed: RwSignal::new(false),
             xc_browser_open: RwSignal::new(false),
             axis_drag_start_freq: RwSignal::new(None),
             axis_drag_current_freq: RwSignal::new(None),
@@ -1828,9 +1836,14 @@ impl AppState {
         });
     }
 
-    /// Remove a loading entry (finished or failed).
+    /// Remove a loading entry (finished or failed) and clear the loading_id on the file.
     pub fn loading_done(&self, id: u64) {
         self.loading_files.update(|v| v.retain(|e| e.id != id));
+        self.files.update(|files| {
+            if let Some(f) = files.iter_mut().find(|f| f.loading_id == Some(id)) {
+                f.loading_id = None;
+            }
+        });
     }
 
     pub fn log_debug(&self, level: &str, msg: impl Into<String>) {

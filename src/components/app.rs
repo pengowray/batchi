@@ -958,6 +958,48 @@ pub fn App() -> impl IntoView {
             .push_state_with_url(&wasm_bindgen::JsValue::NULL, "", None);
     }
 
+    // Monitor visualViewport.scale to detect pinch-zoom on mobile browsers.
+    // When the user is zoomed in, we set viewport_zoomed so the UI can show a
+    // zoom-out button and disable our custom pinch handler.
+    {
+        let state_vp = state;
+        let cb = wasm_bindgen::closure::Closure::<dyn Fn()>::new(move || {
+            let zoomed = js_sys::Reflect::get(
+                &js_sys::global(),
+                &wasm_bindgen::JsValue::from_str("visualViewport"),
+            )
+            .ok()
+            .and_then(|vv| {
+                if vv.is_undefined() || vv.is_null() { return None; }
+                js_sys::Reflect::get(&vv, &wasm_bindgen::JsValue::from_str("scale")).ok()
+            })
+            .and_then(|s| s.as_f64())
+            .map(|s| s > 1.05)
+            .unwrap_or(false);
+            state_vp.viewport_zoomed.set(zoomed);
+        });
+        let window = web_sys::window().unwrap();
+        if let Ok(vv) = js_sys::Reflect::get(
+            &window,
+            &wasm_bindgen::JsValue::from_str("visualViewport"),
+        ) {
+            if !vv.is_undefined() && !vv.is_null() {
+                let _ = js_sys::Reflect::get(&vv, &wasm_bindgen::JsValue::from_str("addEventListener"))
+                    .ok()
+                    .and_then(|add_fn| {
+                        let add_fn: js_sys::Function = add_fn.dyn_into().ok()?;
+                        let _ = add_fn.call2(
+                            &vv,
+                            &wasm_bindgen::JsValue::from_str("resize"),
+                            cb.as_ref(),
+                        );
+                        Some(())
+                    });
+            }
+        }
+        cb.forget();
+    }
+
     view! {
         <div class="app" style=grid_style>
             <FileSidebar />
@@ -1120,6 +1162,40 @@ fn MainArea() -> impl IntoView {
                 }
             }}
             <BottomToolbar />
+
+            // Zoom-out button — appears when mobile viewport is pinch-zoomed in
+            {move || state.viewport_zoomed.get().then(|| view! {
+                <button
+                    class="zoom-out-btn"
+                    title="Reset zoom"
+                    on:click=move |_| {
+                        // Reset viewport zoom via visualViewport / meta viewport trick
+                        if let Some(window) = web_sys::window() {
+                            if let Some(doc) = window.document() {
+                                // Temporarily set maximum-scale=1 then restore to reset zoom
+                                if let Some(meta) = doc.query_selector("meta[name=viewport]").ok().flatten() {
+                                    let original = meta.get_attribute("content").unwrap_or_default();
+                                    meta.set_attribute("content", &format!("{}, maximum-scale=1", original)).ok();
+                                    // Restore on next frame so the browser resets zoom
+                                    let meta_clone = meta.clone();
+                                    let orig_clone = original.clone();
+                                    let cb = wasm_bindgen::closure::Closure::once(move || {
+                                        meta_clone.set_attribute("content", &orig_clone).ok();
+                                    });
+                                    window.request_animation_frame(cb.as_ref().unchecked_ref()).ok();
+                                    cb.forget();
+                                }
+                            }
+                        }
+                    }
+                >
+                    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="11" cy="11" r="8"/>
+                        <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                        <line x1="8" y1="11" x2="14" y2="11"/>
+                    </svg>
+                </button>
+            })}
 
             // Mic chooser modal (position:fixed, shown when show_mic_chooser is true)
             {move || state.show_mic_chooser.get().then(|| view! {

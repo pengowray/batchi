@@ -519,8 +519,9 @@ pub fn Waveform() -> impl IntoView {
         let touches = ev.touches();
         let n = touches.length();
 
-        // Two-finger: initialize pinch-to-zoom
+        // Two-finger: initialize pinch-to-zoom (disabled when viewport is zoomed)
         if n == 2 {
+            if state.viewport_zoomed.get_untracked() { return; }
             ev.prevent_default();
             use crate::components::pinch::{two_finger_geometry, PinchState};
             if let Some((mid_x, dist)) = two_finger_geometry(&touches) {
@@ -558,8 +559,9 @@ pub fn Waveform() -> impl IntoView {
         let touches = ev.touches();
         let n = touches.length();
 
-        // Two-finger pinch/pan
+        // Two-finger pinch/pan (disabled when viewport is zoomed)
         if n == 2 {
+            if state.viewport_zoomed.get_untracked() { return; }
             if let Some(ps) = pinch_state.get_untracked() {
                 ev.prevent_default();
                 use crate::components::pinch::{two_finger_geometry, apply_pinch};

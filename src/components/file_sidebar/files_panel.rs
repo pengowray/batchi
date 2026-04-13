@@ -297,6 +297,7 @@ pub(super) fn FilesPanel() -> impl IntoView {
                         let track_badge = gi.track.clone();
                         let seq_badge = gi.sequence.clone();
                         let is_streaming = streaming_source::is_streaming(f.audio.source.as_ref());
+                        let file_loading_id = f.loading_id;
                         let is_active = move || current_idx.get() == Some(i);
                         let is_selected = move || state.selected_file_indices.with(|sel| sel.contains(&i));
 
@@ -488,6 +489,42 @@ pub(super) fn FilesPanel() -> impl IntoView {
                                         on_download=Callback::new(on_download)
                                     />
                                 </div>
+                                {file_loading_id.map(|lid| {
+                                    view! {
+                                        <div class="file-item-loading">
+                                            {move || {
+                                                let entries = loading_files.get();
+                                                let entry = entries.iter().find(|e| e.id == lid);
+                                                if let Some(entry) = entry {
+                                                    let stage_text = match &entry.stage {
+                                                        crate::state::LoadingStage::Decoding => "Decoding\u{2026}".to_string(),
+                                                        crate::state::LoadingStage::Preview => "Preview\u{2026}".to_string(),
+                                                        crate::state::LoadingStage::Spectrogram(pct) => format!("Spectrogram {pct}%"),
+                                                        crate::state::LoadingStage::Finalizing => "Finalizing\u{2026}".to_string(),
+                                                        crate::state::LoadingStage::Streaming => "Streaming\u{2026}".to_string(),
+                                                    };
+                                                    let pct = if let crate::state::LoadingStage::Spectrogram(p) = entry.stage { p } else { 0 };
+                                                    let show_bar = matches!(entry.stage, crate::state::LoadingStage::Spectrogram(_));
+                                                    view! {
+                                                        <span class="loading-stage">{stage_text}</span>
+                                                        {if show_bar {
+                                                            Some(view! {
+                                                                <div class="loading-bar">
+                                                                    <div class="loading-bar-fill"
+                                                                         style=format!("width:{}%", pct)></div>
+                                                                </div>
+                                                            })
+                                                        } else {
+                                                            None
+                                                        }}
+                                                    }.into_any()
+                                                } else {
+                                                    view! { <span></span> }.into_any()
+                                                }
+                                            }}
+                                        </div>
+                                    }
+                                })}
                             </div>
                         }.into_any();
                         items.push(file_view);
@@ -557,12 +594,21 @@ pub(super) fn FilesPanel() -> impl IntoView {
                                 }
                             }}
                             {items}
+                            // Show loading entries that don't yet have a file in the list
+                            // (still decoding/streaming before the file is added)
                             {move || {
                                 let entries = loading_files.get();
-                                if entries.is_empty() {
+                                // Filter out entries that already have a file (shown inline)
+                                let file_loading_ids: Vec<u64> = files.with(|f| {
+                                    f.iter().filter_map(|file| file.loading_id).collect()
+                                });
+                                let orphan_entries: Vec<_> = entries.iter()
+                                    .filter(|e| !file_loading_ids.contains(&e.id))
+                                    .collect();
+                                if orphan_entries.is_empty() {
                                     return view! { <span></span> }.into_any();
                                 }
-                                let items: Vec<_> = entries.iter().map(|entry| {
+                                let items: Vec<_> = orphan_entries.iter().map(|entry| {
                                     let stage_text = match &entry.stage {
                                         crate::state::LoadingStage::Decoding => "Decoding\u{2026}".to_string(),
                                         crate::state::LoadingStage::Preview => "Preview\u{2026}".to_string(),

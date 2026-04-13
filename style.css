@@ -2115,6 +2115,16 @@ body.sidebar-resizing {
     transition: width 0.3s ease;
 }
 
+/* Inline loading indicator inside a file item */
+.file-item-loading {
+    padding: 2px 8px 4px;
+    font-size: 11px;
+    color: #888;
+}
+.file-item-loading .loading-bar {
+    margin-top: 2px;
+}
+
 /* Filter panel */
 .filter-band-mode {
     display: flex;
@@ -5171,4 +5181,33 @@ body.sidebar-resizing {
     color: #888;
     text-align: right;
     padding: 2px 0;
+}
+
+/* ── Zoom-out button (shown when viewport is pinch-zoomed) ─────────────── */
+.zoom-out-btn {
+    position: fixed;
+    top: 8px;
+    right: 8px;
+    z-index: 10000;
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.3);
+    background: rgba(30, 30, 30, 0.85);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    cursor: pointer;
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+    touch-action: manipulation;
+}
+.zoom-out-btn:active {
+    background: rgba(60, 60, 60, 0.9);
+}
+.zoom-out-btn svg {
+    pointer-events: none;
 }

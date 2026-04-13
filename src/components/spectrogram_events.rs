@@ -1121,8 +1121,13 @@ pub fn on_touchstart(
     let touches = ev.touches();
     let n = touches.length();
 
-    // Two-finger: initialize pinch-to-zoom
+    // Two-finger: initialize pinch-to-zoom (disabled when viewport is zoomed so
+    // the user can pinch-zoom out via the browser's native gesture)
     if n == 2 {
+        if state.viewport_zoomed.get_untracked() {
+            // Let the browser handle the pinch so user can zoom out
+            return;
+        }
         ev.prevent_default();
         use crate::components::pinch::{two_finger_geometry, PinchState};
         if let Some((mid_x, dist)) = two_finger_geometry(&touches) {
@@ -1348,8 +1353,11 @@ pub fn on_touchmove(
     let touches = ev.touches();
     let n = touches.length();
 
-    // Two-finger pinch/pan
+    // Two-finger pinch/pan (disabled when viewport is zoomed in)
     if n == 2 {
+        if state.viewport_zoomed.get_untracked() {
+            return;
+        }
         if let Some(ps) = ix.pinch_state.get_untracked() {
             ev.prevent_default();
             use crate::components::pinch::{two_finger_geometry, apply_pinch};
