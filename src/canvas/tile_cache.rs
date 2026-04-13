@@ -524,6 +524,7 @@ pub fn clear_all_tiles() {
     CACHE.with(|c| c.borrow_mut().clear_all());
     IN_FLIGHT.with(|s| s.borrow_mut().clear());
     CACHE_GENERATION.with(|g| *g.borrow_mut() += 1);
+    crate::canvas::spectrogram_renderer::clear_tile_canvas_cache();
 }
 
 /// Clear all tile caches (main, flow, reassign, chroma). Used when a global

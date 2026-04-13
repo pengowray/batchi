@@ -385,12 +385,76 @@ pub fn blit_preview_as_background(
 
 use crate::canvas::tile_cache::{self, TILE_COLS};
 use std::cell::RefCell;
+use std::collections::HashMap;
 
 thread_local! {
     /// Reusable off-screen canvas for blitting tile ImageData.
     /// Avoids creating a new canvas element every frame for each tile.
     static TMP_CANVAS: RefCell<Option<(HtmlCanvasElement, CanvasRenderingContext2d)>> =
         const { RefCell::new(None) };
+    /// Per-tile offscreen canvas cache: (file_idx, lod, tile_idx) → (canvas, settings_fingerprint).
+    /// Avoids re-running db_tile_to_rgba + ImageData + put_image_data on every frame
+    /// when only scroll position changes (panning).
+    static TILE_CANVAS_CACHE: RefCell<HashMap<(usize, u8, usize), (HtmlCanvasElement, u64)>> =
+        RefCell::new(HashMap::new());
+}
+
+/// Compute a fingerprint of the rendering parameters that affect tile RGBA output.
+/// When this changes, cached tile canvases must be re-rendered.
+fn tile_render_fingerprint(
+    settings: &SpectDisplaySettings,
+    colormap: ColormapMode,
+    freq_adj_hash: u64,
+) -> u64 {
+    let mut h: u64 = 0xcbf29ce484222325; // FNV offset basis
+    let mix = |h: &mut u64, v: u64| {
+        *h ^= v;
+        *h = h.wrapping_mul(0x100000001b3); // FNV prime
+    };
+    mix(&mut h, settings.floor_db.to_bits() as u64);
+    mix(&mut h, settings.range_db.to_bits() as u64);
+    mix(&mut h, settings.gamma.to_bits() as u64);
+    mix(&mut h, settings.gain_db.to_bits() as u64);
+    match colormap {
+        ColormapMode::Uniform(cm) => {
+            mix(&mut h, 0);
+            mix(&mut h, cm as u64);
+        }
+        ColormapMode::HfrFocus { colormap: cm, ff_lo_frac, ff_hi_frac } => {
+            mix(&mut h, 1);
+            mix(&mut h, cm as u64);
+            mix(&mut h, ff_lo_frac.to_bits());
+            mix(&mut h, ff_hi_frac.to_bits());
+        }
+    }
+    mix(&mut h, freq_adj_hash);
+    h
+}
+
+/// Compute a simple hash of freq_adjustments for cache invalidation.
+fn hash_freq_adjustments(adj: Option<&[f32]>) -> u64 {
+    let Some(a) = adj else { return 0 };
+    let mut h: u64 = a.len() as u64;
+    // Sample a few values for a fast approximate hash
+    for &idx in &[0, a.len() / 4, a.len() / 2, 3 * a.len() / 4, a.len().saturating_sub(1)] {
+        if idx < a.len() {
+            h ^= a[idx].to_bits() as u64;
+            h = h.wrapping_mul(0x100000001b3);
+        }
+    }
+    h
+}
+
+/// Invalidate all cached tile canvases (e.g. on file change or cache clear).
+pub fn clear_tile_canvas_cache() {
+    TILE_CANVAS_CACHE.with(|c| c.borrow_mut().clear());
+}
+
+/// Evict tile canvas cache entries for a specific file.
+pub fn evict_tile_canvas_cache_for_file(file_idx: usize) {
+    TILE_CANVAS_CACHE.with(|c| {
+        c.borrow_mut().retain(|&(fi, _, _), _| fi != file_idx);
+    });
 }
 
 /// Get or create a reusable off-screen canvas of at least the given dimensions.
@@ -531,24 +595,76 @@ pub fn blit_tiles_viewport(
     let cw = viewport_width;
     let ch = viewport_height;
 
-    // Draw colormapped preview as base layer so tile gaps show preview, not black.
-    if let Some(pv) = preview {
-        blit_preview_as_background(
-            ctx, pv, cw, ch,
-            scroll_offset, visible_time, total_duration,
-            freq_crop_lo, freq_crop_hi, colormap,
-        );
+    let Some(vg) = ViewportGeometry::new(cw, ch, total_cols, scroll_col, zoom, freq_crop_lo, freq_crop_hi)
+    else {
+        // No visible geometry — draw preview if available, else black.
+        if let Some(pv) = preview {
+            blit_preview_as_background(
+                ctx, pv, cw, ch,
+                scroll_offset, visible_time, total_duration,
+                freq_crop_lo, freq_crop_hi, colormap,
+            );
+        } else {
+            ctx.set_fill_style_str("#000");
+            ctx.fill_rect(0.0, 0.0, cw, ch);
+        }
+        return preview.is_some();
+    };
+
+    // Quick check: do all visible tiles exist at the ideal LOD (or any fallback)?
+    // If so, skip the expensive preview blit entirely — tiles will cover the viewport.
+    let all_tiles_covered = {
+        let check_fn = |fi: usize, lod: u8, ti: usize| -> bool {
+            match tile_source {
+                TileSource::Reassigned => tile_cache::get_reassign_tile(fi, lod, ti).is_some(),
+                TileSource::Normal => tile_cache::get_tile(fi, lod, ti).is_some(),
+            }
+        };
+        let mut covered = true;
+        for tile_idx in vg.first_tile..=vg.last_tile {
+            if vg.tile_clip_range(tile_idx).is_none() { continue; }
+            if check_fn(file_idx, vg.ideal_lod, tile_idx) { continue; }
+            // Check fallback LODs
+            let mut found_fallback = false;
+            for fb_lod in (0..vg.ideal_lod).rev() {
+                let (fb_tile, _, _) = tile_cache::fallback_tile_info(vg.ideal_lod, tile_idx, fb_lod);
+                if tile_cache::get_tile(file_idx, fb_lod, fb_tile).is_some() {
+                    found_fallback = true;
+                    break;
+                }
+            }
+            if !found_fallback {
+                covered = false;
+                break;
+            }
+        }
+        covered
+    };
+
+    if !all_tiles_covered {
+        // Some tiles missing — draw preview as fallback background.
+        if let Some(pv) = preview {
+            blit_preview_as_background(
+                ctx, pv, cw, ch,
+                scroll_offset, visible_time, total_duration,
+                freq_crop_lo, freq_crop_hi, colormap,
+            );
+        } else {
+            ctx.set_fill_style_str("#000");
+            ctx.fill_rect(0.0, 0.0, cw, ch);
+        }
     } else {
         ctx.set_fill_style_str("#000");
         ctx.fill_rect(0.0, 0.0, cw, ch);
     }
 
-    let Some(vg) = ViewportGeometry::new(cw, ch, total_cols, scroll_col, zoom, freq_crop_lo, freq_crop_hi)
-    else {
-        return preview.is_some();
-    };
+    // Compute fingerprint for tile canvas cache invalidation.
+    let adj_hash = hash_freq_adjustments(freq_adjustments);
+    let fingerprint = tile_render_fingerprint(display_settings, colormap, adj_hash);
 
     // Draw a tile to the canvas given its LOD and screen clip range.
+    // Uses a per-tile offscreen canvas cache to avoid re-running db_tile_to_rgba
+    // + ImageData + put_image_data when only the scroll position changes.
     let blit_any_tile = |tile: &tile_cache::Tile, tile_lod: u8, tile_idx: usize,
                          clip_start: f64, clip_end: f64| {
         let Some(coords) = compute_tile_blit_coords(
@@ -556,39 +672,107 @@ pub fn blit_tiles_viewport(
             tile_lod, tile_idx, clip_start, clip_end,
         ) else { return };
 
-        // Convert dB tile to RGBA
-        let pixels = if !tile.rendered.db_data.is_empty() {
-            db_tile_to_rgba(
-                &tile.rendered.db_data,
-                tile.rendered.width, tile.rendered.height,
-                display_settings, colormap,
-                freq_adjustments,
-            )
-        } else {
-            let mut px = tile.rendered.pixels.clone();
-            match colormap {
-                ColormapMode::Uniform(cm) => apply_colormap_to_tile(&mut px, cm),
-                ColormapMode::HfrFocus { colormap: cm, ff_lo_frac, ff_hi_frac } => {
-                    apply_hfr_colormap_to_tile(
-                        &mut px, tile.rendered.width, tile.rendered.height,
-                        cm, ff_lo_frac, ff_hi_frac,
-                    );
+        let cache_key = (tile.file_idx, tile_lod, tile_idx);
+
+        // Check if we have a cached canvas for this tile with matching settings.
+        let cached = TILE_CANVAS_CACHE.with(|c| {
+            let cache = c.borrow();
+            if let Some((canvas, fp)) = cache.get(&cache_key) {
+                if *fp == fingerprint
+                    && canvas.width() == tile.rendered.width
+                    && canvas.height() == tile.rendered.height
+                {
+                    return Some(canvas.clone());
                 }
             }
-            px
+            None
+        });
+
+        let tile_canvas = if let Some(c) = cached {
+            c
+        } else {
+            // Render tile to a new offscreen canvas and cache it.
+            let pixels = if !tile.rendered.db_data.is_empty() {
+                db_tile_to_rgba(
+                    &tile.rendered.db_data,
+                    tile.rendered.width, tile.rendered.height,
+                    display_settings, colormap,
+                    freq_adjustments,
+                )
+            } else {
+                let mut px = tile.rendered.pixels.clone();
+                match colormap {
+                    ColormapMode::Uniform(cm) => apply_colormap_to_tile(&mut px, cm),
+                    ColormapMode::HfrFocus { colormap: cm, ff_lo_frac, ff_hi_frac } => {
+                        apply_hfr_colormap_to_tile(
+                            &mut px, tile.rendered.width, tile.rendered.height,
+                            cm, ff_lo_frac, ff_hi_frac,
+                        );
+                    }
+                }
+                px
+            };
+
+            let clamped = Clamped(&pixels[..]);
+            let Ok(img) = ImageData::new_with_u8_clamped_array_and_sh(
+                clamped, tile.rendered.width, tile.rendered.height,
+            ) else { return };
+
+            let Some((tmp, tmp_ctx)) = get_tmp_canvas(tile.rendered.width, tile.rendered.height) else { return };
+            let _ = tmp_ctx.put_image_data(&img, 0.0, 0.0);
+
+            // Create a dedicated offscreen canvas for this tile's cache
+            let doc = match web_sys::window().and_then(|w| w.document()) {
+                Some(d) => d,
+                None => {
+                    // Fallback: draw directly from tmp canvas (no caching)
+                    ctx.set_image_smoothing_enabled(tile_lod != vg.ideal_lod);
+                    let _ = ctx.draw_image_with_html_canvas_element_and_sw_and_sh_and_dx_and_dy_and_dw_and_dh(
+                        &tmp,
+                        coords.src_x, coords.src_y, coords.src_w, coords.src_h,
+                        coords.dst_x, coords.dst_y, coords.dst_w, coords.dst_h,
+                    );
+                    return;
+                }
+            };
+            let tc = doc.create_element("canvas").ok()
+                .and_then(|el| el.dyn_into::<HtmlCanvasElement>().ok());
+            let Some(tc) = tc else {
+                ctx.set_image_smoothing_enabled(tile_lod != vg.ideal_lod);
+                let _ = ctx.draw_image_with_html_canvas_element_and_sw_and_sh_and_dx_and_dy_and_dw_and_dh(
+                    &tmp,
+                    coords.src_x, coords.src_y, coords.src_w, coords.src_h,
+                    coords.dst_x, coords.dst_y, coords.dst_w, coords.dst_h,
+                );
+                return;
+            };
+            tc.set_width(tile.rendered.width);
+            tc.set_height(tile.rendered.height);
+            if let Some(tc_ctx) = tc.get_context("2d").ok().flatten()
+                .and_then(|c| c.dyn_into::<CanvasRenderingContext2d>().ok())
+            {
+                let _ = tc_ctx.draw_image_with_html_canvas_element(&tmp, 0.0, 0.0);
+            }
+
+            TILE_CANVAS_CACHE.with(|c| {
+                let mut cache = c.borrow_mut();
+                // Cap cache size to prevent unbounded growth
+                if cache.len() > 256 {
+                    // Keep only tiles that might still be relevant
+                    let keys: Vec<_> = cache.keys().copied().collect();
+                    for k in keys.into_iter().take(cache.len() - 128) {
+                        cache.remove(&k);
+                    }
+                }
+                cache.insert(cache_key, (tc.clone(), fingerprint));
+            });
+
+            tc
         };
-
-        let clamped = Clamped(&pixels[..]);
-        let Ok(img) = ImageData::new_with_u8_clamped_array_and_sh(
-            clamped, tile.rendered.width, tile.rendered.height,
-        ) else { return };
-
-        let Some((tmp, tmp_ctx)) = get_tmp_canvas(tile.rendered.width, tile.rendered.height) else { return };
-        let _ = tmp_ctx.put_image_data(&img, 0.0, 0.0);
 
         ctx.set_image_smoothing_enabled(tile_lod != vg.ideal_lod);
         let _ = ctx.draw_image_with_html_canvas_element_and_sw_and_sh_and_dx_and_dy_and_dw_and_dh(
-            &tmp,
+            &tile_canvas,
             coords.src_x, coords.src_y, coords.src_w, coords.src_h,
             coords.dst_x, coords.dst_y, coords.dst_w, coords.dst_h,
         );
@@ -696,22 +880,55 @@ pub fn blit_flow_tiles_viewport(
     let cw = viewport_width;
     let ch = viewport_height;
 
-    // Draw a dark background (no colormap-aware preview for flow mode)
-    if let Some(pv) = preview {
-        blit_preview_as_background(
-            ctx, pv, cw, ch,
-            scroll_offset, visible_time, total_duration,
-            freq_crop_lo, freq_crop_hi, ColormapMode::Uniform(Colormap::Greyscale),
-        );
+    let Some(vg) = ViewportGeometry::new(cw, ch, total_cols, scroll_col, zoom, freq_crop_lo, freq_crop_hi)
+    else {
+        if let Some(pv) = preview {
+            blit_preview_as_background(
+                ctx, pv, cw, ch,
+                scroll_offset, visible_time, total_duration,
+                freq_crop_lo, freq_crop_hi, ColormapMode::Uniform(Colormap::Greyscale),
+            );
+        } else {
+            ctx.set_fill_style_str("#000");
+            ctx.fill_rect(0.0, 0.0, cw, ch);
+        }
+        return preview.is_some();
+    };
+
+    // Check if all visible flow tiles are cached before blitting the expensive preview.
+    let all_flow_covered = {
+        let mut covered = true;
+        for tile_idx in vg.first_tile..=vg.last_tile {
+            if vg.tile_clip_range(tile_idx).is_none() { continue; }
+            if tile_cache::get_flow_tile(file_idx, vg.ideal_lod, tile_idx).is_some() { continue; }
+            let mut found_fb = false;
+            for fb_lod in (0..vg.ideal_lod).rev() {
+                let (fb_tile, _, _) = tile_cache::fallback_tile_info(vg.ideal_lod, tile_idx, fb_lod);
+                if tile_cache::get_flow_tile(file_idx, fb_lod, fb_tile).is_some() {
+                    found_fb = true;
+                    break;
+                }
+            }
+            if !found_fb { covered = false; break; }
+        }
+        covered
+    };
+
+    if !all_flow_covered {
+        if let Some(pv) = preview {
+            blit_preview_as_background(
+                ctx, pv, cw, ch,
+                scroll_offset, visible_time, total_duration,
+                freq_crop_lo, freq_crop_hi, ColormapMode::Uniform(Colormap::Greyscale),
+            );
+        } else {
+            ctx.set_fill_style_str("#000");
+            ctx.fill_rect(0.0, 0.0, cw, ch);
+        }
     } else {
         ctx.set_fill_style_str("#000");
         ctx.fill_rect(0.0, 0.0, cw, ch);
     }
-
-    let Some(vg) = ViewportGeometry::new(cw, ch, total_cols, scroll_col, zoom, freq_crop_lo, freq_crop_hi)
-    else {
-        return preview.is_some();
-    };
 
     // Draw a flow tile to the canvas.
     let blit_flow_tile = |tile: &tile_cache::Tile, tile_lod: u8, tile_idx: usize,

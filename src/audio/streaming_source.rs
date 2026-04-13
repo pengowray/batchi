@@ -74,12 +74,18 @@ impl ChunkCache {
         }
     }
 
+    /// Move `chunk_idx` to the back of the LRU list (most recently used).
+    fn lru_move_to_back(&mut self, chunk_idx: u64) {
+        if let Some(pos) = self.lru.iter().position(|&k| k == chunk_idx) {
+            self.lru.remove(pos);
+        }
+        self.lru.push(chunk_idx);
+    }
+
     /// Get a cached chunk, updating LRU order.
     pub(crate) fn get(&mut self, chunk_idx: u64) -> Option<&CachedChunk> {
         if self.chunks.contains_key(&chunk_idx) {
-            // Move to back of LRU
-            self.lru.retain(|&k| k != chunk_idx);
-            self.lru.push(chunk_idx);
+            self.lru_move_to_back(chunk_idx);
             self.chunks.get(&chunk_idx)
         } else {
             None
@@ -93,7 +99,9 @@ impl ChunkCache {
         // Remove existing entry first to fix memory accounting on duplicate inserts
         if let Some(existing) = self.chunks.remove(&chunk_idx) {
             self.total_bytes -= existing.byte_size();
-            self.lru.retain(|&k| k != chunk_idx);
+            if let Some(pos) = self.lru.iter().position(|&k| k == chunk_idx) {
+                self.lru.remove(pos);
+            }
         }
 
         // Evict until we have room
@@ -112,8 +120,7 @@ impl ChunkCache {
     /// Update LRU position for a cached chunk (mark as recently used).
     pub(crate) fn touch(&mut self, chunk_idx: u64) {
         if self.chunks.contains_key(&chunk_idx) {
-            self.lru.retain(|&k| k != chunk_idx);
-            self.lru.push(chunk_idx);
+            self.lru_move_to_back(chunk_idx);
         }
     }
 

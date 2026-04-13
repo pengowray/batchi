@@ -10,6 +10,10 @@ thread_local! {
     /// Reusable off-screen canvas for the overview preview blit.
     static OVERVIEW_TMP: RefCell<Option<(HtmlCanvasElement, CanvasRenderingContext2d)>> =
         const { RefCell::new(None) };
+    /// Cached identity of the last preview rendered to the tmp canvas.
+    /// Stores (Arc data pointer, width, height) to detect when we need to re-render.
+    static OVERVIEW_CACHED_PREVIEW: RefCell<(usize, u32, u32)> =
+        const { RefCell::new((0, 0, 0)) };
 }
 
 fn get_overview_tmp_canvas(w: u32, h: u32) -> Option<(HtmlCanvasElement, CanvasRenderingContext2d)> {
@@ -107,22 +111,34 @@ fn draw_overview_spectrogram(
     let src_y = full_h * (1.0 - ofc);
     let src_h = full_h * ofc;
 
-    // Blit via temporary canvas (ImageData → drawImage for scaling)
-    let clamped = Clamped(&preview.pixels[..]);
-    let image_data = ImageData::new_with_u8_clamped_array_and_sh(
-        clamped, preview.width, preview.height,
-    );
-    if let Ok(img) = image_data {
-        if let Some((tmp, tc)) = get_overview_tmp_canvas(preview.width, preview.height) {
-            let _ = tc.put_image_data(&img, 0.0, 0.0);
-            let _ = ctx.draw_image_with_html_canvas_element_and_sw_and_sh_and_dx_and_dy_and_dw_and_dh(
-                &tmp,
-                0.0, src_y,
-                preview.width as f64, src_h,
-                0.0, 0.0,
-                cw, ch,
-            );
+    // Blit via temporary canvas, caching the preview to avoid re-creating
+    // ImageData on every scroll-triggered redraw.
+    if let Some((tmp, tc)) = get_overview_tmp_canvas(preview.width, preview.height) {
+        let preview_id = std::sync::Arc::as_ptr(&preview.pixels) as usize;
+        let needs_render = OVERVIEW_CACHED_PREVIEW.with(|cell| {
+            let cached = *cell.borrow();
+            if cached != (preview_id, preview.width, preview.height) {
+                *cell.borrow_mut() = (preview_id, preview.width, preview.height);
+                true
+            } else {
+                false
+            }
+        });
+        if needs_render {
+            let clamped = Clamped(&preview.pixels[..]);
+            if let Ok(img) = ImageData::new_with_u8_clamped_array_and_sh(
+                clamped, preview.width, preview.height,
+            ) {
+                let _ = tc.put_image_data(&img, 0.0, 0.0);
+            }
         }
+        let _ = ctx.draw_image_with_html_canvas_element_and_sw_and_sh_and_dx_and_dy_and_dw_and_dh(
+            &tmp,
+            0.0, src_y,
+            preview.width as f64, src_h,
+            0.0, 0.0,
+            cw, ch,
+        );
     }
 
     // Convert to px/sec using the true audio duration (not preview columns × FFT hop)
