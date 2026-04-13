@@ -1,6 +1,7 @@
 use leptos::prelude::*;
 use crate::audio::source::ChannelView;
 use crate::canvas::spectrogram_renderer::Colormap;
+use crate::canvas::flow::FlowAlgo;
 use crate::annotations::AnnotationKind;
 use crate::types::{AudioData, PreviewImage, SpectrogramData};
 use crate::annotations::{AnnotationId, AnnotationStore, FileIdentity};
@@ -258,6 +259,18 @@ pub enum SpectrogramDisplay {
     FlowCentroid,
     FlowGradient,
     Phase,
+}
+
+impl SpectrogramDisplay {
+    pub fn flow_algo(self) -> FlowAlgo {
+        match self {
+            Self::FlowOptical => FlowAlgo::Optical,
+            Self::PhaseCoherence => FlowAlgo::PhaseCoherence,
+            Self::FlowCentroid => FlowAlgo::Centroid,
+            Self::FlowGradient => FlowAlgo::Gradient,
+            Self::Phase => FlowAlgo::Phase,
+        }
+    }
 }
 
 // FlowColorScheme is defined in oversample-core and re-exported here for backward compatibility.

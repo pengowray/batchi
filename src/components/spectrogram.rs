@@ -9,9 +9,9 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement};
 use crate::canvas::freq_adjustments::compute_freq_adjustments;
-use crate::canvas::spectrogram_renderer::{self, Colormap, ColormapMode, FreqMarkerState, FreqShiftMode, FlowAlgo, PreRendered, SpectDisplaySettings};
+use crate::canvas::spectrogram_renderer::{self, Colormap, ColormapMode, FreqMarkerState, FreqShiftMode, PreRendered, SpectDisplaySettings};
 use crate::components::spectrogram_events::{self, SpectInteraction, LABEL_AREA_WIDTH};
-use crate::state::{AppState, CanvasTool, SpectrogramHandle, MainView, PlaybackMode, SpectrogramDisplay};
+use crate::state::{AppState, CanvasTool, SpectrogramHandle, MainView, PlaybackMode};
 use crate::viewport;
 
 #[component]
@@ -513,14 +513,7 @@ pub fn Spectrogram() -> impl IntoView {
             let op = 1.0_f32; // opacity consolidated into color gain
             let sg = state.flow_shift_gain.get_untracked();
             let cg = state.flow_color_gamma.get_untracked();
-            let display = state.spectrogram_display.get_untracked();
-            let algo = match display {
-                SpectrogramDisplay::FlowOptical => FlowAlgo::Optical,
-                SpectrogramDisplay::PhaseCoherence => FlowAlgo::PhaseCoherence,
-                SpectrogramDisplay::FlowCentroid => FlowAlgo::Centroid,
-                SpectrogramDisplay::FlowGradient => FlowAlgo::Gradient,
-                SpectrogramDisplay::Phase => FlowAlgo::Phase,
-            };
+            let algo = state.spectrogram_display.get_untracked().flow_algo();
             let flow_scheme = state.flow_color_scheme.get_untracked();
             let flow_render_mode = spectrogram_renderer::TileRenderMode::Flow {
                 intensity_gate: ig,
@@ -1103,14 +1096,7 @@ pub fn Spectrogram() -> impl IntoView {
 
                 let flow_on = state.flow_enabled.get_untracked();
                 let flow_algo = if flow_on {
-                    let display = state.spectrogram_display.get_untracked();
-                    Some(match display {
-                        SpectrogramDisplay::FlowOptical => FlowAlgo::Optical,
-                        SpectrogramDisplay::PhaseCoherence => FlowAlgo::PhaseCoherence,
-                        SpectrogramDisplay::FlowCentroid => FlowAlgo::Centroid,
-                        SpectrogramDisplay::FlowGradient => FlowAlgo::Gradient,
-                        SpectrogramDisplay::Phase => FlowAlgo::Phase,
-                    })
+                    Some(state.spectrogram_display.get_untracked().flow_algo())
                 } else {
                     None
                 };
