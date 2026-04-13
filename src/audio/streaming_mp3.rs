@@ -37,6 +37,10 @@ pub struct StreamingMp3Source {
     decode_frame_cursor: RefCell<u64>,
     /// Set when a seek skip happened; cleared after the caller reads it.
     pub(crate) did_seek_skip: Cell<bool>,
+    /// Size (bytes) of the first decoded MP3 packet; used to detect VBR.
+    first_packet_size: Cell<u32>,
+    /// True once we've seen packets of different sizes (variable bitrate).
+    pub(crate) is_vbr: Cell<bool>,
 }
 
 // SAFETY: WASM is single-threaded; these are required by AudioSource: Send + Sync.
@@ -80,6 +84,8 @@ impl StreamingMp3Source {
             decode_byte_cursor: RefCell::new(initial_byte_cursor),
             decode_frame_cursor: RefCell::new(initial_frame_cursor),
             did_seek_skip: Cell::new(false),
+            first_packet_size: Cell::new(0),
+            is_vbr: Cell::new(false),
         }
     }
 
@@ -252,6 +258,17 @@ impl StreamingMp3Source {
                 // Decode to build up bit reservoir state, ignore errors and output
                 let _ = decoder.decode(&packet);
                 continue;
+            }
+
+            // Detect VBR by comparing packet sizes
+            if !self.is_vbr.get() {
+                let pkt_size = packet.buf().len() as u32;
+                let first = self.first_packet_size.get();
+                if first == 0 {
+                    self.first_packet_size.set(pkt_size);
+                } else if pkt_size != first {
+                    self.is_vbr.set(true);
+                }
             }
 
             match decoder.decode(&packet) {

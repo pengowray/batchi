@@ -1003,8 +1003,8 @@ impl AudioSource for StreamingFlacSource {
 
 /// Prefetch a sample region from a streaming source (WAV, FLAC, MP3, or OGG).
 /// No-op for in-memory sources.
-/// Returns `true` if the MP3 streaming source had to seek-skip (approximate position).
-pub async fn prefetch_streaming(source: &dyn AudioSource, start: u64, len: usize) -> bool {
+/// Returns `(did_seek_skip, is_vbr)` for MP3 sources; `(false, false)` otherwise.
+pub async fn prefetch_streaming(source: &dyn AudioSource, start: u64, len: usize) -> (bool, bool) {
     if let Some(s) = source.as_any().downcast_ref::<StreamingWavSource>() {
         s.prefetch_region(start, len).await;
     } else if let Some(s) = source.as_any().downcast_ref::<StreamingFlacSource>() {
@@ -1013,12 +1013,12 @@ pub async fn prefetch_streaming(source: &dyn AudioSource, start: u64, len: usize
         s.prefetch_region(start, len).await;
         if s.did_seek_skip.get() {
             s.did_seek_skip.set(false);
-            return true;
+            return (true, s.is_vbr.get());
         }
     } else if let Some(s) = source.as_any().downcast_ref::<StreamingOggSource>() {
         s.prefetch_region(start, len).await;
     }
-    false
+    (false, false)
 }
 
 /// Check if a source is a streaming (non-in-memory) source.

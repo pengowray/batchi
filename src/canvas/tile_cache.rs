@@ -826,9 +826,13 @@ pub fn schedule_tile_lod(state: AppState, file_idx: usize, lod: u8, tile_idx: us
         let padded_len = pre_pad_used + sample_len;
 
         // Prefetch for streaming sources
-        let did_seek = streaming_source::prefetch_streaming(audio.source.as_ref(), padded_start as u64, padded_len).await;
+        let (did_seek, is_vbr) = streaming_source::prefetch_streaming(audio.source.as_ref(), padded_start as u64, padded_len).await;
         if did_seek {
-            state.show_info_toast("Seeking in streaming MP3 \u{2014} position may be approximate for VBR files");
+            if is_vbr {
+                state.show_info_toast("VBR MP3: seek position may be approximate");
+            } else {
+                state.show_info_toast("Seeking in streaming MP3");
+            }
         }
 
         if !magnitude_request_still_active(&key) {
@@ -1304,9 +1308,13 @@ pub fn schedule_tile_on_demand(
         let sample_len = TILE_COLS * hop_size + fft_size;
 
         // Prefetch for streaming sources
-        let did_seek = streaming_source::prefetch_streaming(audio.source.as_ref(), sample_start as u64, sample_len).await;
+        let (did_seek, is_vbr) = streaming_source::prefetch_streaming(audio.source.as_ref(), sample_start as u64, sample_len).await;
         if did_seek {
-            state.show_info_toast("Seeking in streaming MP3 \u{2014} position may be approximate for VBR files");
+            if is_vbr {
+                state.show_info_toast("VBR MP3: seek position may be approximate");
+            } else {
+                state.show_info_toast("Seeking in streaming MP3");
+            }
         }
 
         if !magnitude_request_still_active(&key) {
