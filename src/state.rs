@@ -678,6 +678,46 @@ impl ChromaColormap {
     ];
 }
 
+/// Style for frequency shield/flag color bars on the spectrogram edge.
+#[derive(Clone, Copy, Debug, PartialEq, Default)]
+pub enum ShieldStyle {
+    /// Single solid color per band based on the changing digit.
+    #[default]
+    Solid,
+    /// Three-band resistor color encoding (heraldic bend shield).
+    Resistor,
+    /// No shields — frequency color bars are hidden.
+    Off,
+}
+
+impl ShieldStyle {
+    pub const ALL: [ShieldStyle; 3] = [Self::Solid, Self::Resistor, Self::Off];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Solid => "Solid",
+            Self::Resistor => "Resistor bands",
+            Self::Off => "Off",
+        }
+    }
+
+    pub fn key(self) -> &'static str {
+        match self {
+            Self::Solid => "solid",
+            Self::Resistor => "resistor",
+            Self::Off => "off",
+        }
+    }
+
+    pub fn from_key(s: &str) -> Self {
+        match s {
+            "resistor" => Self::Resistor,
+            "off" => Self::Off,
+            _ => Self::Solid,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
 pub enum FileSortMode {
     #[default]
@@ -1296,6 +1336,9 @@ pub struct AppState {
     // Timeline display: show wall-clock time instead of file-relative time
     pub show_clock_time: RwSignal<bool>,
 
+    /// Frequency shield/flag color bar style (persisted to localStorage).
+    pub shield_style: RwSignal<ShieldStyle>,
+
     // Layered frequency focus stack
     pub focus_stack: RwSignal<crate::focus_stack::FocusStack>,
 
@@ -1693,6 +1736,13 @@ impl AppState {
             bat_book_last_clicked_id: RwSignal::new(None),
             bat_book_auto_focus: RwSignal::new(true),
             show_clock_time: RwSignal::new(false),
+            shield_style: RwSignal::new({
+                web_sys::window()
+                    .and_then(|w| w.local_storage().ok().flatten())
+                    .and_then(|ls| ls.get_item("oversample_shield_style").ok().flatten())
+                    .map(|v| ShieldStyle::from_key(&v))
+                    .unwrap_or_default()
+            }),
             focus_stack: RwSignal::new(crate::focus_stack::FocusStack::new()),
             clean_view: RwSignal::new(false),
 

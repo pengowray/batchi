@@ -1,4 +1,5 @@
-use crate::canvas::colors::{freq_marker_color, freq_marker_label, freq_resistor_bands};
+use crate::canvas::colors::{freq_marker_color, freq_marker_label, freq_resistor_bands, freq_shield_color};
+use crate::state::ShieldStyle;
 use crate::canvas::spectrogram_renderer::freq_to_y;
 use crate::dsp::filters::harmonics_band_bounds;
 use crate::state::{SpectrogramHandle, Selection, ResizeHandlePosition};
@@ -35,6 +36,8 @@ pub struct FreqMarkerState {
     pub ff_hi: f64,
     /// FF handles are hovered or being dragged (hide cursor indicator)
     pub ff_handles_active: bool,
+    /// Shield/flag color bar style
+    pub shield_style: ShieldStyle,
 }
 
 /// Returns true if two RGB colors are perceptually similar enough to need fimbriation.
@@ -141,6 +144,21 @@ fn draw_bend_shield(
     ctx.restore();
 }
 
+/// Draw a solid-color shield (single color fill with dark border).
+fn draw_solid_shield(
+    ctx: &CanvasRenderingContext2d,
+    x: f64, y_top: f64, w: f64, h: f64,
+    color: [u8; 3],
+    alpha: f64,
+) {
+    if h < 1.0 { return; }
+    ctx.set_fill_style_str(&format!("rgba({},{},{},{:.2})", color[0], color[1], color[2], alpha));
+    ctx.fill_rect(x, y_top, w, h);
+    ctx.set_stroke_style_str(&format!("rgba(0,0,0,{:.2})", alpha * 0.7));
+    ctx.set_line_width(1.0);
+    ctx.stroke_rect(x + 0.5, y_top + 0.5, w - 1.0, h - 1.0);
+}
+
 /// Draw horizontal frequency marker lines with subtle, interactive UI.
 /// Labels are white; colored range bars indicate the resistor-band color.
 pub fn draw_freq_markers(
@@ -229,8 +247,18 @@ pub fn draw_freq_markers(
                 let clamped_hi = bar_top_freq.min(clamp_hi);
                 let bar_y_top = freq_to_y(clamped_hi, min_freq, max_freq, canvas_height);
                 let bar_y_bot = freq_to_y(clamped_lo, min_freq, max_freq, canvas_height);
-                let bands = freq_resistor_bands(freq);
-                draw_bend_shield(ctx, color_bar_x, bar_y_top, color_bar_w, bar_y_bot - bar_y_top, bands, bar_alpha);
+                let bar_h = bar_y_bot - bar_y_top;
+                match ms.shield_style {
+                    ShieldStyle::Resistor => {
+                        let bands = freq_resistor_bands(freq);
+                        draw_bend_shield(ctx, color_bar_x, bar_y_top, color_bar_w, bar_h, bands, bar_alpha);
+                    }
+                    ShieldStyle::Solid => {
+                        let c = freq_shield_color(freq, div_interval);
+                        draw_solid_shield(ctx, color_bar_x, bar_y_top, color_bar_w, bar_h, c, bar_alpha);
+                    }
+                    ShieldStyle::Off => {}
+                }
             }
         }
 
@@ -428,8 +456,18 @@ pub fn draw_freq_markers(
                 if clamped_hi > clamped_lo {
                     let by_top = freq_to_y(clamped_hi, min_freq, max_freq, canvas_height);
                     let by_bot = freq_to_y(clamped_lo, min_freq, max_freq, canvas_height);
-                    let bands = freq_resistor_bands(mf);
-                    draw_bend_shield(ctx, color_bar_x, by_top, color_bar_w, by_bot - by_top, bands, bar_alpha_m);
+                    let bar_h = by_bot - by_top;
+                    match ms.shield_style {
+                        ShieldStyle::Resistor => {
+                            let bands = freq_resistor_bands(mf);
+                            draw_bend_shield(ctx, color_bar_x, by_top, color_bar_w, bar_h, bands, bar_alpha_m);
+                        }
+                        ShieldStyle::Solid => {
+                            let c = freq_shield_color(mf, minor_interval);
+                            draw_solid_shield(ctx, color_bar_x, by_top, color_bar_w, bar_h, c, bar_alpha_m);
+                        }
+                        ShieldStyle::Off => {}
+                    }
                 }
             }
 

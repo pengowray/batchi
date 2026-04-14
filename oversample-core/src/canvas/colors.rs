@@ -56,6 +56,14 @@ pub fn freq_marker_color(freq_hz: f64) -> [u8; 3] {
     RESISTOR_BANDS[digit as usize]
 }
 
+/// Solid shield color: picks the resistor band color for the digit that
+/// changes at the given scale. `division_hz` is the bar interval (e.g. 10000
+/// for major bars, 1000 for minor 1 kHz bars).
+pub fn freq_shield_color(freq_hz: f64, division_hz: f64) -> [u8; 3] {
+    let digit = (freq_hz / division_hz).round() as u32 % 10;
+    RESISTOR_BANDS[digit as usize]
+}
+
 /// Three-band resistor color encoding for a frequency in Hz.
 /// Returns [first_digit, second_digit, multiplier] colors.
 /// E.g. 40 kHz = 40×1k → [yellow(4), black(0), orange(×1k=10^3)]

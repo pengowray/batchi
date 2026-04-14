@@ -682,6 +682,7 @@ pub fn Spectrogram() -> impl IntoView {
                 ff_lo: marker_ff_lo,
                 ff_hi: marker_ff_hi,
                 ff_handles_active: spec_hover.is_some() || spec_drag.is_some(),
+                shield_style: state.shield_style.get_untracked(),
             };
 
             let xform_on = state.display_transform.get_untracked()

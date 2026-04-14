@@ -310,6 +310,7 @@ pub fn ZcDotChart() -> impl IntoView {
             ff_lo,
             ff_hi,
             ff_handles_active: spec_hover.is_some() || spec_drag.is_some(),
+            shield_style: state.shield_style.get_untracked(),
         };
 
         spectrogram_renderer::draw_freq_markers(

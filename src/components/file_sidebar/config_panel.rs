@@ -1,7 +1,7 @@
 use leptos::prelude::*;
 use wasm_bindgen::JsCast;
 use crate::canvas::spectrogram_renderer::Colormap;
-use crate::state::{AppState, ChromaColormap};
+use crate::state::{AppState, ChromaColormap, ShieldStyle};
 
 fn parse_colormap_pref(s: &str) -> Colormap {
     match s {
@@ -137,6 +137,30 @@ pub(super) fn ConfigPanel() -> impl IntoView {
                                 .is_none()
                         }
                     />
+                </div>
+                <div class="setting-row">
+                    <span class="setting-label">"Freq flags"</span>
+                    <select
+                        class="setting-select"
+                        on:change=move |ev: web_sys::Event| {
+                            let target = ev.target().unwrap();
+                            let select: web_sys::HtmlSelectElement = target.unchecked_into();
+                            let style = ShieldStyle::from_key(&select.value());
+                            state.shield_style.set(style);
+                            if let Some(ls) = web_sys::window()
+                                .and_then(|w| w.local_storage().ok().flatten())
+                            {
+                                let _ = ls.set_item("oversample_shield_style", style.key());
+                            }
+                        }
+                    >
+                        {ShieldStyle::ALL.iter().map(|&s| view! {
+                            <option
+                                value=s.key()
+                                selected=move || state.shield_style.get() == s
+                            >{s.label()}</option>
+                        }).collect::<Vec<_>>()}
+                    </select>
                 </div>
             </div>
 

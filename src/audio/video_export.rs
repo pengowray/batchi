@@ -46,6 +46,7 @@ struct RenderParams {
     max_freq: f64,
     canvas_w: u32,
     canvas_h: u32,
+    shield_style: crate::state::ShieldStyle,
 }
 
 /// Check if video export is available in this browser.
@@ -226,6 +227,7 @@ async fn export_video_impl(state: &AppState) -> Result<(), JsValue> {
         max_freq,
         canvas_w: vid_w,
         canvas_h: vid_h,
+        shield_style: state.shield_style.get_untracked(),
     };
 
     // ── Process audio ────────────────────────────────────────────────────────
@@ -641,6 +643,7 @@ fn render_frame(
         ff_lo: r.min_freq,
         ff_hi: r.max_freq,
         ff_handles_active: false,
+        shield_style: r.shield_style,
     };
     crate::canvas::overlays::draw_freq_markers(
         ctx,
