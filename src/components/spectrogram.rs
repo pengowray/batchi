@@ -1276,6 +1276,7 @@ pub fn Spectrogram() -> impl IntoView {
         >
             <canvas
                 node_ref=canvas_ref
+                style:pointer-events=move || if state.viewport_zoomed.get() { "none" } else { "auto" }
                 on:wheel=on_wheel
                 on:pointerdown=on_pointerdown
                 on:pointermove=on_pointermove

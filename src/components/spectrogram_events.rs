@@ -425,6 +425,9 @@ pub fn on_pointerdown(
     state: AppState,
 ) {
     if ev.button() != 0 { return; }
+    // When viewport is pinch-zoomed, let the browser handle all gestures so
+    // the user can zoom back out via native pinch.
+    if state.viewport_zoomed.get_untracked() { return; }
 
     // Check for annotation resize handle drag first (selected annotations take
     // priority over FF/HET handles when they overlap)
@@ -1134,6 +1137,10 @@ pub fn on_touchstart(
     canvas_ref: &NodeRef<leptos::html::Canvas>,
     state: AppState,
 ) {
+    // When viewport is pinch-zoomed, let the browser handle all touch gestures
+    // so the user can zoom back out via native pinch.
+    if state.viewport_zoomed.get_untracked() { return; }
+
     // Cancel any ongoing inertia animation immediately
     crate::components::inertia::cancel_inertia(ix.inertia_generation);
     ix.velocity_tracker.update_value(|t| t.reset());
@@ -1141,13 +1148,8 @@ pub fn on_touchstart(
     let touches = ev.touches();
     let n = touches.length();
 
-    // Two-finger: initialize pinch-to-zoom (disabled when viewport is zoomed so
-    // the user can pinch-zoom out via the browser's native gesture)
+    // Two-finger: initialize pinch-to-zoom
     if n == 2 {
-        if state.viewport_zoomed.get_untracked() {
-            // Let the browser handle the pinch so user can zoom out
-            return;
-        }
         ev.prevent_default();
         use crate::components::pinch::{two_finger_geometry, PinchState};
         if let Some((mid_x, dist)) = two_finger_geometry(&touches) {
@@ -1370,14 +1372,14 @@ pub fn on_touchmove(
     canvas_ref: &NodeRef<leptos::html::Canvas>,
     state: AppState,
 ) {
+    // When viewport is pinch-zoomed, let the browser handle all touch gestures.
+    if state.viewport_zoomed.get_untracked() { return; }
+
     let touches = ev.touches();
     let n = touches.length();
 
-    // Two-finger pinch/pan (disabled when viewport is zoomed in)
+    // Two-finger pinch/pan
     if n == 2 {
-        if state.viewport_zoomed.get_untracked() {
-            return;
-        }
         if let Some(ps) = ix.pinch_state.get_untracked() {
             ev.prevent_default();
             use crate::components::pinch::{two_finger_geometry, apply_pinch};

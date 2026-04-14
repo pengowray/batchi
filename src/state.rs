@@ -1160,6 +1160,9 @@ pub struct AppState {
     /// True when the browser viewport is pinch-zoomed in (visualViewport.scale > 1).
     /// Used to show a zoom-out button and disable custom pinch handlers.
     pub viewport_zoomed: RwSignal<bool>,
+    /// Visual viewport position/size for placing the zoom-out button in the
+    /// visible area when pinch-zoomed. (offset_top, offset_left, vp_width, scale)
+    pub visual_viewport_rect: RwSignal<(f64, f64, f64, f64)>,
 
     // XC browser
     pub xc_browser_open: RwSignal<bool>,
@@ -1596,6 +1599,7 @@ impl AppState {
             is_mobile: RwSignal::new(detect_mobile()),
             is_tauri: detect_tauri(),
             viewport_zoomed: RwSignal::new(false),
+            visual_viewport_rect: RwSignal::new((0.0, 0.0, 0.0, 1.0)),
             xc_browser_open: RwSignal::new(false),
             axis_drag_start_freq: RwSignal::new(None),
             axis_drag_current_freq: RwSignal::new(None),

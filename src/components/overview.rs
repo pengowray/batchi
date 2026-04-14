@@ -908,6 +908,7 @@ pub fn OverviewPanel() -> impl IntoView {
     };
 
     let on_pointerdown = move |ev: web_sys::PointerEvent| {
+        if state.viewport_zoomed.get_untracked() { return; }
         ev.prevent_default();
         let Some(canvas_el) = overlay_ref.get_untracked() else { return };
         let canvas: &HtmlCanvasElement = canvas_el.as_ref();
@@ -964,6 +965,7 @@ pub fn OverviewPanel() -> impl IntoView {
 
     // ── Touch event handlers (mobile) ──────────────────────────────────────────
     let on_touchstart = move |ev: web_sys::TouchEvent| {
+        if state.viewport_zoomed.get_untracked() { return; }
         let touches = ev.touches();
         if touches.length() != 1 { return; }
         ev.prevent_default();
@@ -1085,7 +1087,8 @@ pub fn OverviewPanel() -> impl IntoView {
                 on:touchend=on_touchend
                 style=move || {
                     let ta = if state.viewport_zoomed.get() { "pinch-zoom" } else { "none" };
-                    format!("position: absolute; top: 0; left: 0; cursor: crosshair; touch-action: {ta};")
+                    let pe = if state.viewport_zoomed.get() { "none" } else { "auto" };
+                    format!("position: absolute; top: 0; left: 0; cursor: crosshair; touch-action: {ta}; pointer-events: {pe};")
                 }
             />
 

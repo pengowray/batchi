@@ -451,6 +451,7 @@ pub fn ZcDotChart() -> impl IntoView {
 
     let on_mousedown = move |ev: MouseEvent| {
         if ev.button() != 0 { return; }
+        if state.viewport_zoomed.get_untracked() { return; }
 
         // FF handle drag takes priority over everything
         if let Some(handle) = state.spec_hover_handle.get_untracked() {
@@ -610,11 +611,11 @@ pub fn ZcDotChart() -> impl IntoView {
 
     // Touch event handlers (mobile)
     let on_touchstart = move |ev: web_sys::TouchEvent| {
+        if state.viewport_zoomed.get_untracked() { return; }
         let touches = ev.touches();
         let n = touches.length();
 
         if n == 2 {
-            if state.viewport_zoomed.get_untracked() { return; }
             ev.prevent_default();
             use crate::components::pinch::{two_finger_geometry, PinchState};
             if let Some((mid_x, dist)) = two_finger_geometry(&touches) {
@@ -668,11 +669,11 @@ pub fn ZcDotChart() -> impl IntoView {
     };
 
     let on_touchmove = move |ev: web_sys::TouchEvent| {
+        if state.viewport_zoomed.get_untracked() { return; }
         let touches = ev.touches();
         let n = touches.length();
 
         if n == 2 {
-            if state.viewport_zoomed.get_untracked() { return; }
             if let Some(ps) = pinch_state.get_untracked() {
                 ev.prevent_default();
                 use crate::components::pinch::{two_finger_geometry, apply_pinch};
@@ -809,6 +810,7 @@ pub fn ZcDotChart() -> impl IntoView {
         >
             <canvas
                 node_ref=canvas_ref
+                style:pointer-events=move || if state.viewport_zoomed.get() { "none" } else { "auto" }
                 on:wheel=on_wheel
                 on:mousedown=on_mousedown
                 on:mousemove=on_mousemove

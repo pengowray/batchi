@@ -226,6 +226,7 @@ pub fn ChromagramView() -> impl IntoView {
 
     let on_mousedown = move |ev: MouseEvent| {
         if ev.button() != 0 { return; }
+        if state.viewport_zoomed.get_untracked() { return; }
         if state.canvas_tool.get_untracked() != CanvasTool::Hand { return; }
         state.is_dragging.set(true);
         hand_drag_start.set((ev.client_x() as f64, state.scroll_offset.get_untracked()));
@@ -268,11 +269,11 @@ pub fn ChromagramView() -> impl IntoView {
     };
 
     let on_touchstart = move |ev: web_sys::TouchEvent| {
+        if state.viewport_zoomed.get_untracked() { return; }
         let touches = ev.touches();
         let n = touches.length();
 
         if n == 2 {
-            if state.viewport_zoomed.get_untracked() { return; }
             ev.prevent_default();
             use crate::components::pinch::{two_finger_geometry, PinchState};
             if let Some((mid_x, dist)) = two_finger_geometry(&touches) {
@@ -306,11 +307,11 @@ pub fn ChromagramView() -> impl IntoView {
     };
 
     let on_touchmove = move |ev: web_sys::TouchEvent| {
+        if state.viewport_zoomed.get_untracked() { return; }
         let touches = ev.touches();
         let n = touches.length();
 
         if n == 2 {
-            if state.viewport_zoomed.get_untracked() { return; }
             if let Some(ps) = pinch_state.get_untracked() {
                 ev.prevent_default();
                 use crate::components::pinch::{two_finger_geometry, apply_pinch};
@@ -395,6 +396,7 @@ pub fn ChromagramView() -> impl IntoView {
         >
             <canvas
                 node_ref=canvas_ref
+                style:pointer-events=move || if state.viewport_zoomed.get() { "none" } else { "auto" }
                 on:wheel=on_wheel
                 on:mousedown=on_mousedown
                 on:mousemove=on_mousemove

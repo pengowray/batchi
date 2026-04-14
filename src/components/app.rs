@@ -986,19 +986,27 @@ pub fn App() -> impl IntoView {
     // zoom-out button and disable our custom pinch handler.
     {
         let state_vp = state;
-        let cb = wasm_bindgen::closure::Closure::<dyn Fn()>::new(move || {
-            let zoomed = js_sys::Reflect::get(
+        let check_zoom = wasm_bindgen::closure::Closure::<dyn Fn()>::new(move || {
+            let vv_obj = js_sys::Reflect::get(
                 &js_sys::global(),
                 &wasm_bindgen::JsValue::from_str("visualViewport"),
-            )
-            .ok()
-            .and_then(|vv| {
-                if vv.is_undefined() || vv.is_null() { return None; }
-                js_sys::Reflect::get(&vv, &wasm_bindgen::JsValue::from_str("scale")).ok()
-            })
-            .and_then(|s| s.as_f64())
-            .map(|s| s > 1.05)
-            .unwrap_or(false);
+            ).ok().filter(|v| !v.is_undefined() && !v.is_null());
+            let scale = vv_obj.as_ref()
+                .and_then(|vv| js_sys::Reflect::get(vv, &wasm_bindgen::JsValue::from_str("scale")).ok())
+                .and_then(|s| s.as_f64())
+                .unwrap_or(1.0);
+            let zoomed = scale > 1.05;
+            // Track visual viewport position for button placement
+            if let Some(ref vv) = vv_obj {
+                let offset_top = js_sys::Reflect::get(vv, &wasm_bindgen::JsValue::from_str("offsetTop"))
+                    .ok().and_then(|v| v.as_f64()).unwrap_or(0.0);
+                let offset_left = js_sys::Reflect::get(vv, &wasm_bindgen::JsValue::from_str("offsetLeft"))
+                    .ok().and_then(|v| v.as_f64()).unwrap_or(0.0);
+                let vp_width = js_sys::Reflect::get(vv, &wasm_bindgen::JsValue::from_str("width"))
+                    .ok().and_then(|v| v.as_f64()).unwrap_or(0.0);
+                state_vp.visual_viewport_rect.set((offset_top, offset_left, vp_width, scale));
+            }
+            let prev = state_vp.viewport_zoomed.get_untracked();
             state_vp.viewport_zoomed.set(zoomed);
             // Toggle body class so CSS can override touch-action on canvas areas
             if let Some(body) = web_sys::window().and_then(|w| w.document()).and_then(|d| d.body()) {
@@ -1008,6 +1016,13 @@ pub fn App() -> impl IntoView {
                     let _ = body.class_list().remove_1("viewport-zoomed");
                 }
             }
+            // When zooming back out, clear any stale drag/interaction state so
+            // a single touch doesn't get "stuck" acting like a pinch.
+            if prev && !zoomed {
+                state_vp.is_dragging.set(false);
+                state_vp.spec_drag_handle.set(None);
+                state_vp.annotation_drag_handle.set(None);
+            }
         });
         let window = web_sys::window().unwrap();
         if let Ok(vv) = js_sys::Reflect::get(
@@ -1015,20 +1030,37 @@ pub fn App() -> impl IntoView {
             &wasm_bindgen::JsValue::from_str("visualViewport"),
         ) {
             if !vv.is_undefined() && !vv.is_null() {
-                let _ = js_sys::Reflect::get(&vv, &wasm_bindgen::JsValue::from_str("addEventListener"))
-                    .ok()
-                    .and_then(|add_fn| {
-                        let add_fn: js_sys::Function = add_fn.dyn_into().ok()?;
-                        let _ = add_fn.call2(
-                            &vv,
-                            &wasm_bindgen::JsValue::from_str("resize"),
-                            cb.as_ref(),
-                        );
-                        Some(())
-                    });
+                // Listen to both "resize" and "scroll" — different platforms fire
+                // different events during pinch-zoom gestures.
+                let add_fn_val = js_sys::Reflect::get(
+                    &vv, &wasm_bindgen::JsValue::from_str("addEventListener"),
+                ).ok();
+                if let Some(add_fn_val) = add_fn_val {
+                    if let Ok(add_fn) = add_fn_val.dyn_into::<js_sys::Function>() {
+                        let _ = add_fn.call2(&vv, &wasm_bindgen::JsValue::from_str("resize"), check_zoom.as_ref());
+                        let _ = add_fn.call2(&vv, &wasm_bindgen::JsValue::from_str("scroll"), check_zoom.as_ref());
+                    }
+                }
             }
         }
-        cb.forget();
+        // Also re-check on every touchend — catches cases where visualViewport
+        // events are delayed or don't fire (e.g. some Android WebViews).
+        {
+            let check_ref = check_zoom.as_ref().clone();
+            let touchend_cb = wasm_bindgen::closure::Closure::<dyn Fn()>::new(move || {
+                // Defer to next frame so the viewport scale has settled
+                let check_ref2 = check_ref.clone();
+                let _ = web_sys::window().unwrap().request_animation_frame(
+                    check_ref2.unchecked_ref(),
+                );
+            });
+            let _ = window.add_event_listener_with_callback(
+                "touchend",
+                touchend_cb.as_ref().unchecked_ref(),
+            );
+            touchend_cb.forget();
+        }
+        check_zoom.forget();
     }
 
     view! {
@@ -1185,38 +1217,48 @@ fn MainArea() -> impl IntoView {
             }}
             <BottomToolbar />
 
-            // Zoom-out button — appears when mobile viewport is pinch-zoomed in
-            {move || state.viewport_zoomed.get().then(|| view! {
-                <button
-                    class="zoom-out-btn"
-                    title="Reset zoom"
-                    on:click=move |_| {
-                        // Reset viewport zoom via visualViewport / meta viewport trick
-                        if let Some(window) = web_sys::window() {
-                            if let Some(doc) = window.document() {
-                                // Temporarily set maximum-scale=1 then restore to reset zoom
-                                if let Some(meta) = doc.query_selector("meta[name=viewport]").ok().flatten() {
-                                    let original = meta.get_attribute("content").unwrap_or_default();
-                                    meta.set_attribute("content", &format!("{}, maximum-scale=1", original)).ok();
-                                    // Restore on next frame so the browser resets zoom
-                                    let meta_clone = meta.clone();
-                                    let orig_clone = original.clone();
-                                    let cb = wasm_bindgen::closure::Closure::once(move || {
-                                        meta_clone.set_attribute("content", &orig_clone).ok();
-                                    });
-                                    window.request_animation_frame(cb.as_ref().unchecked_ref()).ok();
-                                    cb.forget();
+            // Zoom-out button — appears when mobile viewport is pinch-zoomed in.
+            // Uses absolute positioning relative to the visual viewport (not
+            // position:fixed which anchors to the layout viewport and goes off-screen).
+            {move || state.viewport_zoomed.get().then(|| {
+                let btn_size = 44.0_f64;
+                let margin = 10.0_f64;
+                view! {
+                    <button
+                        class="zoom-out-btn"
+                        title="Reset zoom"
+                        style=move || {
+                            let (off_top, off_left, vp_w, _scale) = state.visual_viewport_rect.get();
+                            let top = off_top + margin;
+                            let left = off_left + vp_w - btn_size - margin;
+                            format!("top:{top}px;left:{left}px;")
+                        }
+                        on:click=move |_| {
+                            // Reset viewport zoom via meta viewport trick
+                            if let Some(window) = web_sys::window() {
+                                if let Some(doc) = window.document() {
+                                    if let Some(meta) = doc.query_selector("meta[name=viewport]").ok().flatten() {
+                                        let original = meta.get_attribute("content").unwrap_or_default();
+                                        meta.set_attribute("content", &format!("{}, maximum-scale=1", original)).ok();
+                                        let meta_clone = meta.clone();
+                                        let orig_clone = original.clone();
+                                        let cb = wasm_bindgen::closure::Closure::once(move || {
+                                            meta_clone.set_attribute("content", &orig_clone).ok();
+                                        });
+                                        window.request_animation_frame(cb.as_ref().unchecked_ref()).ok();
+                                        cb.forget();
+                                    }
                                 }
                             }
                         }
-                    }
-                >
-                    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <circle cx="11" cy="11" r="8"/>
-                        <line x1="21" y1="21" x2="16.65" y2="16.65"/>
-                        <line x1="8" y1="11" x2="14" y2="11"/>
-                    </svg>
-                </button>
+                    >
+                        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="11" cy="11" r="8"/>
+                            <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                            <line x1="8" y1="11" x2="14" y2="11"/>
+                        </svg>
+                    </button>
+                }
             })}
 
             // Mic chooser modal (position:fixed, shown when show_mic_chooser is true)

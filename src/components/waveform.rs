@@ -470,6 +470,7 @@ pub fn Waveform() -> impl IntoView {
 
     let on_pointerdown = move |ev: web_sys::PointerEvent| {
         if ev.button() != 0 { return; }
+        if state.viewport_zoomed.get_untracked() { return; }
         if state.canvas_tool.get_untracked() != CanvasTool::Hand { return; }
         // Always start pan drag (bookmark on click is handled in pointerup)
         state.is_dragging.set(true);
@@ -523,6 +524,8 @@ pub fn Waveform() -> impl IntoView {
 
     // ── Touch event handlers (mobile) ──────────────────────────────────────────
     let on_touchstart = move |ev: web_sys::TouchEvent| {
+        if state.viewport_zoomed.get_untracked() { return; }
+
         // Cancel any ongoing inertia animation immediately
         crate::components::inertia::cancel_inertia(inertia_generation);
         velocity_tracker.update_value(|t| t.reset());
@@ -530,9 +533,8 @@ pub fn Waveform() -> impl IntoView {
         let touches = ev.touches();
         let n = touches.length();
 
-        // Two-finger: initialize pinch-to-zoom (disabled when viewport is zoomed)
+        // Two-finger: initialize pinch-to-zoom
         if n == 2 {
-            if state.viewport_zoomed.get_untracked() { return; }
             ev.prevent_default();
             use crate::components::pinch::{two_finger_geometry, PinchState};
             if let Some((mid_x, dist)) = two_finger_geometry(&touches) {
@@ -567,12 +569,13 @@ pub fn Waveform() -> impl IntoView {
     };
 
     let on_touchmove = move |ev: web_sys::TouchEvent| {
+        if state.viewport_zoomed.get_untracked() { return; }
+
         let touches = ev.touches();
         let n = touches.length();
 
-        // Two-finger pinch/pan (disabled when viewport is zoomed)
+        // Two-finger pinch/pan
         if n == 2 {
-            if state.viewport_zoomed.get_untracked() { return; }
             if let Some(ps) = pinch_state.get_untracked() {
                 ev.prevent_default();
                 use crate::components::pinch::{two_finger_geometry, apply_pinch};
@@ -674,6 +677,7 @@ pub fn Waveform() -> impl IntoView {
         >
             <canvas
                 node_ref=canvas_ref
+                style:pointer-events=move || if state.viewport_zoomed.get() { "none" } else { "auto" }
                 on:wheel=on_wheel
                 on:pointerdown=on_pointerdown
                 on:pointermove=on_pointermove

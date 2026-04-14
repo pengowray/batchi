@@ -165,7 +165,7 @@ pub(super) fn ConfigPanel() -> impl IntoView {
             </div>
 
             {move || {
-                if state.is_tauri.get() {
+                if state.is_tauri {
                     view! {
                         <div class="setting-group">
                             <div class="setting-group-title">"Location"</div>
