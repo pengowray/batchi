@@ -165,10 +165,10 @@ pub(super) fn ConfigPanel() -> impl IntoView {
             </div>
 
             {move || {
-                if state.is_mobile.get() {
+                if state.is_tauri.get() {
                     view! {
                         <div class="setting-group">
-                            <div class="setting-group-title">"Recording"</div>
+                            <div class="setting-group-title">"Location"</div>
                             <div class="setting-row">
                                 <span class="setting-label">"Location tags"</span>
                                 <input
@@ -204,9 +204,9 @@ pub(super) fn ConfigPanel() -> impl IntoView {
                                     view! { <span></span> }.into_any()
                                 }
                             }}
-                            <div style="padding: 2px 12px 6px;">
+                            <div style="padding: 4px 12px 8px;">
                                 <button
-                                    class="analysis-full-btn"
+                                    class="analysis-full-btn privacy-settings-btn"
                                     on:click=move |_| { state.show_privacy_settings.set(true); }
                                 >"Privacy settings\u{2026}"</button>
                             </div>
