@@ -246,10 +246,13 @@ pub fn Toolbar() -> impl IntoView {
                     // On Tauri, the backend already saved to disk — just clear unsaved state
                     state.status_message.set(Some("Recording saved".into()));
                 } else {
-                    // On web, trigger browser download
+                    // On web, trigger browser download with preserved GUANO + cue markers
                     let total = f.audio.source.total_samples() as usize;
                     let samples = f.audio.source.read_region(crate::audio::source::ChannelView::MonoMix, 0, total);
-                    microphone::download_wav(&samples, f.audio.sample_rate, &f.name, state.is_tauri, state.is_mobile.get_untracked());
+                    microphone::download_recording_wav(
+                        &samples, f.audio.sample_rate, &f.name,
+                        f.audio.metadata.guano.as_ref(), &f.wav_markers,
+                    );
                 }
                 // Clear unsaved state
                 state.files.update(|files| {

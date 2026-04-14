@@ -579,16 +579,21 @@ pub(crate) fn finalize_recording(params: FinalizeParams, state: AppState) {
         (None, None)
     };
 
-    // Determine mic_name for GUANO: USB gets the device name, internal gets "Internal"
+    // Determine mic_name for GUANO: USB gets the device name, internal gets "Internal".
+    // Web Audio API uses a separate "Audio Device" field instead of "Name".
     let is_usb = conn_type.as_deref().map(|c| c.contains("USB")).unwrap_or(false);
-    let guano_mic_name = if is_usb {
-        mic_name.clone()
+    let is_web_audio = conn_type.as_deref() == Some("Web Audio API");
+    let (guano_mic_name, guano_mic_audio_device) = if is_web_audio {
+        // Web path: device label goes to Oversample|Mic|Audio Device, not Mic|Name
+        (None, mic_name.clone())
+    } else if is_usb {
+        (mic_name.clone(), None)
     } else if conn_type.is_some() {
-        // Non-USB native mic (cpal) — "Internal" unless it has a meaningful device name
-        Some("Internal".to_string())
+        // Non-USB native mic (cpal) — "Internal"
+        (Some("Internal".to_string()), None)
     } else {
-        // Web/browser — use the device label from Web Audio API if available
-        mic_name.clone()
+        // Unknown / no connection type
+        (mic_name.clone(), None)
     };
 
     // Compute pre-roll duration for GUANO metadata
@@ -601,6 +606,7 @@ pub(crate) fn finalize_recording(params: FinalizeParams, state: AppState) {
     let guano_extra = crate::audio::guano::RecordingGuanoExtra {
         mic_interface: conn_type,
         mic_name: guano_mic_name,
+        mic_audio_device: guano_mic_audio_device,
         mic_make: mic_manufacturer,
         loc_position: loc.as_ref().map(|l| (l.latitude, l.longitude)),
         loc_elevation: loc.as_ref().and_then(|l| l.elevation),
@@ -627,14 +633,28 @@ pub(crate) fn finalize_recording(params: FinalizeParams, state: AppState) {
         sample_rate,
         channels: 1,
     });
-    // Compute exact WAV file size: header + audio data + GUANO chunk
+
+    // Build pre-roll cue markers (if applicable)
+    let preroll = state.mic_preroll_samples.get_untracked();
+    let wav_markers: Vec<crate::types::WavMarker> = if preroll > 0 {
+        vec![crate::types::WavMarker {
+            id: 1,
+            position: preroll as u64,
+            label: Some("Recording start".to_string()),
+            note: None,
+        }]
+    } else {
+        Vec::new()
+    };
+
+    // Build the complete WAV bytes to get the exact file size and for hash computation.
+    // Uses the unified encoder so markers + GUANO are always consistent.
+    let wav_bytes = crate::audio::wav_encoder::encode_wav_complete(
+        &samples, sample_rate, Some(&guano), &wav_markers,
+    );
+    let exact_file_size = file_size.unwrap_or(wav_bytes.len());
     let num_samples = samples.len() as u64;
     let audio_data_size = num_samples * (bits_per_sample as u64 / 8);
-    let guano_text = guano.to_text();
-    let guano_text_len = guano_text.len() as u64;
-    // GUANO chunk: 4 ("guan") + 4 (size u32) + text + optional pad byte
-    let guano_chunk_size = 8 + guano_text_len + (guano_text_len % 2);
-    let exact_file_size = file_size.unwrap_or((44 + audio_data_size + guano_chunk_size) as usize);
 
     let audio = AudioData {
         samples,
@@ -721,19 +741,11 @@ pub(crate) fn finalize_recording(params: FinalizeParams, state: AppState) {
         (idx, name)
     };
 
-    // Store pre-roll marker on the file if applicable.
-    // Note: `preroll` is also used later by the WAV save path (cue chunks),
-    // so don't reset the signal until after saving.
-    let preroll = state.mic_preroll_samples.get_untracked();
-    if preroll > 0 {
+    // Store pre-roll markers on the file (already built above).
+    if !wav_markers.is_empty() {
         state.files.update(|files| {
             if let Some(f) = files.get_mut(file_index) {
-                f.wav_markers = vec![crate::types::WavMarker {
-                    id: 1,
-                    position: preroll as u64,
-                    label: Some("Recording start".to_string()),
-                    note: None,
-                }];
+                f.wav_markers = wav_markers;
             }
         });
     }
@@ -769,9 +781,10 @@ pub(crate) fn finalize_recording(params: FinalizeParams, state: AppState) {
         });
     }
 
-    // Set Layer 1 identity with exact WAV file size
+    // Set Layer 1 identity with exact WAV file size.
+    // Pass the complete WAV bytes so hash computation can proceed without a file handle.
     crate::file_identity::start_identity_computation(
-        state, file_index, name_check.clone(), exact_file_size as u64, None,
+        state, file_index, name_check.clone(), exact_file_size as u64, Some(wav_bytes),
         Some(44), Some(audio_data_size), None,
     );
 
@@ -795,26 +808,13 @@ pub(crate) fn finalize_recording(params: FinalizeParams, state: AppState) {
     if needs_save {
         let samples_ref = state.files.get_untracked();
         if let Some(file) = samples_ref.get(file_index) {
-            // Re-use the GUANO text already computed above instead of
-            // rebuilding RecordingGuanoExtra a second time.
-            use crate::audio::wav_encoder::encode_wav;
-            let mut wav_data = encode_wav(&file.audio.samples, file.audio.sample_rate);
-
-            // Insert cue marker for pre-roll boundary if applicable
-            if preroll > 0 {
-                use crate::audio::wav_encoder::{encode_wav_cue_chunks, insert_cue_chunks};
-                use crate::types::WavMarker;
-                let marker = WavMarker {
-                    id: 1,
-                    position: preroll as u64,
-                    label: Some("Recording start".to_string()),
-                    note: None,
-                };
-                let cue_bytes = encode_wav_cue_chunks(&[marker]);
-                insert_cue_chunks(&mut wav_data, &cue_bytes);
-            }
-
-            crate::audio::guano::append_guano_chunk(&mut wav_data, &guano_text);
+            // Build complete WAV with cue markers + GUANO using the unified encoder.
+            let wav_data = crate::audio::wav_encoder::encode_wav_complete(
+                &file.audio.samples,
+                file.audio.sample_rate,
+                file.audio.metadata.guano.as_ref(),
+                &file.wav_markers,
+            );
 
             let filename = name_for_save;
             wasm_bindgen_futures::spawn_local(async move {

@@ -326,6 +326,21 @@ impl ActiveBackend {
         }
     }
 
+    /// Reset DSP state (heterodyne, phase vocoder, listen overlap buffers)
+    /// to prevent stale audio from a previous session leaking into a new one.
+    pub fn clear_dsp_state(&self) {
+        match self {
+            ActiveBackend::Browser => {
+                WEB_RT_HET.with(|h| h.borrow_mut().reset());
+                WEB_LISTEN_STATE.with(|s| s.borrow_mut().clear());
+            }
+            ActiveBackend::Cpal | ActiveBackend::RawUsb => {
+                NATIVE_RT_HET.with(|h| h.borrow_mut().reset());
+                NATIVE_LISTEN_STATE.with(|s| s.borrow_mut().clear());
+            }
+        }
+    }
+
     /// Open the mic. Returns true on success.
     pub async fn open(&self, state: &AppState) -> bool {
         match self {
@@ -808,12 +823,20 @@ async fn open_web(state: &AppState) -> bool {
 
     let sample_rate = ctx.sample_rate() as u32;
     state.mic_sample_rate.set(sample_rate);
-    let dev_name = state.mic_device_info.get_untracked()
-        .map(|info| info.name.clone())
-        .unwrap_or_else(|| "Browser microphone".into());
-    state.mic_device_name.set(Some(dev_name));
+    // Only report a device name when the user explicitly selected a specific
+    // device via the mic chooser (mic_selected_device is Some with a non-empty id).
+    // "Browser default" and direct browser mode leave mic_device_name as None.
+    let has_specific_device = state.mic_selected_device.get_untracked()
+        .as_ref()
+        .is_some_and(|id| !id.is_empty());
+    let dev_name = if has_specific_device {
+        state.mic_device_info.get_untracked().map(|info| info.name.clone())
+    } else {
+        None
+    };
+    state.mic_device_name.set(dev_name);
     state.mic_manufacturer.set(None);
-    state.mic_connection_type.set(None);
+    state.mic_connection_type.set(Some("Web Audio API".to_string()));
     let source = match ctx.create_media_stream_source(&stream) {
         Ok(s) => s,
         Err(e) => {

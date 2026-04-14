@@ -362,7 +362,7 @@ fn WavMarkersList() -> impl IntoView {
                                         class="annotation-tree-item wav-marker-item"
                                         title=format!("Sample {}", pos)
                                         on:click=move |_| {
-                                            // Set playhead to this marker position
+                                            // Jump to this marker position (scroll + playhead)
                                             let sr = state2.files.with_untracked(|files| {
                                                 state2.current_file_index.get_untracked()
                                                     .and_then(|i| files.get(i))
@@ -371,6 +371,7 @@ fn WavMarkersList() -> impl IntoView {
                                             });
                                             let time = pos as f64 / sr as f64;
                                             state2.playhead_time.set(time);
+                                            jump_to_time(state2, time);
                                         }
                                     >
                                         <span class="annotation-icon">{"\u{25C6} "}</span>

@@ -102,10 +102,12 @@ pub fn parse_guano_chunk(chunk_body: &[u8]) -> Option<GuanoMetadata> {
 /// Extra recording metadata for GUANO beyond the core fields.
 #[derive(Default)]
 pub struct RecordingGuanoExtra {
-    /// Mic interface type: "Oboe", "WASAPI", "USB (UAC2)", etc.
+    /// Mic interface type: "Oboe", "WASAPI", "USB (UAC2)", "Web Audio API", etc.
     pub mic_interface: Option<String>,
-    /// Mic name/description: USB device name, "Internal", or web API device label.
+    /// Mic name/description: USB device name, "Internal" (native only, not for web).
     pub mic_name: Option<String>,
+    /// Web Audio API device label (only set when user selected a device via "ask" mode).
+    pub mic_audio_device: Option<String>,
     /// USB mic manufacturer (for GUANO Make field).
     pub mic_make: Option<String>,
     /// GPS location: (latitude, longitude) in WGS84 decimal degrees.
@@ -217,6 +219,12 @@ pub fn build_recording_guano(
     if let Some(ref name) = extra.mic_name {
         if !name.is_empty() {
             g.add("Oversample|Mic|Name", name);
+        }
+    }
+    // Web Audio API device label (separate from native Mic|Name)
+    if let Some(ref device) = extra.mic_audio_device {
+        if !device.is_empty() {
+            g.add("Oversample|Mic|Audio Device", device);
         }
     }
 

@@ -138,35 +138,38 @@ pub fn encode_wav(samples: &[f32], sample_rate: u32) -> Vec<u8> {
     buf
 }
 
-/// Encode WAV with GUANO metadata for a new recording.
-pub(crate) fn encode_wav_with_guano(
+/// Encode a complete WAV file from samples, GUANO metadata, and WAV markers.
+/// This is the single source of truth for building recording WAVs — ensures
+/// the downloaded/saved file matches the metadata shown in the UI.
+pub fn encode_wav_complete(
     samples: &[f32],
     sample_rate: u32,
-    filename: &str,
-    is_tauri: bool,
-    is_mobile: bool,
-    extra: &crate::audio::guano::RecordingGuanoExtra,
+    guano: Option<&crate::audio::guano::GuanoMetadata>,
+    markers: &[WavMarker],
 ) -> Vec<u8> {
-    use crate::audio::guano;
     let mut wav_data = encode_wav(samples, sample_rate);
-    let duration_secs = samples.len() as f64 / sample_rate as f64;
 
-    let guano_meta = guano::build_recording_guano(
-        sample_rate, duration_secs, filename, is_tauri, is_mobile, extra,
-        &crate::format_time::recording_timestamp(duration_secs),
-        env!("CARGO_PKG_VERSION"),
-    );
-    guano::append_guano_chunk(&mut wav_data, &guano_meta.to_text());
+    // Insert cue markers (before GUANO)
+    if !markers.is_empty() {
+        let cue_bytes = encode_wav_cue_chunks(markers);
+        insert_cue_chunks(&mut wav_data, &cue_bytes);
+    }
+
+    // Append GUANO metadata
+    if let Some(g) = guano {
+        let text = g.to_text();
+        if !text.is_empty() {
+            crate::audio::guano::append_guano_chunk(&mut wav_data, &text);
+        }
+    }
+
     wav_data
 }
 
-/// Trigger a browser download of WAV data.
-pub fn download_wav(samples: &[f32], sample_rate: u32, filename: &str, is_tauri: bool, is_mobile: bool) {
-    let wav_data = encode_wav_with_guano(samples, sample_rate, filename, is_tauri, is_mobile,
-        &Default::default());
-
+/// Trigger a browser download of raw WAV bytes.
+pub(crate) fn trigger_browser_wav_download(wav_data: &[u8], filename: &str) {
     let array = js_sys::Uint8Array::new_with_length(wav_data.len() as u32);
-    array.copy_from(&wav_data);
+    array.copy_from(wav_data);
 
     let parts = js_sys::Array::new();
     parts.push(&array.buffer());
@@ -199,6 +202,18 @@ pub fn download_wav(samples: &[f32], sample_rate: u32, filename: &str, is_tauri:
     a.click();
     document.body().unwrap().remove_child(&a).ok();
     web_sys::Url::revoke_object_url(&url).ok();
+}
+
+/// Build and download a recording WAV preserving all metadata (GUANO + cue markers).
+pub fn download_recording_wav(
+    samples: &[f32],
+    sample_rate: u32,
+    filename: &str,
+    guano: Option<&crate::audio::guano::GuanoMetadata>,
+    markers: &[WavMarker],
+) {
+    let wav_data = encode_wav_complete(samples, sample_rate, guano, markers);
+    trigger_browser_wav_download(&wav_data, filename);
 }
 
 /// Save WAV bytes directly to shared storage (Recordings/Oversample)

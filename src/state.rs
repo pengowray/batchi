@@ -1029,6 +1029,9 @@ pub struct AppState {
     /// Number of pre-roll samples captured from the listen buffer when the user
     /// long-pressed record.  Zero = no pre-roll.  Used to write a WAV cue marker.
     pub mic_preroll_samples: RwSignal<usize>,
+    /// Wall-clock time (Date.now()) when the long-press gesture started.
+    /// Used to compensate for audio accumulated during the gesture hold period.
+    pub mic_gesture_start_ms: RwSignal<Option<f64>>,
     /// Wall-clock time (Date.now()) when recording started, for timer display.
     pub mic_recording_start_time: RwSignal<Option<f64>>,
     /// Wrapping counter incremented by setInterval(100ms) while recording.
@@ -1483,6 +1486,7 @@ impl AppState {
             mic_live_file_idx: RwSignal::new(None),
             mic_processing_gen: RwSignal::new(0),
             mic_preroll_samples: RwSignal::new(0),
+            mic_gesture_start_ms: RwSignal::new(None),
             mic_recording_start_time: RwSignal::new(None),
             mic_timer_tick: RwSignal::new(0),
             mic_device_name: RwSignal::new(None),

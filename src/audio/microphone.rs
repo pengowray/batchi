@@ -525,11 +525,14 @@ async fn do_start_listening(state: &AppState, backend: ActiveBackend) {
     // (not a zoomed range from a previously-open high-SR file).
     state.min_display_freq.set(None);
     state.max_display_freq.set(None);
+    // Clear buffer and DSP state BEFORE enabling listening to prevent stale
+    // audio from a previous listen session leaking into the new one.
+    backend.clear_buffer();
+    backend.clear_dsp_state();
     // Set the frontend signal early so the chunk handler accepts data
     // as soon as the native side starts streaming.
     state.mic_listening.set(true);
     backend.set_listening(state, true).await;
-    backend.clear_buffer();
     let sr = state.mic_sample_rate.get_untracked();
     // Clear tile caches so previous file's spectrogram doesn't flash
     crate::canvas::tile_cache::clear_all_caches();
@@ -642,12 +645,25 @@ pub async fn toggle_record_with_preroll(state: &AppState) {
         return;
     }
 
-    // Capture the current listen buffer length as pre-roll
-    let preroll = crate::audio::mic_backend::with_live_samples(state.is_tauri, |s| s.len());
+    // Capture the current listen buffer length as pre-roll.
+    // Compensate for audio accumulated during the hold gesture: the user's intent
+    // is to capture the buffer state from when they *started* pressing, not when
+    // the 400ms timeout fired.
+    let raw_preroll = crate::audio::mic_backend::with_live_samples(state.is_tauri, |s| s.len());
+    let gesture_start = state.mic_gesture_start_ms.get_untracked();
+    state.mic_gesture_start_ms.set(None); // consume
+    let sample_rate = state.mic_sample_rate.get_untracked();
+    let preroll = if let Some(start_ms) = gesture_start {
+        let gesture_ms = (js_sys::Date::now() - start_ms).max(0.0);
+        let gesture_samples = ((gesture_ms / 1000.0) * sample_rate as f64).round() as usize;
+        raw_preroll.saturating_sub(gesture_samples)
+    } else {
+        raw_preroll
+    };
     state.mic_preroll_samples.set(preroll);
 
     if let Some(backend) = resolve_active_backend(state) {
-        log::info!("Long-press record: capturing {} pre-roll samples", preroll);
+        log::info!("Long-press record: capturing {} pre-roll samples (raw={}, gesture compensated)", preroll, raw_preroll);
         do_start_recording(state, backend).await;
     }
 }
@@ -715,7 +731,7 @@ pub fn stop_all(state: &AppState) {
 }
 
 // Re-export from split modules
-pub use crate::audio::wav_encoder::{encode_wav, download_wav};
+pub use crate::audio::wav_encoder::{encode_wav, download_recording_wav};
 pub(crate) use crate::audio::live_recording::{
     start_live_recording, start_live_listening,
     cleanup_listen_file, convert_listen_to_recording,

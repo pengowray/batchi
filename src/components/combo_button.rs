@@ -58,18 +58,24 @@ pub fn ComboButton(
     let hold_timer: RwSignal<Option<i32>> = RwSignal::new(None);
     // Tracks whether the hold timer already fired (long press opened the menu)
     let hold_fired: RwSignal<bool> = RwSignal::new(false);
+    // Timestamp when the hold gesture started (for long-press duration compensation)
+    let hold_start_ms: RwSignal<f64> = RwSignal::new(0.0);
     // Initial touch position for movement threshold
     let touch_start_xy: RwSignal<(f64, f64)> = RwSignal::new((0.0, 0.0));
 
     let start_hold = move || {
         cancel_hold_inner(hold_timer);
         hold_fired.set(false);
+        hold_start_ms.set(js_sys::Date::now());
         let window = web_sys::window().unwrap();
         let toggle = toggle_menu;
         let long_press = left_long_press;
         let cb = Closure::wrap(Box::new(move || {
             hold_fired.set(true);
             if let Some(lp) = long_press {
+                // Store gesture start time so the callback can compensate for hold duration
+                let start = hold_start_ms.get_untracked();
+                state.mic_gesture_start_ms.set(Some(start));
                 let me = web_sys::MouseEvent::new("longpress").unwrap();
                 lp.run(me);
             } else {
