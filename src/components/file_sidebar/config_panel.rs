@@ -162,6 +162,25 @@ pub(super) fn ConfigPanel() -> impl IntoView {
                         }).collect::<Vec<_>>()}
                     </select>
                 </div>
+                <div class="setting-row">
+                    <span class="setting-label">"Status bar"</span>
+                    <input
+                        type="checkbox"
+                        class="setting-checkbox"
+                        prop:checked=move || state.show_status_bar.get()
+                        on:change=move |ev: web_sys::Event| {
+                            let target = ev.target().unwrap();
+                            let input: web_sys::HtmlInputElement = target.unchecked_into();
+                            let show = input.checked();
+                            state.show_status_bar.set(show);
+                            if let Some(ls) = web_sys::window()
+                                .and_then(|w| w.local_storage().ok().flatten())
+                            {
+                                let _ = ls.set_item("oversample_show_status_bar", if show { "true" } else { "false" });
+                            }
+                        }
+                    />
+                </div>
             </div>
 
             {move || {

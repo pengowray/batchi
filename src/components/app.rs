@@ -1195,7 +1195,7 @@ fn MainArea() -> impl IntoView {
                         // Bat book strip (between main view and bottom toolbar)
                         {move || state.bat_book_open.get().then(|| view! { <BatBookStrip /> })}
 
-                        <AnalysisPanel />
+                        {move || state.show_status_bar.get().then(|| view! { <AnalysisPanel /> })}
                     }.into_any()
                 } else {
                     let empty_msg = if state.is_mobile.get() {

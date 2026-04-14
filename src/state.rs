@@ -1342,6 +1342,9 @@ pub struct AppState {
     /// Frequency shield/flag color bar style (persisted to localStorage).
     pub shield_style: RwSignal<ShieldStyle>,
 
+    /// Whether the analysis/status bar is visible (persisted to localStorage).
+    pub show_status_bar: RwSignal<bool>,
+
     // Layered frequency focus stack
     pub focus_stack: RwSignal<crate::focus_stack::FocusStack>,
 
@@ -1746,6 +1749,13 @@ impl AppState {
                     .and_then(|ls| ls.get_item("oversample_shield_style").ok().flatten())
                     .map(|v| ShieldStyle::from_key(&v))
                     .unwrap_or_default()
+            }),
+            show_status_bar: RwSignal::new({
+                web_sys::window()
+                    .and_then(|w| w.local_storage().ok().flatten())
+                    .and_then(|ls| ls.get_item("oversample_show_status_bar").ok().flatten())
+                    .map(|v| v == "true")
+                    .unwrap_or(false)
             }),
             focus_stack: RwSignal::new(crate::focus_stack::FocusStack::new()),
             clean_view: RwSignal::new(false),
