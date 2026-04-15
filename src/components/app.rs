@@ -1,7 +1,7 @@
 use leptos::prelude::*;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
-use crate::state::{AppState, ChromaColormap, ChromaRange, DisplayFilterMode, FftMode, FileSettings, FlowColorScheme, GainMode, LayerPanel, MainView, MicBackend, MicStrategy, MicAcquisitionState, PlayStartMode, PlaybackMode, SpectrogramDisplay};
+use crate::state::{AppState, ChromaColormap, ChromaRange, DisplayFilterMode, FftMode, FileSettings, FlowColorScheme, GainMode, LayerPanel, MainView, MicBackend, MicStrategy, MicAcquisitionState, PlayStartMode, PlaybackMode, SpectrogramDisplay, WaveformView};
 use crate::audio::playback;
 use crate::audio::microphone;
 use crate::components::file_sidebar::FileSidebar;
@@ -22,6 +22,7 @@ use crate::components::bat_book_strip::BatBookStrip;
 use crate::components::bat_book_ref_panel::BatBookRefPanel;
 use crate::components::display_filter_button::DspFilterRow;
 use crate::components::selection_combo_button::SelectionComboButton;
+use crate::components::overflow_menu::CanvasOverflowMenus;
 use crate::viewport;
 
 #[component]
@@ -1185,6 +1186,7 @@ fn MainArea() -> impl IntoView {
                                 <BookmarkPopup />
                                 <ViewAndDspButtons />
                                 <SelectionComboButton />
+                                <CanvasOverflowMenus />
                                 <BatBookTab />
                             </div>
 
@@ -1473,6 +1475,26 @@ fn MainViewButton() -> impl IntoView {
                     </button>
                 }
             }).collect_view()}
+
+            // Waveform sub-view (when Waveform is the active main view)
+            {move || (state.main_view.get() == MainView::Waveform).then(|| {
+                view! {
+                    <hr />
+                    <div class="layer-panel-title">"Waveform Mode"</div>
+                    {WaveformView::ALL.iter().map(|&wv| {
+                        view! {
+                            <button
+                                class=move || layer_opt_class(state.waveform_view.get() == wv)
+                                on:click=move |_: web_sys::MouseEvent| {
+                                    state.waveform_view.set(wv);
+                                }
+                            >
+                                {wv.label()}
+                            </button>
+                        }
+                    }).collect_view()}
+                }
+            })}
 
             // Reassignment checkbox (spectrogram views)
             {move || matches!(state.main_view.get(), MainView::Spectrogram | MainView::XformedSpec).then(|| {

@@ -787,27 +787,6 @@ pub fn Waveform() -> impl IntoView {
                 on:touchmove=on_touchmove
                 on:touchend=on_touchend
             />
-            // Waveform view mode selector (top-right overlay)
-            <select
-                class="waveform-view-select"
-                style="position:absolute; top:4px; right:4px; pointer-events:auto; font-size:11px; padding:2px 4px; background:#222; color:#aaa; border:1px solid #444; border-radius:3px; cursor:pointer; opacity:0.7; z-index:2;"
-                style:display=move || if state.clean_view.get() { "none" } else { "" }
-                on:change=move |ev: web_sys::Event| {
-                    let target = ev.target().unwrap();
-                    let select: web_sys::HtmlSelectElement = target.unchecked_into();
-                    let val = select.value();
-                    let wv = match val.as_str() {
-                        "freq" => WaveformView::Frequency,
-                        "triple" => WaveformView::Triple,
-                        _ => WaveformView::Simple,
-                    };
-                    state.waveform_view.set(wv);
-                }
-            >
-                <option value="simple" selected=move || state.waveform_view.get() == WaveformView::Simple>"Simple"</option>
-                <option value="freq" selected=move || state.waveform_view.get() == WaveformView::Frequency>"Frequency"</option>
-                <option value="triple" selected=move || state.waveform_view.get() == WaveformView::Triple>"Triple"</option>
-            </select>
             // DOM playhead overlay — decoupled from heavy canvas redraws
             <div
                 class="playhead-line"
