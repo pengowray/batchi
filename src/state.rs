@@ -467,14 +467,14 @@ pub enum FftMode {
 }
 
 impl FftMode {
-    /// Per-LOD FFT sizes for each adaptive mode. Index = LOD level (0–5).
-    const ADAPTIVE_S: [usize; 6] = [1024, 1024, 512, 512, 256, 128];
-    const ADAPTIVE_M: [usize; 6] = [1024, 1024, 1024, 512, 512, 256];
-    const ADAPTIVE_L: [usize; 6] = [2048, 2048, 2048, 1024, 512, 512];
+    /// Per-LOD FFT sizes for each adaptive mode. Index = LOD level (0–6).
+    const ADAPTIVE_S: [usize; 7] = [1024, 1024, 512, 512, 256, 128, 64];
+    const ADAPTIVE_M: [usize; 7] = [1024, 1024, 1024, 512, 512, 256, 128];
+    const ADAPTIVE_L: [usize; 7] = [2048, 2048, 2048, 1024, 512, 512, 256];
 
-    /// The actual FFT size to use for a given LOD level (0–5).
+    /// The actual FFT size to use for a given LOD level (0–6).
     pub fn fft_for_lod(&self, lod: u8) -> usize {
-        let idx = (lod as usize).min(5);
+        let idx = (lod as usize).min(6);
         match self {
             FftMode::Single(sz) => *sz,
             FftMode::AdaptiveS => Self::ADAPTIVE_S[idx],

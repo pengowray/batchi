@@ -1028,8 +1028,15 @@ pub fn Spectrogram() -> impl IntoView {
             return;
         }
 
+        // When very zoomed in (viewport < 0.5s), follow every frame to keep
+        // the playhead pinned at the FOLLOW_CURSOR_FRACTION position — the edge
+        // trigger would fire too frequently and look jarring.
+        if visible_time < viewport::FOLLOW_EXACT_THRESHOLD_SECS {
+            let target_scroll = playhead - visible_time * viewport::FOLLOW_CURSOR_FRACTION;
+            state.scroll_offset.set(viewport::clamp_scroll_for_mode(target_scroll, duration, visible_time, from_here_mode));
+        }
         // Normal follow: scroll when playhead nears the edge
-        if playhead_rel > visible_time * viewport::FOLLOW_CURSOR_EDGE_FRACTION || playhead_rel < 0.0 {
+        else if playhead_rel > visible_time * viewport::FOLLOW_CURSOR_EDGE_FRACTION || playhead_rel < 0.0 {
             let target_scroll = playhead - visible_time * viewport::FOLLOW_CURSOR_FRACTION;
             state.scroll_offset.set(viewport::clamp_scroll_for_mode(target_scroll, duration, visible_time, from_here_mode));
         }

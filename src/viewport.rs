@@ -3,6 +3,15 @@ pub const PLAY_FROM_HERE_FRACTION: f64 = 0.10;
 pub const FOLLOW_CURSOR_FRACTION: f64 = 0.20;
 pub const FOLLOW_CURSOR_EDGE_FRACTION: f64 = 0.80;
 
+/// Maximum zoom level (pixels per baseline column).
+/// At zoom=512 the waveform shows ~1 pixel per sample; 2000 gives headroom.
+pub const MAX_ZOOM: f64 = 2000.0;
+pub const MIN_ZOOM: f64 = 0.02;
+
+/// When the visible window is shorter than this (seconds), follow the cursor
+/// every frame instead of waiting for the 80% edge trigger.
+pub const FOLLOW_EXACT_THRESHOLD_SECS: f64 = 0.5;
+
 pub fn uses_from_here_bounds(enabled: bool) -> bool {
     enabled
 }
@@ -93,7 +102,7 @@ pub fn fit_zoom(canvas_width: f64, time_resolution: f64, duration: f64) -> f64 {
     if canvas_width <= 0.0 || time_resolution <= 0.0 || duration <= 0.0 {
         return 1.0;
     }
-    (canvas_width * time_resolution / duration).clamp(0.02, 400.0)
+    (canvas_width * time_resolution / duration).clamp(MIN_ZOOM, MAX_ZOOM)
 }
 
 pub fn data_region_px(

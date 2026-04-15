@@ -167,7 +167,7 @@ pub struct LodConfig {
     pub hop_size: usize,
 }
 
-pub const NUM_LODS: usize = 6;
+pub const NUM_LODS: usize = 7;
 
 /// The LOD level used as the spatial coordinate baseline (hop=512).
 /// All scroll positions, total_cols, etc. are expressed in this LOD's column space.
@@ -183,12 +183,14 @@ pub const LOD_CONFIGS: [LodConfig; NUM_LODS] = [
     LodConfig { fft_size: 256, hop_size: 128 },  // LOD 3 — zoomed in
     LodConfig { fft_size: 256, hop_size: 32 },   // LOD 4 — deep zoom
     LodConfig { fft_size: 256, hop_size: 8 },    // LOD 5 — extreme zoom
+    LodConfig { fft_size: 256, hop_size: 2 },    // LOD 6 — sample-level zoom
 ];
 
 /// Select the ideal LOD level for the current zoom.
 /// `zoom` is pixels per baseline (LOD2) column.
 pub fn select_lod(zoom: f64) -> u8 {
-    if zoom >= 32.0 { 5 }
+    if zoom >= 128.0 { 6 }
+    else if zoom >= 32.0 { 5 }
     else if zoom >= 8.0 { 4 }
     else if zoom >= 2.0 { 3 }
     else if zoom >= 0.5 { 2 }
@@ -197,7 +199,7 @@ pub fn select_lod(zoom: f64) -> u8 {
 }
 
 /// Ratio of baseline (LOD2) columns to LOD_L columns (how many LOD_L cols per baseline col).
-/// LOD0: 0.0625, LOD1: 0.25, LOD2: 1.0, LOD3: 4.0, LOD4: 16.0, LOD5: 64.0
+/// LOD0: 0.0625, LOD1: 0.25, LOD2: 1.0, LOD3: 4.0, LOD4: 16.0, LOD5: 64.0, LOD6: 256.0
 pub fn lod_ratio(lod: u8) -> f64 {
     BASELINE_HOP as f64 / LOD_CONFIGS[lod as usize].hop_size as f64
 }

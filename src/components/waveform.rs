@@ -430,7 +430,10 @@ pub fn Waveform() -> impl IntoView {
             return;
         }
 
-        if playhead_rel > visible_time * viewport::FOLLOW_CURSOR_EDGE_FRACTION || playhead_rel < 0.0 {
+        if visible_time < viewport::FOLLOW_EXACT_THRESHOLD_SECS {
+            let target_scroll = playhead - visible_time * viewport::FOLLOW_CURSOR_FRACTION;
+            state.scroll_offset.set(viewport::clamp_scroll_for_mode(target_scroll, duration, visible_time, from_here_mode));
+        } else if playhead_rel > visible_time * viewport::FOLLOW_CURSOR_EDGE_FRACTION || playhead_rel < 0.0 {
             let target_scroll = playhead - visible_time * viewport::FOLLOW_CURSOR_FRACTION;
             state.scroll_offset.set(viewport::clamp_scroll_for_mode(target_scroll, duration, visible_time, from_here_mode));
         }
@@ -441,7 +444,7 @@ pub fn Waveform() -> impl IntoView {
         if ev.ctrl_key() {
             let delta = if ev.delta_y() > 0.0 { 0.9 } else { 1.1 };
             state.zoom_level.update(|z| {
-                *z = (*z * delta).clamp(0.02, 100.0);
+                *z = (*z * delta).clamp(viewport::MIN_ZOOM, viewport::MAX_ZOOM);
             });
         } else {
             let delta = (ev.delta_y() + ev.delta_x()) * 0.001;
