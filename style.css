@@ -3330,7 +3330,7 @@ body.sidebar-resizing {
     position: relative;
 }
 
-.toolbar-overflow-btn {
+button.toolbar-overflow-btn {
     width: 28px;
     height: 28px;
     background: #1a1a1a;
