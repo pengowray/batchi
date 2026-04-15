@@ -138,6 +138,10 @@ pub fn Waveform() -> impl IntoView {
         let _rsidebar = state.right_sidebar_collapsed.get();
         let _rsidebar_width = state.right_sidebar_width.get();
         let clean_view = state.clean_view.get();
+        // Read band_split unconditionally so the Effect always subscribes to it.
+        // If read only inside the match arms, the Effect may miss updates when
+        // switching from Simple (which never reads it) to Frequency/Triple.
+        let band_data = band_split.get();
 
         let Some(canvas_el) = canvas_ref.get() else { return };
         let canvas: &HtmlCanvasElement = canvas_el.as_ref();
@@ -378,7 +382,7 @@ pub fn Waveform() -> impl IntoView {
                         );
                     }
                     WaveformView::Frequency => {
-                        if let Some((ref _below, ref selected, ref _above)) = band_split.get().as_ref() {
+                        if let Some((ref _below, ref selected, ref _above)) = band_data.as_ref() {
                             let selected_region = window_band(selected);
                             waveform_renderer::draw_waveform_freq(
                                 &ctx,
@@ -405,7 +409,7 @@ pub fn Waveform() -> impl IntoView {
                         }
                     }
                     WaveformView::Triple => {
-                        if let Some((ref below, ref selected, ref above)) = band_split.get().as_ref() {
+                        if let Some((ref below, ref selected, ref above)) = band_data.as_ref() {
                             let below_region = window_band(below);
                             let selected_region = window_band(selected);
                             let above_region = window_band(above);
