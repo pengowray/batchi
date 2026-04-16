@@ -2414,9 +2414,9 @@ body.sidebar-resizing {
 
 .combo-btn-arrow {
     position: absolute;
-    right: 7px;
-    bottom: 7px;
-    font-size: 9px;
+    right: 1px;
+    bottom: -1px;
+    font-size: 10px;
     opacity: 0.55;
     line-height: 1;
 }
@@ -2542,9 +2542,9 @@ body.sidebar-resizing {
 }
 
 .bottom-toolbar.mobile .combo-btn-arrow {
-    right: 8px;
-    bottom: 9px;
-    font-size: 10px;
+    right: 2px;
+    bottom: 0px;
+    font-size: 12px;
 }
 
 /* Hide separators on mobile — grid handles row layout */

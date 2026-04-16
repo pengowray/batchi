@@ -231,7 +231,7 @@ pub fn ComboButton(
                     }}</span>
                     <span class="layer-btn-value">{move || right_value.get()}</span>
                 </span>
-                <span class="combo-btn-arrow">{"\u{25BE}"}</span>
+                <span class="combo-btn-arrow">{"\u{25E2}"}</span>
             </button>
 
             // ── Dropdown panel (always in DOM, toggled via display) ──
