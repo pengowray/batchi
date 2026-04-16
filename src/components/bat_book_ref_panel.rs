@@ -2,6 +2,7 @@ use leptos::prelude::*;
 use wasm_bindgen::JsCast;
 use crate::state::AppState;
 use crate::bat_book::data::get_manifest;
+use crate::bat_book::auto_resolve;
 
 /// Floating reference panel on the right side of the main view.
 /// Shows info about the selected bat family/families.
@@ -24,9 +25,19 @@ pub fn BatBookRefPanel() -> impl IntoView {
         }
         let region = state.bat_book_region.get();
         let manifest = get_manifest(region);
-        manifest.entries.into_iter()
+        let mut entries: Vec<_> = manifest.entries.into_iter()
             .filter(|e| sel_ids.iter().any(|id| id == e.id))
-            .collect::<Vec<_>>()
+            .collect();
+        // Include auto-matched entries not found in the current manifest
+        // (out-of-range species from a different book)
+        for id in &sel_ids {
+            if !entries.iter().any(|e| e.id == id.as_str()) {
+                if let Some(entry) = auto_resolve::find_entry_any_book(id) {
+                    entries.push(entry);
+                }
+            }
+        }
+        entries
     });
 
     // Reset focused_index when selection changes
@@ -84,12 +95,17 @@ pub fn BatBookRefPanel() -> impl IntoView {
 
             let last_id = &ids[ids.len() - 1];
             let cur_idx = manifest.entries.iter().position(|e| e.id == last_id.as_str());
-            let Some(cur) = cur_idx else { return };
 
-            let next = if delta > 0.0 {
-                if cur + 1 < manifest.entries.len() { cur + 1 } else { return }
+            let next = if let Some(cur) = cur_idx {
+                // Currently on a manifest entry — navigate normally
+                if delta > 0.0 {
+                    if cur + 1 < manifest.entries.len() { cur + 1 } else { return }
+                } else {
+                    if cur > 0 { cur - 1 } else { return }
+                }
             } else {
-                if cur > 0 { cur - 1 } else { return }
+                // Out-of-range species (not in manifest) — scroll into the book
+                if delta > 0.0 { 0 } else { manifest.entries.len() - 1 }
             };
 
             let new_id = manifest.entries[next].id.to_string();
@@ -157,13 +173,20 @@ pub fn BatBookRefPanel() -> impl IntoView {
                             let ids = state.bat_book_selected_ids.get();
                             let pos = ids.first()
                                 .and_then(|id| manifest.entries.iter().position(|e| e.id == id.as_str()))
-                                .map(|i| i + 1)
-                                .unwrap_or(0);
-                            view! {
-                                {region.short_label()}
-                                " "
-                                <span class="ref-panel-count">{format!("{pos} / {total}")}</span>
-                            }.into_any()
+                                .map(|i| i + 1);
+                            if let Some(pos) = pos {
+                                // Species is in the current region's book
+                                view! {
+                                    {region.short_label()}
+                                    " "
+                                    <span class="ref-panel-count">{format!("{pos} / {total}")}</span>
+                                }.into_any()
+                            } else {
+                                // Out-of-range species — don't show position
+                                view! {
+                                    {region.short_label()}
+                                }.into_any()
+                            }
                         } else {
                             view! { <span></span> }.into_any()
                         }
