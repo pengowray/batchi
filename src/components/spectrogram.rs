@@ -126,6 +126,7 @@ pub fn Spectrogram() -> impl IntoView {
         let filter_enabled = state.filter_enabled.get();
         let spec_hover = state.spec_hover_handle.get();
         let spec_drag = state.spec_drag_handle.get();
+        let pointer_down = state.pointer_is_down.get();
         let ff_lo = state.ff_freq_lo.get();
         let ff_hi = state.ff_freq_hi.get();
         let het_freq_auto = state.het_freq_auto.get();
@@ -796,6 +797,8 @@ pub fn Spectrogram() -> impl IntoView {
                     spec_hover, spec_drag,
                     state.is_mobile.get_untracked(),
                     active_focus == Some(crate::state::ActiveFocus::FrequencyFocus),
+                    pointer_down,
+                    mouse_freq,
                 );
             }
 

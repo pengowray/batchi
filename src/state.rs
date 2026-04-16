@@ -1002,6 +1002,8 @@ pub struct AppState {
     pub zc_factor: RwSignal<f64>,
     pub het_interacting: RwSignal<bool>,
     pub is_dragging: RwSignal<bool>,
+    /// True while any pointer button is held down on the spectrogram canvas.
+    pub pointer_is_down: RwSignal<bool>,
     pub spectrogram_display: RwSignal<SpectrogramDisplay>,
     pub flow_enabled: RwSignal<bool>,
     pub right_sidebar_tab: RwSignal<RightSidebarTab>,
@@ -1549,6 +1551,7 @@ impl AppState {
             zc_factor: RwSignal::new(8.0),
             het_interacting: RwSignal::new(false),
             is_dragging: RwSignal::new(false),
+            pointer_is_down: RwSignal::new(false),
             spectrogram_display: RwSignal::new(SpectrogramDisplay::FlowOptical),
             flow_enabled: RwSignal::new(false),
             right_sidebar_tab: RwSignal::new(RightSidebarTab::Metadata),

@@ -434,6 +434,8 @@ pub fn on_pointerdown(
     // the user can zoom back out via native pinch.
     if state.viewport_zoomed.get_untracked() { return; }
 
+    state.pointer_is_down.set(true);
+
     // Check for annotation resize handle drag first (selected annotations take
     // priority over FF/HET handles when they overlap)
     if let Some((ref ann_id, handle_pos)) = state.annotation_hover_handle.get_untracked() {
@@ -961,6 +963,7 @@ pub fn on_pointerleave(
         return;
     }
 
+    state.pointer_is_down.set(false);
     state.mouse_freq.set(None);
     state.mouse_in_label_area.set(false);
     state.mouse_in_time_axis.set(false);
@@ -978,6 +981,7 @@ pub fn on_pointerup(
     canvas_ref: &NodeRef<leptos::html::Canvas>,
     state: AppState,
 ) {
+    state.pointer_is_down.set(false);
     if !state.is_dragging.get_untracked() { return; }
 
     // End HET/FF handle drag

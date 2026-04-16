@@ -512,7 +512,8 @@ pub fn draw_freq_markers(
 }
 
 /// Draw the Frequency Focus overlay: dim outside the FF range, amber edge lines with drag handles.
-/// Handles are diamond-shaped and centered horizontally. They appear on hover (or always on mobile).
+/// Handles are diamond-shaped and centered horizontally. They appear on hover, pointer-down,
+/// or always on mobile.
 pub fn draw_ff_overlay(
     ctx: &CanvasRenderingContext2d,
     ff_lo: f64,
@@ -525,6 +526,8 @@ pub fn draw_ff_overlay(
     drag_handle: Option<SpectrogramHandle>,
     is_mobile: bool,
     ff_focused: bool,
+    pointer_down: bool,
+    mouse_freq: Option<f64>,
 ) {
     if ff_hi <= ff_lo { return; }
 
@@ -549,6 +552,9 @@ pub fn draw_ff_overlay(
 
     let center_x = canvas_width / 2.0;
     let handle_zone_half = crate::canvas::hit_test::FF_HANDLE_HALF_WIDTH;
+
+    // Mouse Y position in canvas pixels (for proximity checks)
+    let mouse_y = mouse_freq.map(|f| freq_to_y(f.clamp(min_freq, max_freq), min_freq, max_freq, canvas_height));
 
     // Edge lines (full width) + centered diamond drag handles
     // Focused: dotted yellow lines; Unfocused: solid muted blue-gray lines
@@ -579,8 +585,9 @@ pub fn draw_ff_overlay(
         // Reset line dash
         let _ = ctx.set_line_dash(&js_sys::Array::new());
 
-        // Diamond handle at center — visible only when FF is focused
-        let show_handle = ff_focused && (active || any_ff_active || is_mobile);
+        // Diamond handle at center — visible when FF is focused and
+        // hovering/dragging any FF handle, pointer is held down, or on mobile
+        let show_handle = ff_focused && (active || any_ff_active || is_mobile || pointer_down);
         if show_handle {
             let handle_size = if active { 8.0 } else if is_mobile { 6.0 } else { 5.0 };
             let handle_alpha = if active { 0.9 } else if is_mobile { 0.5 } else { 0.45 };
@@ -605,9 +612,12 @@ pub fn draw_ff_overlay(
     }
 
     // Middle handle (diamond at midpoint, centered)
+    // Only shown when mouse is within ~100px of the midpoint (or mobile/actively dragging)
     let mid_y = (y_top + y_bottom) / 2.0;
     let mid_active = is_active(SpectrogramHandle::FfMiddle);
-    let show_mid = ff_focused && (mid_active || any_ff_active || is_mobile);
+    let mid_near = mouse_y.map_or(false, |my| (my - mid_y).abs() < 100.0);
+    let show_mid = ff_focused && (mid_active || is_mobile
+        || ((any_ff_active || pointer_down) && mid_near));
     if show_mid {
         let mid_size = if mid_active { 7.0 } else if is_mobile { 5.0 } else { 4.0 };
         let mid_alpha = if mid_active { 0.9 } else if is_mobile { 0.4 } else { 0.35 };
@@ -621,20 +631,32 @@ pub fn draw_ff_overlay(
         ctx.fill();
     }
 
-    // FF range labels (only when FF is focused and handles are active)
-    if ff_focused && (hover_handle.is_some() || drag_handle.is_some()) {
-        ctx.set_fill_style_str("rgba(255, 180, 60, 0.8)");
+    // FF range labels — only when hovering/dragging FF handles specifically
+    let ff_handle_active = any_ff_active
+        || matches!(drag_handle, Some(SpectrogramHandle::FfUpper | SpectrogramHandle::FfLower | SpectrogramHandle::FfMiddle));
+    if ff_focused && ff_handle_active {
         ctx.set_font("11px sans-serif");
         let label_x = center_x + handle_zone_half + 8.0;
 
         // Top frequency label: just above the upper FF line
         let top_label = format!("{:.1} kHz", ff_hi / 1000.0);
         ctx.set_text_baseline("bottom");
+        let top_metrics = ctx.measure_text(&top_label).unwrap();
+        let bg_w = top_metrics.width() + 6.0;
+        let bg_h = 15.0;
+        ctx.set_fill_style_str("rgba(0, 0, 0, 0.7)");
+        ctx.fill_rect(label_x - 3.0, y_top - 4.0 - bg_h, bg_w, bg_h);
+        ctx.set_fill_style_str("rgba(255, 180, 60, 0.9)");
         let _ = ctx.fill_text(&top_label, label_x, y_top - 4.0);
 
         // Bottom frequency label: just below the lower FF line
         let bottom_label = format!("{:.1} kHz", ff_lo / 1000.0);
         ctx.set_text_baseline("top");
+        let bot_metrics = ctx.measure_text(&bottom_label).unwrap();
+        let bg_w = bot_metrics.width() + 6.0;
+        ctx.set_fill_style_str("rgba(0, 0, 0, 0.7)");
+        ctx.fill_rect(label_x - 3.0, y_bottom + 4.0, bg_w, bg_h);
+        ctx.set_fill_style_str("rgba(255, 180, 60, 0.9)");
         let _ = ctx.fill_text(&bottom_label, label_x, y_bottom + 4.0);
 
         ctx.set_text_baseline("alphabetic");
