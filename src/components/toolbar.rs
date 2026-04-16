@@ -10,6 +10,7 @@ pub fn Toolbar() -> impl IntoView {
     let state = expect_context::<AppState>();
     let show_about = state.show_about;
     let seq_dropdown_open = RwSignal::new(false);
+    let show_cc_modal = RwSignal::new(false);
     let track_dropdown_open = RwSignal::new(false);
 
     let is_tauri = state.is_tauri;
@@ -45,12 +46,6 @@ pub fn Toolbar() -> impl IntoView {
         let meta = xc_metadata.get()?;
         let lic = get_xc_field(&meta, "License")?;
         parse_cc_license(&lic)
-    });
-
-    // Derived: attribution text for tooltip
-    let attribution = Memo::new(move |_| {
-        let meta = xc_metadata.get()?;
-        get_xc_field(&meta, "Attribution")
     });
 
     // Derived: is current file unsaved (recording not yet saved by user)
@@ -366,7 +361,6 @@ pub fn Toolbar() -> impl IntoView {
 
                         let badge_data = current_badge_data.get();
                         let cc = cc_license.get();
-                        let attr = attribution.get();
                         let unsaved = is_unsaved.get();
 
                         Some(view! {
@@ -409,22 +403,16 @@ pub fn Toolbar() -> impl IntoView {
                                 }
                             })}
 
-                            // CC badge (info badge removed — mobile uses dedicated button)
+                            // CC badge — subtle text, opens license modal on click
                             {cc.map(|cc_label| {
                                 let short_label = cc_label.strip_prefix("CC ").unwrap_or(&cc_label).to_string();
-                                let tooltip = if let Some(attr_text) = attr {
-                                    format!("Creative Commons {} \u{2014} {}", short_label, attr_text)
-                                } else {
-                                    format!("Creative Commons {}", short_label)
-                                };
                                 view! {
                                     <button
                                         class="toolbar-cc-badge"
-                                        title=tooltip
+                                        title="License details"
                                         on:click=move |e: web_sys::MouseEvent| {
                                             e.stop_propagation();
-                                            state.right_sidebar_tab.set(RightSidebarTab::Metadata);
-                                            state.right_sidebar_collapsed.set(false);
+                                            show_cc_modal.set(true);
                                         }
                                     >
                                         <span class="toolbar-cc-icon"></span>
@@ -583,6 +571,146 @@ pub fn Toolbar() -> impl IntoView {
                     title=move || if state.right_sidebar_collapsed.get() { "Show info panel" } else { "Hide info panel" }
                 >{"\u{25E8}"}</button>
             </div>
+
+            // CC License modal
+            {move || show_cc_modal.get().then(|| {
+                let meta = xc_metadata.get().unwrap_or_default();
+                let field = |key: &str| get_xc_field(&meta, key);
+                let species = field("Species").unwrap_or_default();
+                let sci_name = field("Scientific name").unwrap_or_default();
+                let recordist = field("Recordist").unwrap_or_default();
+                let date = field("Date").unwrap_or_default();
+                let attribution = field("Attribution").unwrap_or_default();
+                let url = field("URL").unwrap_or_default();
+                let lic_url = field("License").unwrap_or_default();
+                let cc_label = parse_cc_license(&lic_url).unwrap_or_default();
+                let device = field("Device").unwrap_or_default();
+                let mic = field("Microphone").unwrap_or_default();
+                let method = field("Method").unwrap_or_default();
+                let quality = field("Quality").unwrap_or_default();
+                let location = field("Location").unwrap_or_default();
+                let country = field("Country").unwrap_or_default();
+                let loc_display = if !location.is_empty() && !country.is_empty() {
+                    format!("{}, {}", location, country)
+                } else if !location.is_empty() {
+                    location
+                } else {
+                    country
+                };
+                let is_demo = {
+                    let files = state.files.get();
+                    let idx = state.current_file_index.get();
+                    idx.and_then(|i| files.get(i)).map(|f| f.is_demo).unwrap_or(false)
+                };
+
+                view! {
+                    <div class="modal-overlay" on:click=move |_| show_cc_modal.set(false)>
+                        <div class="modal-dialog cc-modal" on:click=move |ev: web_sys::MouseEvent| ev.stop_propagation()>
+                            <div class="modal-header">
+                                <span class="modal-title">
+                                    <span class="toolbar-cc-icon" style="width: 16px; height: 16px; margin-right: 6px;"></span>
+                                    {if cc_label.is_empty() { "License".to_string() } else { format!("Creative Commons {cc_label}") }}
+                                </span>
+                                <button class="modal-close" on:click=move |_| show_cc_modal.set(false)>{"\u{00D7}"}</button>
+                            </div>
+                            <div class="modal-body">
+                                // Species heading
+                                {(!species.is_empty()).then(|| view! {
+                                    <div class="cc-species">
+                                        {species}
+                                        {(!sci_name.is_empty()).then(|| view! {
+                                            <span class="cc-sci-name">{format!(" ({})", sci_name)}</span>
+                                        })}
+                                    </div>
+                                })}
+
+                                // Key fields
+                                <div class="cc-fields">
+                                    {(!recordist.is_empty()).then(|| view! {
+                                        <div class="cc-row">
+                                            <span class="cc-label">"Recordist"</span>
+                                            <span class="cc-value">{recordist}</span>
+                                        </div>
+                                    })}
+                                    {(!date.is_empty()).then(|| view! {
+                                        <div class="cc-row">
+                                            <span class="cc-label">"Date"</span>
+                                            <span class="cc-value">{date}</span>
+                                        </div>
+                                    })}
+                                    {(!loc_display.is_empty()).then(|| view! {
+                                        <div class="cc-row">
+                                            <span class="cc-label">"Location"</span>
+                                            <span class="cc-value">{loc_display}</span>
+                                        </div>
+                                    })}
+                                    {(!device.is_empty()).then(|| view! {
+                                        <div class="cc-row">
+                                            <span class="cc-label">"Device"</span>
+                                            <span class="cc-value">{device}</span>
+                                        </div>
+                                    })}
+                                    {(!mic.is_empty()).then(|| view! {
+                                        <div class="cc-row">
+                                            <span class="cc-label">"Microphone"</span>
+                                            <span class="cc-value">{mic}</span>
+                                        </div>
+                                    })}
+                                    {(!method.is_empty()).then(|| view! {
+                                        <div class="cc-row">
+                                            <span class="cc-label">"Method"</span>
+                                            <span class="cc-value">{method}</span>
+                                        </div>
+                                    })}
+                                    {(!quality.is_empty()).then(|| view! {
+                                        <div class="cc-row">
+                                            <span class="cc-label">"Quality"</span>
+                                            <span class="cc-value">{quality}</span>
+                                        </div>
+                                    })}
+                                </div>
+
+                                // Attribution
+                                {(!attribution.is_empty()).then(|| view! {
+                                    <div class="cc-attribution">{attribution}</div>
+                                })}
+
+                                // License link
+                                {(!lic_url.is_empty()).then(|| {
+                                    let label = if cc_label.is_empty() { lic_url.clone() } else { format!("Creative Commons {cc_label}") };
+                                    view! {
+                                        <div class="cc-license-link">
+                                            <a href=lic_url target="_blank" rel="noopener">{label}</a>
+                                        </div>
+                                    }
+                                })}
+
+                                // Links row
+                                <div class="cc-links">
+                                    {(!url.is_empty()).then(|| view! {
+                                        <a class="cc-link-btn" href=url target="_blank" rel="noopener">"Open on Xeno\u{2011}Canto \u{2197}"</a>
+                                    })}
+                                    <button class="cc-link-btn" on:click=move |e: web_sys::MouseEvent| {
+                                        e.stop_propagation();
+                                        show_cc_modal.set(false);
+                                        state.right_sidebar_tab.set(RightSidebarTab::Metadata);
+                                        state.right_sidebar_collapsed.set(false);
+                                    }>"More metadata\u{2026}"</button>
+                                </div>
+
+                                // Demo archive notice
+                                {is_demo.then(|| view! {
+                                    <div class="cc-demo-notice">
+                                        "Retrieved from the "
+                                        <a href="https://github.com/pengowray/bat-demo-sounds" target="_blank" rel="noopener">"bat demo sounds archive"</a>
+                                        "."
+                                    </div>
+                                })}
+                            </div>
+                        </div>
+                    </div>
+                }
+            })}
 
             {move || show_about.get().then(|| view! {
                 <div class="about-overlay" on:click=move |_| show_about.set(false)>

@@ -101,14 +101,14 @@ pub(super) async fn read_and_load_file(file: File, state: AppState, load_id: u64
         return Err(msg);
     }
     let bytes = read_file_bytes(&file).await?;
-    let result = load_named_bytes(name, &bytes, None, None, state, load_id).await;
+    let result = load_named_bytes(name, &bytes, None, None, state, load_id, false).await;
     if result.is_ok() {
         finalize_loaded_file(state, last_modified_ms);
     }
     result
 }
 
-pub(crate) async fn load_named_bytes(name: String, bytes: &[u8], xc_metadata: Option<Vec<(String, String)>>, xc_hashes: Option<crate::state::SidecarHashes>, state: AppState, load_id: u64) -> Result<(), String> {
+pub(crate) async fn load_named_bytes(name: String, bytes: &[u8], xc_metadata: Option<Vec<(String, String)>>, xc_hashes: Option<crate::state::SidecarHashes>, state: AppState, load_id: u64, is_demo: bool) -> Result<(), String> {
     let wav_markers = crate::audio::loader::parse_wav_markers(bytes);
     let audio = load_audio(bytes)?;
     log::info!(
@@ -178,6 +178,7 @@ pub(crate) async fn load_named_bytes(name: String, bytes: &[u8], xc_metadata: Op
                 overview_image: None,
                 xc_metadata,
                 xc_hashes,
+                is_demo,
                 is_recording: false,
                 is_live_listen: false,
                 settings: FileSettings::default(),
@@ -482,7 +483,7 @@ pub(crate) async fn load_single_demo(entry: &DemoEntry, state: AppState, load_id
     );
     log::info!("Fetching demo: {}", entry.filename);
     let bytes = fetch_bytes(&audio_url).await?;
-    load_named_bytes(entry.filename.clone(), &bytes, xc_metadata, xc_hashes, state, load_id).await
+    load_named_bytes(entry.filename.clone(), &bytes, xc_metadata, xc_hashes, state, load_id, true).await
 }
 
 async fn read_file_bytes(file: &File) -> Result<Vec<u8>, String> {
@@ -545,7 +546,7 @@ pub(crate) async fn load_native_file(path: String, state: AppState, load_id: u64
     let bytes = uint8.to_vec();
 
     // Decode and add to state using existing pipeline
-    load_named_bytes(name.clone(), &bytes, None, None, state, load_id).await?;
+    load_named_bytes(name.clone(), &bytes, None, None, state, load_id, false).await?;
 
     // The file was just added — set the native path on identity
     let file_index = state.files.get_untracked().len().saturating_sub(1);

@@ -26,3 +26,4 @@ pub mod bat_book_ref_panel;
 pub mod display_filter_button;
 pub mod selection_combo_button;
 pub mod overflow_menu;
+pub mod modal;

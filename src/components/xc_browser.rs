@@ -579,6 +579,7 @@ pub fn XcBrowser() -> impl IntoView {
                     cached.hashes,
                     state,
                     load_id,
+                    false,
                 ).await;
                 state.loading_done(load_id);
                 load_result?;

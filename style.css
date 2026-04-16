@@ -1857,9 +1857,9 @@ body.sidebar-resizing {
     display: flex;
     align-items: center;
     gap: 3px;
-    background: rgba(255, 255, 255, 0.08) !important;
-    border: 1px solid rgba(255, 255, 255, 0.15) !important;
-    color: #bbb;
+    background: transparent !important;
+    border: 1px solid transparent !important;
+    color: #888;
     font-size: 10px;
     padding: 2px 6px !important;
     cursor: pointer;
@@ -1871,8 +1871,9 @@ body.sidebar-resizing {
 }
 
 .toolbar-cc-badge:hover {
-    background: rgba(255, 255, 255, 0.15) !important;
-    color: #eee;
+    background: rgba(255, 255, 255, 0.08) !important;
+    border-color: rgba(255, 255, 255, 0.15) !important;
+    color: #ccc;
 }
 
 .toolbar-cc-icon {
@@ -2235,6 +2236,171 @@ body.sidebar-resizing {
 .about-close:hover {
     background: #444;
     color: #fff;
+}
+
+/* ── Reusable modal ────────────────────────────────────────────────── */
+
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.modal-dialog {
+    background: #1e1e1e;
+    border: 1px solid #444;
+    border-radius: 8px;
+    max-width: min(90vw, 420px);
+    width: 100%;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+    display: flex;
+    flex-direction: column;
+    max-height: 80vh;
+}
+
+.modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 18px 12px;
+    border-bottom: 1px solid #333;
+    flex-shrink: 0;
+}
+
+.modal-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: #e0e0e0;
+    display: flex;
+    align-items: center;
+}
+
+.modal-close {
+    background: none;
+    border: none;
+    color: #888;
+    font-size: 20px;
+    cursor: pointer;
+    padding: 0 4px;
+    line-height: 1;
+}
+
+.modal-close:hover {
+    color: #fff;
+}
+
+.modal-body {
+    padding: 16px 18px 18px;
+    overflow-y: auto;
+    flex: 1;
+}
+
+/* ── CC license modal ──────────────────────────────────────────────── */
+
+.cc-species {
+    font-size: 15px;
+    font-weight: 600;
+    color: #e0e0e0;
+    margin-bottom: 14px;
+}
+
+.cc-sci-name {
+    font-weight: 400;
+    font-style: italic;
+    color: #aaa;
+}
+
+.cc-fields {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 5px 12px;
+    margin-bottom: 14px;
+    font-size: 12px;
+}
+
+.cc-row {
+    display: contents;
+}
+
+.cc-label {
+    color: #888;
+    white-space: nowrap;
+}
+
+.cc-value {
+    color: #ccc;
+    word-break: break-word;
+}
+
+.cc-attribution {
+    font-size: 11px;
+    color: #999;
+    background: #252530;
+    border-radius: 4px;
+    padding: 8px 10px;
+    margin-bottom: 12px;
+    line-height: 1.5;
+    user-select: all;
+}
+
+.cc-license-link {
+    margin-bottom: 14px;
+    font-size: 12px;
+}
+
+.cc-license-link a {
+    color: #8cf;
+    text-decoration: none;
+}
+
+.cc-license-link a:hover {
+    text-decoration: underline;
+}
+
+.cc-links {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+}
+
+.cc-link-btn {
+    display: inline-block;
+    background: #2a2a35;
+    border: 1px solid #444;
+    border-radius: 4px;
+    padding: 5px 12px;
+    font-size: 12px;
+    color: #bbb;
+    cursor: pointer;
+    text-decoration: none;
+    white-space: nowrap;
+}
+
+.cc-link-btn:hover {
+    background: #353545;
+    color: #eee;
+}
+
+.cc-demo-notice {
+    font-size: 11px;
+    color: #777;
+    border-top: 1px solid #333;
+    padding-top: 10px;
+    line-height: 1.5;
+}
+
+.cc-demo-notice a {
+    color: #8cf;
+    text-decoration: none;
+}
+
+.cc-demo-notice a:hover {
+    text-decoration: underline;
 }
 
 /* ── Overview strip ─────────────────────────────────────────────────────── */

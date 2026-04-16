@@ -115,6 +115,7 @@ pub(crate) fn start_live_recording(state: &AppState, sample_rate: u32) -> usize 
             overview_image: None,
             xc_metadata: None,
             xc_hashes: None,
+            is_demo: false,
             is_recording: true,
             is_live_listen: false,
             settings: FileSettings::default(),
@@ -194,6 +195,7 @@ pub(crate) fn start_live_listening(state: &AppState, sample_rate: u32) -> usize 
             overview_image: None,
             xc_metadata: None,
             xc_hashes: None,
+            is_demo: false,
             is_recording: true, // reuse recording display path for waveform/overview
             is_live_listen: true,
             settings: FileSettings::default(),
@@ -678,6 +680,7 @@ fn update_or_create_file(
                 overview_image: None,
                 xc_metadata: None,
                 xc_hashes: None,
+                is_demo: false,
                 is_recording: true,
                 is_live_listen: false,
                 settings: FileSettings::default(),

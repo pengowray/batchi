@@ -87,6 +87,8 @@ pub struct LoadedFile {
     pub xc_metadata: Option<Vec<(String, String)>>,
     /// Hash data from XC sidecar (for verification against computed identity).
     pub xc_hashes: Option<SidecarHashes>,
+    /// Loaded from the bat-demo-sounds archive (not directly from XC or user's disk).
+    pub is_demo: bool,
     pub is_recording: bool,  // true = unsaved recording (show indicator on web)
     /// Transient listening file — auto-removed when listening stops, converted to
     /// a recording file when the user hits record.
