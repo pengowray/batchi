@@ -2407,7 +2407,7 @@ body.sidebar-resizing {
 /* ── Overview strip ─────────────────────────────────────────────────────── */
 
 .overview-strip {
-    height: 100px;
+    height: clamp(50px, 9vh, 100px);
     flex-shrink: 0;
     position: relative;
     background: #000;
