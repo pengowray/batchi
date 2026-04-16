@@ -1,6 +1,6 @@
 use leptos::prelude::*;
 use crate::annotations::AnnotationKind;
-use crate::state::{AppState, GainMode, Selection, PlaybackMode};
+use crate::state::{ActiveFocus, AppState, GainMode, Selection, PlaybackMode};
 use crate::audio::streaming_playback::{self, PlaybackParams};
 use crate::audio::source::{AudioSource, TimelineAudioSource};
 use crate::viewport;
@@ -65,19 +65,26 @@ fn playback_target(state: &AppState) -> Option<PlaybackTarget> {
     })
 }
 
-/// Resolve the effective selection for playback, checking both transient
-/// drag selections and selected annotations.
+/// Resolve the effective selection for playback, checking the focused
+/// selection (transient drag or annotations) based on `active_focus`.
 pub fn effective_selection(state: &AppState) -> Option<Selection> {
-    // 1. Transient selection takes priority
-    if let Some(sel) = state.selection.get_untracked() {
-        return Some(sel);
+    let focus = state.active_focus.get_untracked();
+
+    // 1. Transient selection — only when it has focus
+    if focus == Some(ActiveFocus::TransientSelection) {
+        if let Some(sel) = state.selection.get_untracked() {
+            return Some(sel);
+        }
     }
 
     if state.active_timeline.get_untracked().is_some() {
         return None;
     }
 
-    // 2. Selected annotations — compute bounding box of all Region annotations
+    // 2. Selected annotations — only when annotations have focus
+    if focus != Some(ActiveFocus::Annotations) {
+        return None;
+    }
     let ids = state.selected_annotation_ids.get_untracked();
     if ids.is_empty() {
         return None;
