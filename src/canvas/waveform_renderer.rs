@@ -295,6 +295,16 @@ fn draw_waveform_layer_lane(
     }
 }
 
+/// Format a frequency in kHz without trailing zeros (e.g. 20, 22.05, 60).
+fn fmt_khz(hz: f64) -> String {
+    let khz = hz / 1000.0;
+    if (khz - khz.round()).abs() < 0.05 {
+        format!("{:.0}", khz)
+    } else {
+        format!("{:.1}", khz)
+    }
+}
+
 /// Draw frequency overlay waveform: full waveform in dim green behind,
 /// selected frequency band in semi-transparent blue on top.
 pub fn draw_waveform_freq(
@@ -311,6 +321,8 @@ pub fn draw_waveform_freq(
     gain_db: f64,
     total_duration: f64,
     region_start_sample: usize,
+    freq_low: f64,
+    freq_high: f64,
 ) {
     ctx.set_fill_style_str("#0a0a0a");
     ctx.fill_rect(0.0, 0.0, canvas_width, canvas_height);
@@ -331,6 +343,11 @@ pub fn draw_waveform_freq(
     if !filtered_samples.is_empty() {
         draw_waveform_layer(ctx, filtered_samples, sample_rate, &vp, canvas_width, "rgba(80, 140, 255, 0.7)", gain_linear);
     }
+
+    // Label with the band's frequency range
+    ctx.set_fill_style_str("rgba(255, 255, 255, 0.35)");
+    ctx.set_font("10px sans-serif");
+    let _ = ctx.fill_text(&format!("{}\u{2013}{} kHz", fmt_khz(freq_low), fmt_khz(freq_high)), 4.0, 12.0);
 }
 
 /// Draw triple-band waveform: three stacked channels for above, selected, and below.
@@ -349,6 +366,8 @@ pub fn draw_waveform_triple(
     gain_db: f64,
     total_duration: f64,
     region_start_sample: usize,
+    freq_low: f64,
+    freq_high: f64,
 ) {
     ctx.set_fill_style_str("#0a0a0a");
     ctx.fill_rect(0.0, 0.0, canvas_width, canvas_height);
@@ -397,12 +416,17 @@ pub fn draw_waveform_triple(
             "rgba(100, 200, 100, 0.7)", gain_linear, lane_height * 2.0, lane_height);
     }
 
-    // Lane labels
-    ctx.set_fill_style_str("rgba(255, 255, 255, 0.3)");
+    // Lane labels — actual frequency ranges
+    let nyquist = sample_rate as f64 / 2.0;
+    let above_label = format!("{}\u{2013}{} kHz", fmt_khz(freq_high), fmt_khz(nyquist));
+    let selected_label = format!("{}\u{2013}{} kHz", fmt_khz(freq_low), fmt_khz(freq_high));
+    let below_label = format!("0\u{2013}{} kHz", fmt_khz(freq_low));
+
+    ctx.set_fill_style_str("rgba(255, 255, 255, 0.35)");
     ctx.set_font("10px sans-serif");
-    let _ = ctx.fill_text("Above", 4.0, 12.0);
-    let _ = ctx.fill_text("Selected", 4.0, lane_height + 12.0);
-    let _ = ctx.fill_text("Below", 4.0, lane_height * 2.0 + 12.0);
+    let _ = ctx.fill_text(&above_label, 4.0, 12.0);
+    let _ = ctx.fill_text(&selected_label, 4.0, lane_height + 12.0);
+    let _ = ctx.fill_text(&below_label, 4.0, lane_height * 2.0 + 12.0);
 }
 
 /// Draw a zero-crossing rate graph from pre-computed bins.

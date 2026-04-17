@@ -401,7 +401,7 @@ impl WaveformView {
     pub fn label(self) -> &'static str {
         match self {
             WaveformView::Simple => "Simple",
-            WaveformView::Frequency => "Frequency",
+            WaveformView::Frequency => "Band wave",
             WaveformView::Triple => "Triple",
         }
     }
@@ -409,7 +409,7 @@ impl WaveformView {
     pub fn short_label(self) -> &'static str {
         match self {
             WaveformView::Simple => "Simple",
-            WaveformView::Frequency => "Freq",
+            WaveformView::Frequency => "Band",
             WaveformView::Triple => "Triple",
         }
     }
@@ -1583,10 +1583,10 @@ impl AppState {
             filter_band_mode: RwSignal::new(3),
             filter_freq_low: RwSignal::new(20_000.0),
             filter_freq_high: RwSignal::new(60_000.0),
-            filter_db_below: RwSignal::new(-40.0),
+            filter_db_below: RwSignal::new(-60.0),
             filter_db_selected: RwSignal::new(0.0),
             filter_db_harmonics: RwSignal::new(-30.0),
-            filter_db_above: RwSignal::new(-40.0),
+            filter_db_above: RwSignal::new(-60.0),
             filter_hovering_band: RwSignal::new(None),
             filter_quality: RwSignal::new(FilterQuality::Spectral),
             het_cutoff: RwSignal::new(15_000.0),

@@ -256,9 +256,9 @@ pub fn HfrButton() -> impl IntoView {
                             state.filter_freq_low.set(band_ff_lo);
                             state.filter_freq_high.set(band_ff_hi);
                             state.filter_quality.set(FilterQuality::Spectral);
-                            state.filter_db_below.set(-40.0);
+                            state.filter_db_below.set(-60.0);
                             state.filter_db_selected.set(0.0);
-                            state.filter_db_above.set(-40.0);
+                            state.filter_db_above.set(-60.0);
                         }
                     }
                 }
