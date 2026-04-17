@@ -271,8 +271,37 @@ pub(crate) async fn load_named_bytes(name: String, bytes: &[u8], xc_metadata: Op
     Ok(())
 }
 
-const DEMO_SOUNDS_BASE: &str =
-    "https://raw.githubusercontent.com/pengowray/bat-demo-sounds/main";
+const DEMO_SOUNDS_BASE: &str = "https://archive.oversample.com";
+const DEMO_SOUNDS_FALLBACK_BASE: &str =
+    "https://cdn.jsdelivr.net/gh/pengowray/bat-demo-sounds@main";
+
+async fn fetch_demo_bytes(url: &str) -> Result<Vec<u8>, String> {
+    match fetch_bytes(url).await {
+        Ok(b) => Ok(b),
+        Err(e) => {
+            let fb = url.replacen(DEMO_SOUNDS_BASE, DEMO_SOUNDS_FALLBACK_BASE, 1);
+            if fb == url {
+                return Err(e);
+            }
+            log::warn!("Demo fetch failed ({e}), retrying via jsDelivr");
+            fetch_bytes(&fb).await
+        }
+    }
+}
+
+async fn fetch_demo_text(url: &str) -> Result<String, String> {
+    match fetch_text(url).await {
+        Ok(t) => Ok(t),
+        Err(e) => {
+            let fb = url.replacen(DEMO_SOUNDS_BASE, DEMO_SOUNDS_FALLBACK_BASE, 1);
+            if fb == url {
+                return Err(e);
+            }
+            log::warn!("Demo fetch failed ({e}), retrying via jsDelivr");
+            fetch_text(&fb).await
+        }
+    }
+}
 
 pub(super) async fn fetch_bytes(url: &str) -> Result<Vec<u8>, String> {
     let window = web_sys::window().ok_or("No window")?;
@@ -420,7 +449,7 @@ fn is_bat_species(species: &str) -> bool {
 
 pub(crate) async fn fetch_demo_index() -> Result<Vec<DemoEntry>, String> {
     let index_url = format!("{}/index.json", DEMO_SOUNDS_BASE);
-    let index_text = fetch_text(&index_url).await?;
+    let index_text = fetch_demo_text(&index_url).await?;
     let index: serde_json::Value =
         serde_json::from_str(&index_text).map_err(|e| format!("index parse: {e}"))?;
 
@@ -452,7 +481,7 @@ pub(crate) async fn load_single_demo(entry: &DemoEntry, state: AppState, load_id
             DEMO_SOUNDS_BASE,
             encoded.as_string().unwrap_or_default()
         );
-        match fetch_text(&meta_url).await {
+        match fetch_demo_text(&meta_url).await {
             Ok(text) => {
                 match serde_json::from_str::<serde_json::Value>(&text) {
                     Ok(json) => {
@@ -482,7 +511,7 @@ pub(crate) async fn load_single_demo(entry: &DemoEntry, state: AppState, load_id
         encoded.as_string().unwrap_or_default()
     );
     log::info!("Fetching demo: {}", entry.filename);
-    let bytes = fetch_bytes(&audio_url).await?;
+    let bytes = fetch_demo_bytes(&audio_url).await?;
     load_named_bytes(entry.filename.clone(), &bytes, xc_metadata, xc_hashes, state, load_id, true).await
 }
 
