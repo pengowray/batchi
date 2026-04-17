@@ -229,9 +229,9 @@ fn FreqRow(
                     title=move || {
                         let t = contract_target.get();
                         if t.is_empty() {
-                            "Snap frequency to current view".to_string()
+                            "Snap to band".to_string()
                         } else {
-                            format!("Snap frequency to current view ({})", t)
+                            format!("Snap to band ({})", t)
                         }
                     }
                     on:click=move |_| { if !contract_disabled.get_untracked() { on_contract.run(()); } }

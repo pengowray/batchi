@@ -2,7 +2,7 @@ use leptos::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::{HtmlCanvasElement, MouseEvent, PointerEvent};
 use crate::canvas::coord::pointer_to_xtf;
-use crate::canvas::hit_test::{hit_test_spec_handles, is_in_ff_drag_zone, hit_test_annotation_handles, hit_test_annotation_body, hit_test_ff_body};
+use crate::canvas::hit_test::{hit_test_spec_handles, is_in_band_ff_drag_zone, hit_test_annotation_handles, hit_test_annotation_body, hit_test_band_ff_body};
 use crate::canvas::spectrogram_renderer;
 use crate::state::{ActiveFocus, AppState, CanvasTool, SpectrogramHandle, Selection, UndoEntry};
 use crate::viewport;
@@ -55,7 +55,7 @@ pub struct SpectInteraction {
     pub corner_drag_start_client: RwSignal<(f64, f64)>,
     /// Which axis is currently committed: None = undecided, true = Y (freq), false = X (time)
     pub corner_drag_axis: RwSignal<Option<bool>>,
-    /// Saved FF range before corner drag, for restoration when switching to X-axis
+    /// Saved BandFF range before corner drag, for restoration when switching to X-axis
     pub corner_drag_saved_ff: RwSignal<(f64, f64)>,
     /// Saved selection before corner drag, for restoration when switching to Y-axis
     pub corner_drag_saved_selection: RwSignal<Option<Selection>>,
@@ -64,8 +64,8 @@ pub struct SpectInteraction {
     /// Pending time-axis drag: defers actual drag until pointer moves >3px, allowing tap-to-clear.
     /// Stores (client_x, time, shift_held, anchor_time) when set.
     pub time_axis_pending: RwSignal<Option<(f64, f64, bool, f64)>>,
-    /// Pending FF body click — deferred to mouseup so panning takes priority
-    pub pending_ff_hit: RwSignal<bool>,
+    /// Pending BandFF body click — deferred to mouseup so panning takes priority
+    pub pending_band_ff_hit: RwSignal<bool>,
     /// Pending transient selection body click — deferred to mouseup so panning takes priority
     pub pending_selection_hit: RwSignal<bool>,
 }
@@ -99,13 +99,13 @@ impl SpectInteraction {
             corner_drag_saved_selection: RwSignal::new(None),
             pending_annotation_hit: RwSignal::new(None),
             time_axis_pending: RwSignal::new(None),
-            pending_ff_hit: RwSignal::new(false),
+            pending_band_ff_hit: RwSignal::new(false),
             pending_selection_hit: RwSignal::new(false),
         }
     }
 }
 
-/// Apply a frequency handle drag (FF or HET). Shared by mouse and touch handlers.
+/// Apply a frequency handle drag (BandFF or HET). Shared by mouse and touch handlers.
 pub fn apply_handle_drag(
     state: AppState,
     handle: SpectrogramHandle,
@@ -113,25 +113,25 @@ pub fn apply_handle_drag(
     file_max_freq: f64,
 ) {
     match handle {
-        SpectrogramHandle::FfUpper => {
-            let lo = state.ff_freq_lo.get_untracked();
+        SpectrogramHandle::BandFfUpper => {
+            let lo = state.band_ff_freq_lo.get_untracked();
             let clamped = freq_at_pointer.clamp(lo + 500.0, file_max_freq);
-            state.set_ff_hi(clamped);
+            state.set_band_ff_hi(clamped);
         }
-        SpectrogramHandle::FfLower => {
-            let hi = state.ff_freq_hi.get_untracked();
+        SpectrogramHandle::BandFfLower => {
+            let hi = state.band_ff_freq_hi.get_untracked();
             let clamped = freq_at_pointer.clamp(0.0, hi - 500.0);
-            state.set_ff_lo(clamped);
+            state.set_band_ff_lo(clamped);
         }
-        SpectrogramHandle::FfMiddle => {
-            let lo = state.ff_freq_lo.get_untracked();
-            let hi = state.ff_freq_hi.get_untracked();
+        SpectrogramHandle::BandFfMiddle => {
+            let lo = state.band_ff_freq_lo.get_untracked();
+            let hi = state.band_ff_freq_hi.get_untracked();
             let bw = hi - lo;
             let mid = (lo + hi) / 2.0;
             let delta = freq_at_pointer - mid;
             let new_lo = (lo + delta).clamp(0.0, file_max_freq - bw);
             let new_hi = new_lo + bw;
-            state.set_ff_range(new_lo, new_hi);
+            state.set_band_ff_range(new_lo, new_hi);
         }
         SpectrogramHandle::HetCenter => {
             state.het_freq_auto.set(false);
@@ -182,11 +182,11 @@ pub fn apply_axis_drag(
     let snapped_end = snapped_end.max(0.0);
     state.axis_drag_start_freq.set(Some(snapped_start));
     state.axis_drag_current_freq.set(Some(snapped_end));
-    // Live update FF range
+    // Live update BandFF range
     let lo = snapped_start.min(snapped_end);
     let hi = snapped_start.max(snapped_end);
     if hi - lo > 500.0 {
-        state.set_ff_range(lo, hi);
+        state.set_band_ff_range(lo, hi);
     }
 }
 
@@ -217,7 +217,7 @@ pub fn resolve_freq_at_pointer(
     Some((freq, file_max_freq))
 }
 
-/// Select all frequencies: set FF range to 0..Nyquist and enable HFR.
+/// Select all frequencies: set BandFF range to 0..Nyquist and enable HFR.
 /// Used by double-click / double-tap on the y-axis.
 pub fn select_all_frequencies(state: AppState) {
     let is_mic_active = state.mic_recording.get_untracked() || state.mic_listening.get_untracked();
@@ -230,7 +230,7 @@ pub fn select_all_frequencies(state: AppState) {
             .map(|f| f.spectrogram.max_freq)
             .unwrap_or(96_000.0)
     };
-    state.set_ff_range(0.0, file_max_freq);
+    state.set_band_ff_range(0.0, file_max_freq);
     let stack = state.focus_stack.get_untracked();
     if !stack.hfr_enabled() {
         state.toggle_hfr();
@@ -302,7 +302,7 @@ pub fn finalize_axis_drag(state: AppState) {
             }
         }
     }
-    // Set focus to FF when axis drag creates/modifies FF
+    // Set focus to BandFF when axis drag creates/modifies BandFF
     if !was_tap {
         state.active_focus.set(Some(ActiveFocus::FrequencyFocus));
     }
@@ -437,7 +437,7 @@ pub fn on_pointerdown(
     state.pointer_is_down.set(true);
 
     // Check for annotation resize handle drag first (selected annotations take
-    // priority over FF/HET handles when they overlap). Skipped when annotations are hidden.
+    // priority over BandFF/HET handles when they overlap). Skipped when annotations are hidden.
     if state.annotations_visible.get_untracked() {
     if let Some((ref ann_id, handle_pos)) = state.annotation_hover_handle.get_untracked() {
         // Check if the annotation is locked
@@ -475,15 +475,15 @@ pub fn on_pointerdown(
     }
     }
 
-    // Check for spec handle drag (FF or HET — takes priority over axis/tool drags)
-    // FF handles only start drag when clicking within the center handle zone.
+    // Check for spec handle drag (BandFF or HET — takes priority over axis/tool drags)
+    // BandFF handles only start drag when clicking within the center handle zone.
     if let Some(handle) = state.spec_hover_handle.get_untracked() {
-        let is_ff = matches!(handle, SpectrogramHandle::FfUpper | SpectrogramHandle::FfLower | SpectrogramHandle::FfMiddle);
+        let is_ff = matches!(handle, SpectrogramHandle::BandFfUpper | SpectrogramHandle::BandFfLower | SpectrogramHandle::BandFfMiddle);
         let allow_drag = if is_ff {
             if let Some((px_x, _, _, _)) = pointer_to_xtf(ev.client_x() as f64, ev.client_y() as f64, canvas_ref, &state) {
                 if let Some(canvas_el) = canvas_ref.get() {
                     let canvas: &HtmlCanvasElement = canvas_el.as_ref();
-                    is_in_ff_drag_zone(px_x, canvas.width() as f64)
+                    is_in_band_ff_drag_zone(px_x, canvas.width() as f64)
                 } else { false }
             } else { false }
         } else {
@@ -509,17 +509,17 @@ pub fn on_pointerdown(
             if in_left_axis && in_bottom_axis {
                 // Corner zone — defer axis choice until drag direction is clear.
                 // Pre-initialize both axis drag states so we can commit to either.
-                let ff_lo = state.ff_freq_lo.get_untracked();
-                let ff_hi = state.ff_freq_hi.get_untracked();
-                ix.corner_drag_saved_ff.set((ff_lo, ff_hi));
+                let band_ff_lo = state.band_ff_freq_lo.get_untracked();
+                let band_ff_hi = state.band_ff_freq_hi.get_untracked();
+                ix.corner_drag_saved_ff.set((band_ff_lo, band_ff_hi));
                 ix.corner_drag_saved_selection.set(state.selection.get_untracked());
 
                 // Y-axis (freq) init
                 let _snap = freq_snap(freq, ev.shift_key());
-                let has_range = ff_hi > ff_lo;
+                let has_range = band_ff_hi > band_ff_lo;
                 let raw_start_freq = if ev.shift_key() && has_range {
                     
-                    if (freq - ff_lo).abs() < (freq - ff_hi).abs() { ff_hi } else { ff_lo }
+                    if (freq - band_ff_lo).abs() < (freq - band_ff_hi).abs() { band_ff_hi } else { band_ff_lo }
                 } else {
                     freq
                 };
@@ -554,12 +554,12 @@ pub fn on_pointerdown(
     // Single tap (no drag) toggles HFR off — deferred to mouseup.
     if let Some((px_x, _, _, freq)) = pointer_to_xtf(ev.client_x() as f64, ev.client_y() as f64, canvas_ref, &state) {
         if px_x < LABEL_AREA_WIDTH && !state.display_transform.get_untracked() {
-            let ff_lo = state.ff_freq_lo.get_untracked();
-            let ff_hi = state.ff_freq_hi.get_untracked();
-            let has_range = ff_hi > ff_lo;
+            let band_ff_lo = state.band_ff_freq_lo.get_untracked();
+            let band_ff_hi = state.band_ff_freq_hi.get_untracked();
+            let has_range = band_ff_hi > band_ff_lo;
             let raw_start = if ev.shift_key() && has_range {
                 // Anchor at the edge farthest from the click
-                if (freq - ff_lo).abs() < (freq - ff_hi).abs() { ff_hi } else { ff_lo }
+                if (freq - band_ff_lo).abs() < (freq - band_ff_hi).abs() { band_ff_hi } else { band_ff_lo }
             } else {
                 freq
             };
@@ -568,12 +568,12 @@ pub fn on_pointerdown(
             ix.axis_drag_raw_start.set(raw_start);
             state.axis_drag_start_freq.set(Some((raw_start / snap_start).round() * snap_start));
             state.axis_drag_current_freq.set(Some((freq / snap_end).round() * snap_end));
-            // Live update FF range immediately for shift-extend
+            // Live update BandFF range immediately for shift-extend
             if ev.shift_key() && has_range {
                 let lo = raw_start.min(freq);
                 let hi = raw_start.max(freq);
                 if hi - lo > 500.0 {
-                    state.set_ff_range(lo, hi);
+                    state.set_band_ff_range(lo, hi);
                 }
             }
             state.is_dragging.set(true);
@@ -627,9 +627,9 @@ pub fn on_pointerdown(
         }
     }
 
-    // Check for annotation body, transient selection body, and FF body clicks.
-    // Priority: annotation > selection > FF. All deferred to pointer-up so panning takes priority.
-    ix.pending_ff_hit.set(false);
+    // Check for annotation body, transient selection body, and BandFF body clicks.
+    // Priority: annotation > selection > BandFF. All deferred to pointer-up so panning takes priority.
+    ix.pending_band_ff_hit.set(false);
     ix.pending_selection_hit.set(false);
     if state.canvas_tool.get_untracked() == CanvasTool::Hand {
         if let Some((px_x, px_y, t, freq)) = pointer_to_xtf(ev.client_x() as f64, ev.client_y() as f64, canvas_ref, &state) {
@@ -665,31 +665,31 @@ pub fn on_pointerdown(
         }
 
         if !hit_annotation {
-            // Check transient selection body (priority over FF)
+            // Check transient selection body (priority over BandFF)
             if let Some(sel) = state.selection.get_untracked() {
                 if point_in_selection(&sel, t, freq) {
                     ix.pending_selection_hit.set(true);
                 } else {
-                    // Check FF body click
+                    // Check BandFF body click
                     if let Some(canvas_el) = canvas_ref.get() {
                         let canvas: &HtmlCanvasElement = canvas_el.as_ref();
                         let ch = canvas.height() as f64;
-                        let ff_lo = state.ff_freq_lo.get_untracked();
-                        let ff_hi = state.ff_freq_hi.get_untracked();
-                        if hit_test_ff_body(px_y, ff_lo, ff_hi, min_freq, max_freq, ch) {
-                            ix.pending_ff_hit.set(true);
+                        let band_ff_lo = state.band_ff_freq_lo.get_untracked();
+                        let band_ff_hi = state.band_ff_freq_hi.get_untracked();
+                        if hit_test_band_ff_body(px_y, band_ff_lo, band_ff_hi, min_freq, max_freq, ch) {
+                            ix.pending_band_ff_hit.set(true);
                         }
                     }
                 }
             } else {
-                // No selection — check FF body click
+                // No selection — check BandFF body click
                 if let Some(canvas_el) = canvas_ref.get() {
                     let canvas: &HtmlCanvasElement = canvas_el.as_ref();
                     let ch = canvas.height() as f64;
-                    let ff_lo = state.ff_freq_lo.get_untracked();
-                    let ff_hi = state.ff_freq_hi.get_untracked();
-                    if hit_test_ff_body(px_y, ff_lo, ff_hi, min_freq, max_freq, ch) {
-                        ix.pending_ff_hit.set(true);
+                    let band_ff_lo = state.band_ff_freq_lo.get_untracked();
+                    let band_ff_hi = state.band_ff_freq_hi.get_untracked();
+                    if hit_test_band_ff_body(px_y, band_ff_lo, band_ff_hi, min_freq, max_freq, ch) {
+                        ix.pending_band_ff_hit.set(true);
                     }
                 }
             }
@@ -818,10 +818,10 @@ pub fn on_pointermove(
                         state.axis_drag_start_freq.set(Some(snapped));
                         state.axis_drag_current_freq.set(Some(snapped));
                     } else {
-                        // Switching to X-axis: restore saved FF range, activate time drag
+                        // Switching to X-axis: restore saved BandFF range, activate time drag
                         let (saved_lo, saved_hi) = ix.corner_drag_saved_ff.get_untracked();
                         if saved_hi > saved_lo {
-                            state.set_ff_range(saved_lo, saved_hi);
+                            state.set_band_ff_range(saved_lo, saved_hi);
                         }
                         state.axis_drag_start_freq.set(None);
                         state.axis_drag_current_freq.set(None);
@@ -903,7 +903,7 @@ pub fn on_pointermove(
                 }
             }
         } else {
-            // Not dragging — do spec handle hover detection (FF + HET)
+            // Not dragging — do spec handle hover detection (BandFF + HET)
             // Skip handle hover when in label area (to allow axis drag)
             if !in_label_area {
                 if let Some((_, file_max_freq)) = resolve_freq_at_pointer(px_y, canvas_ref, state) {
@@ -914,9 +914,9 @@ pub fn on_pointermove(
                         let canvas: &HtmlCanvasElement = canvas_el.as_ref();
                         let cw = canvas.width() as f64;
                         let ch = canvas.height() as f64;
-                        let ff_focused = state.active_focus.get_untracked() == Some(ActiveFocus::FrequencyFocus);
+                        let band_ff_focused = state.active_focus.get_untracked() == Some(ActiveFocus::FrequencyFocus);
                         let handle = hit_test_spec_handles(
-                            &state, px_y, min_freq_val, max_freq_val, ch, 8.0, ff_focused,
+                            &state, px_y, min_freq_val, max_freq_val, ch, 8.0, band_ff_focused,
                         );
                         state.spec_hover_handle.set(handle);
 
@@ -989,7 +989,7 @@ pub fn on_pointerup(
     state.pointer_is_down.set(false);
     if !state.is_dragging.get_untracked() { return; }
 
-    // End HET/FF handle drag
+    // End HET/BandFF handle drag
     if state.spec_drag_handle.get_untracked().is_some() {
         state.spec_drag_handle.set(None);
         state.is_dragging.set(false);
@@ -1031,7 +1031,7 @@ pub fn on_pointerup(
         // Otherwise fall through — the committed axis's signals are set
     }
 
-    // End axis drag (FF range already updated live during drag)
+    // End axis drag (BandFF range already updated live during drag)
     if state.axis_drag_start_freq.get_untracked().is_some() {
         finalize_axis_drag(state);
         return;
@@ -1103,8 +1103,8 @@ pub fn on_pointerup(
             } else if ix.pending_selection_hit.get_untracked() {
                 // Deferred transient selection body click-to-refocus
                 state.active_focus.set(Some(ActiveFocus::TransientSelection));
-            } else if ix.pending_ff_hit.get_untracked() {
-                // Deferred FF body click-to-select
+            } else if ix.pending_band_ff_hit.get_untracked() {
+                // Deferred BandFF body click-to-select
                 state.active_focus.set(Some(ActiveFocus::FrequencyFocus));
             } else {
                 // Click on empty area deselects annotations and clears focus
@@ -1124,7 +1124,7 @@ pub fn on_pointerup(
         }
 
         ix.pending_annotation_hit.set(None);
-        ix.pending_ff_hit.set(false);
+        ix.pending_band_ff_hit.set(false);
         ix.pending_selection_hit.set(false);
         return;
     }
@@ -1143,7 +1143,7 @@ pub fn on_pointerup(
             if state.selection_auto_focus.get_untracked() {
                 if let (Some(lo), Some(hi)) = (sel.freq_low, sel.freq_high) {
                     if hi - lo > 100.0 {
-                        state.set_ff_range(lo, hi);
+                        state.set_band_ff_range(lo, hi);
                     }
                 }
             }
@@ -1240,13 +1240,13 @@ pub fn on_dblclick(
         }
     }
 
-    // Double-click on FF handle toggles HFR (label area tap handled by finalize_axis_drag)
-    let has_range = state.ff_freq_hi.get_untracked() > state.ff_freq_lo.get_untracked();
+    // Double-click on BandFF handle toggles HFR (label area tap handled by finalize_axis_drag)
+    let has_range = state.band_ff_freq_hi.get_untracked() > state.band_ff_freq_lo.get_untracked();
     if !has_range { return; }
 
     let on_handle = matches!(
         state.spec_hover_handle.get_untracked(),
-        Some(SpectrogramHandle::FfUpper | SpectrogramHandle::FfLower | SpectrogramHandle::FfMiddle)
+        Some(SpectrogramHandle::BandFfUpper | SpectrogramHandle::BandFfLower | SpectrogramHandle::BandFfMiddle)
     );
     if on_handle {
         state.toggle_hfr();
@@ -1332,7 +1332,7 @@ pub fn on_touchstart(
     let touch = touches.get(0).unwrap();
 
     // Check for annotation resize handle drag first (touch) — selected annotations
-    // take priority over FF/HET handles when they overlap
+    // take priority over BandFF/HET handles when they overlap
     if let Some((px_x, px_y, _, _)) = pointer_to_xtf(touch.client_x() as f64, touch.client_y() as f64, canvas_ref, &state) {
         if let Some(canvas_el) = canvas_ref.get() {
             let canvas: &HtmlCanvasElement = canvas_el.as_ref();
@@ -1400,13 +1400,13 @@ pub fn on_touchstart(
             let file_max_freq = file.map(|f| f.spectrogram.max_freq).unwrap_or(96_000.0);
             let min_freq_val = state.min_display_freq.get_untracked().unwrap_or(0.0);
             let max_freq_val = state.max_display_freq.get_untracked().unwrap_or(file_max_freq);
-            let ff_focused = state.active_focus.get_untracked() == Some(ActiveFocus::FrequencyFocus);
+            let band_ff_focused = state.active_focus.get_untracked() == Some(ActiveFocus::FrequencyFocus);
             let handle = hit_test_spec_handles(
-                &state, px_y, min_freq_val, max_freq_val, ch, 16.0, ff_focused, // wider touch target
+                &state, px_y, min_freq_val, max_freq_val, ch, 16.0, band_ff_focused, // wider touch target
             );
             if let Some(handle) = handle {
-                let is_ff = matches!(handle, SpectrogramHandle::FfUpper | SpectrogramHandle::FfLower | SpectrogramHandle::FfMiddle);
-                if !is_ff || is_in_ff_drag_zone(px_x, cw) {
+                let is_ff = matches!(handle, SpectrogramHandle::BandFfUpper | SpectrogramHandle::BandFfLower | SpectrogramHandle::BandFfMiddle);
+                if !is_ff || is_in_band_ff_drag_zone(px_x, cw) {
                     state.spec_drag_handle.set(Some(handle));
                     state.is_dragging.set(true);
                     ev.prevent_default();
@@ -1425,9 +1425,9 @@ pub fn on_touchstart(
             let in_bottom_axis = px_y > ch - 16.0;
 
             if in_left_axis && in_bottom_axis {
-                let ff_lo = state.ff_freq_lo.get_untracked();
-                let ff_hi = state.ff_freq_hi.get_untracked();
-                ix.corner_drag_saved_ff.set((ff_lo, ff_hi));
+                let band_ff_lo = state.band_ff_freq_lo.get_untracked();
+                let band_ff_hi = state.band_ff_freq_hi.get_untracked();
+                ix.corner_drag_saved_ff.set((band_ff_lo, band_ff_hi));
                 ix.corner_drag_saved_selection.set(state.selection.get_untracked());
                 ix.axis_drag_raw_start.set(freq);
                 ix.time_axis_drag_raw_start.set(t);
@@ -1583,7 +1583,7 @@ pub fn on_touchmove(
                 } else {
                     let (saved_lo, saved_hi) = ix.corner_drag_saved_ff.get_untracked();
                     if saved_hi > saved_lo {
-                        state.set_ff_range(saved_lo, saved_hi);
+                        state.set_band_ff_range(saved_lo, saved_hi);
                     }
                     state.axis_drag_start_freq.set(None);
                     state.axis_drag_current_freq.set(None);
@@ -1825,7 +1825,7 @@ pub fn on_touchend(
             if let Some(sel) = state.selection.get_untracked() {
                 if let (Some(lo), Some(hi)) = (sel.freq_low, sel.freq_high) {
                     if hi - lo > 100.0 {
-                        state.set_ff_range(lo, hi);
+                        state.set_band_ff_range(lo, hi);
                     }
                 }
             }

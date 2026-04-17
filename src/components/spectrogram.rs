@@ -127,8 +127,8 @@ pub fn Spectrogram() -> impl IntoView {
         let spec_hover = state.spec_hover_handle.get();
         let spec_drag = state.spec_drag_handle.get();
         let pointer_down = state.pointer_is_down.get();
-        let ff_lo = state.ff_freq_lo.get();
-        let ff_hi = state.ff_freq_hi.get();
+        let band_ff_lo = state.band_ff_freq_lo.get();
+        let band_ff_hi = state.band_ff_freq_hi.get();
         let het_freq_auto = state.het_freq_auto.get();
         let het_cutoff_auto = state.het_cutoff_auto.get();
         let hfr_enabled = state.hfr_enabled.get();
@@ -277,11 +277,11 @@ pub fn Spectrogram() -> impl IntoView {
             || decim_effective > 0;
         let colormap = if flow_on {
             ColormapMode::Uniform(Colormap::Greyscale)
-        } else if hfr_enabled && ff_hi > ff_lo && !xform_or_decim {
+        } else if hfr_enabled && band_ff_hi > band_ff_lo && !xform_or_decim {
             ColormapMode::HfrFocus {
                 colormap: hfr_colormap_pref,
-                ff_lo_frac: ff_lo / file_max_freq,
-                ff_hi_frac: ff_hi / file_max_freq,
+                band_ff_lo_frac: band_ff_lo / file_max_freq,
+                band_ff_hi_frac: band_ff_hi / file_max_freq,
             }
         } else if hfr_enabled {
             ColormapMode::Uniform(hfr_colormap_pref)
@@ -669,11 +669,11 @@ pub fn Spectrogram() -> impl IntoView {
                 (Some(a), Some(b)) => (Some(a.min(b)), Some(a.max(b))),
                 _ => (None, None),
             };
-            let ff_drag_active2 = matches!(spec_drag, Some(SpectrogramHandle::FfUpper) | Some(SpectrogramHandle::FfLower) | Some(SpectrogramHandle::FfMiddle));
-            // Only pass FF range to markers when HFR is on (or during axis drag which is
+            let band_ff_drag_active2 = matches!(spec_drag, Some(SpectrogramHandle::BandFfUpper) | Some(SpectrogramHandle::BandFfLower) | Some(SpectrogramHandle::BandFfMiddle));
+            // Only pass BandFF range to markers when HFR is on (or during axis drag which is
             // handled separately by axis_drag_lo/hi). This prevents color bands from showing
-            // for a hidden/inactive FF range.
-            let (marker_ff_lo, marker_ff_hi) = if hfr_enabled || ff_drag_active2 { (ff_lo, ff_hi) } else { (0.0, 0.0) };
+            // for a hidden/inactive BandFF range.
+            let (marker_band_ff_lo, marker_band_ff_hi) = if hfr_enabled || band_ff_drag_active2 { (band_ff_lo, band_ff_hi) } else { (0.0, 0.0) };
             let marker_state = FreqMarkerState {
                 mouse_freq,
                 mouse_in_label_area: mouse_freq.is_some() && mouse_cx < LABEL_AREA_WIDTH,
@@ -681,10 +681,10 @@ pub fn Spectrogram() -> impl IntoView {
                 file_max_freq,
                 axis_drag_lo: adl2,
                 axis_drag_hi: adh2,
-                ff_drag_active: ff_drag_active2,
-                ff_lo: marker_ff_lo,
-                ff_hi: marker_ff_hi,
-                ff_handles_active: spec_hover.is_some() || spec_drag.is_some(),
+                band_ff_drag_active: band_ff_drag_active2,
+                band_ff_lo: marker_band_ff_lo,
+                band_ff_hi: marker_band_ff_hi,
+                band_ff_handles_active: spec_hover.is_some() || spec_drag.is_some(),
                 shield_style: state.shield_style.get_untracked(),
             };
 
@@ -694,10 +694,10 @@ pub fn Spectrogram() -> impl IntoView {
             let marker_state = if xform_on || decim_effective > 0 {
                 FreqMarkerState {
                     mouse_in_label_area: mouse_freq.is_some() && mouse_cx > (display_w as f64 - LABEL_AREA_WIDTH),
-                    ff_lo: 0.0,
-                    ff_hi: 0.0,
-                    ff_drag_active: false,
-                    ff_handles_active: false,
+                    band_ff_lo: 0.0,
+                    band_ff_hi: 0.0,
+                    band_ff_drag_active: false,
+                    band_ff_handles_active: false,
                     ..marker_state
                 }
             } else {
@@ -777,11 +777,11 @@ pub fn Spectrogram() -> impl IntoView {
                 );
             }
 
-            // FF overlay (dim outside focus range) — skip in xform view
+            // BandFF overlay (dim outside focus range) — skip in xform view
             // During axis drag with HFR off, show the overlay using the drag range
             // so the user gets visual feedback of their selection
-            let (overlay_lo, overlay_hi) = if ff_hi > ff_lo {
-                (ff_lo, ff_hi)
+            let (overlay_lo, overlay_hi) = if band_ff_hi > band_ff_lo {
+                (band_ff_lo, band_ff_hi)
             } else if let (Some(a), Some(b)) = (axis_drag_start, axis_drag_current) {
                 let lo = a.min(b);
                 let hi = a.max(b);
@@ -790,7 +790,7 @@ pub fn Spectrogram() -> impl IntoView {
                 (0.0, 0.0)
             };
             if overlay_hi > overlay_lo && !xform_on {
-                spectrogram_renderer::draw_ff_overlay(
+                spectrogram_renderer::draw_band_ff_overlay(
                     &ctx,
                     overlay_lo, overlay_hi,
                     min_freq, max_freq,
@@ -1255,8 +1255,8 @@ pub fn Spectrogram() -> impl IntoView {
                     return format!("cursor: ns-resize; touch-action: {ta};");
                 }
                 if let Some(handle) = state.spec_hover_handle.get() {
-                    let is_ff = matches!(handle, SpectrogramHandle::FfUpper | SpectrogramHandle::FfLower | SpectrogramHandle::FfMiddle);
-                    if !is_ff || crate::canvas::hit_test::is_in_ff_drag_zone(
+                    let is_ff = matches!(handle, SpectrogramHandle::BandFfUpper | SpectrogramHandle::BandFfLower | SpectrogramHandle::BandFfMiddle);
+                    if !is_ff || crate::canvas::hit_test::is_in_band_ff_drag_zone(
                         state.mouse_canvas_x.get(),
                         state.spectrogram_canvas_width.get(),
                     ) {

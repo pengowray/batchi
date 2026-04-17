@@ -60,8 +60,8 @@ pub fn Waveform() -> impl IntoView {
     let hfr_filtered = Memo::new(move |_| {
         let hfr = state.hfr_enabled.get();
         if !hfr { return None; }
-        let ff_lo = state.ff_freq_lo.get();
-        if ff_lo <= 0.0 { return None; }
+        let band_ff_lo = state.band_ff_freq_lo.get();
+        if band_ff_lo <= 0.0 { return None; }
         let files = state.files.get();
         let idx = state.current_file_index.get();
         let cv = state.channel_view.get();
@@ -72,7 +72,7 @@ pub fn Waveform() -> impl IntoView {
                 ChannelView::MonoMix => std::borrow::Cow::Borrowed(file.audio.samples.as_slice()),
                 _ => std::borrow::Cow::Owned(file.audio.source.read_region(cv, 0, file.audio.source.total_samples() as usize)),
             };
-            let lp = cascaded_lowpass(&ch_samples, ff_lo, sr, 4);
+            let lp = cascaded_lowpass(&ch_samples, band_ff_lo, sr, 4);
             ch_samples.iter().zip(lp.iter())
                 .map(|(s, l)| s - l)
                 .collect::<Vec<f32>>()

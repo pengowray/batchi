@@ -327,9 +327,9 @@ fn RegionOption(
     }
 }
 
-/// Compute the combined FF range from all selected entries.
+/// Compute the combined BandFF range from all selected entries.
 /// Returns (lo, hi) or None if nothing selected.
-fn combined_ff_range(state: &AppState) -> Option<(f64, f64)> {
+fn combined_band_ff_range(state: &AppState) -> Option<(f64, f64)> {
     let ids = state.bat_book_selected_ids.get_untracked();
     if ids.is_empty() {
         return None;
@@ -360,11 +360,11 @@ fn combined_ff_range(state: &AppState) -> Option<(f64, f64)> {
     if lo < hi { Some((lo, hi)) } else { None }
 }
 
-/// Apply the combined FF range from selected bat book entries.
+/// Apply the combined BandFF range from selected bat book entries.
 /// Shows toasts for out-of-range conditions.
 /// Uses the focus stack to push/update the BatBook override layer.
 fn apply_bat_book_ff(state: &AppState) {
-    let Some((lo, hi)) = combined_ff_range(state) else {
+    let Some((lo, hi)) = combined_band_ff_range(state) else {
         state.pop_bat_book_ff();
         return;
     };
@@ -427,7 +427,7 @@ fn BatBookChip(
         let was_selected = state.bat_book_selected_ids.get_untracked().iter().any(|id| id == &eid);
 
         if was_selected && !ctrl && !shift {
-            // Click selected bat again: deselect and restore previous FF
+            // Click selected bat again: deselect and restore previous BandFF
             state.bat_book_selected_ids.set(Vec::new());
             state.bat_book_ref_open.set(false);
             state.bat_book_last_clicked_id.set(None);

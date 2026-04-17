@@ -12,22 +12,22 @@ fn toggle_panel(state: &AppState, panel: LayerPanel) {
     });
 }
 
-/// Compute the best auto factor for shifting FF center into audible range.
+/// Compute the best auto factor for shifting BandFF center into audible range.
 /// Prefers 8x, then other 2^n, then 10, then best integer, then exact ratio.
-fn smart_auto_factor(ff_lo: f64, ff_hi: f64, max_factor: f64) -> f64 {
-    let ff_center = (ff_lo + ff_hi) / 2.0;
-    if ff_center <= 0.0 { return 10.0; }
+fn smart_auto_factor(band_ff_lo: f64, band_ff_hi: f64, max_factor: f64) -> f64 {
+    let band_ff_center = (band_ff_lo + band_ff_hi) / 2.0;
+    if band_ff_center <= 0.0 { return 10.0; }
 
     let target = 3000.0;
-    let shifting_down = ff_center > target;
+    let shifting_down = band_ff_center > target;
 
     if shifting_down {
-        let ideal = ff_center / target;
+        let ideal = band_ff_center / target;
 
         // Check preferred factors in order: 8, then other 2^n, then 10
         let preferred: &[f64] = &[8.0, 4.0, 16.0, 2.0, 32.0, 10.0];
         let comfortable = |f: f64| {
-            let out = ff_center / f;
+            let out = band_ff_center / f;
             (1000.0..=6000.0).contains(&out)
         };
 
@@ -43,10 +43,10 @@ fn smart_auto_factor(ff_lo: f64, ff_hi: f64, max_factor: f64) -> f64 {
         ideal.clamp(2.0, max_factor)
     } else {
         // Sub-audible: need to pitch up (negative factor)
-        let ideal = target / ff_center;
+        let ideal = target / band_ff_center;
         let preferred: &[f64] = &[8.0, 4.0, 16.0, 2.0, 32.0, 10.0];
         let comfortable = |f: f64| {
-            let out = ff_center * f;
+            let out = band_ff_center * f;
             (1000.0..=6000.0).contains(&out)
         };
 
@@ -149,40 +149,40 @@ pub fn HfrButton() -> impl IntoView {
                 });
 
                 let (lo, hi) = species_range.unwrap_or((18_000.0, nyquist));
-                state.set_ff_range(lo, hi);
+                state.set_band_ff_range(lo, hi);
             }
         }
     });
 
-    // ── Effect B: FF range → auto parameter values (smart auto) ──
+    // ── Effect B: BandFF range → auto parameter values (smart auto) ──
     Effect::new(move || {
-        let ff_lo = state.ff_freq_lo.get();
-        let ff_hi = state.ff_freq_hi.get();
+        let band_ff_lo = state.band_ff_freq_lo.get();
+        let band_ff_hi = state.band_ff_freq_hi.get();
 
-        if ff_hi <= ff_lo {
+        if band_ff_hi <= band_ff_lo {
             return;
         }
 
-        let ff_center = (ff_lo + ff_hi) / 2.0;
-        let ff_bandwidth = ff_hi - ff_lo;
+        let band_ff_center = (band_ff_lo + band_ff_hi) / 2.0;
+        let band_ff_bandwidth = band_ff_hi - band_ff_lo;
 
         if state.het_freq_auto.get_untracked() {
-            state.het_frequency.set(ff_center);
+            state.het_frequency.set(band_ff_center);
         }
         if state.het_cutoff_auto.get_untracked() {
-            state.het_cutoff.set((ff_bandwidth / 2.0).min(15_000.0));
+            state.het_cutoff.set((band_ff_bandwidth / 2.0).min(15_000.0));
         }
 
         if state.te_factor_auto.get_untracked() {
-            let te = smart_auto_factor(ff_lo, ff_hi, 40.0);
+            let te = smart_auto_factor(band_ff_lo, band_ff_hi, 40.0);
             state.te_factor.set(te);
         }
         if state.ps_factor_auto.get_untracked() {
-            let ps = smart_auto_factor(ff_lo, ff_hi, 20.0);
+            let ps = smart_auto_factor(band_ff_lo, band_ff_hi, 20.0);
             state.ps_factor.set(ps);
         }
         if state.pv_factor_auto.get_untracked() {
-            let pv = smart_auto_factor(ff_lo, ff_hi, 20.0);
+            let pv = smart_auto_factor(band_ff_lo, band_ff_hi, 20.0);
             state.pv_factor.set(pv);
         }
     });
@@ -225,8 +225,8 @@ pub fn HfrButton() -> impl IntoView {
     Effect::new(move || {
         let bp_mode = state.bandpass_mode.get();
         let bp_range = state.bandpass_range.get();
-        let ff_lo = state.ff_freq_lo.get();
-        let ff_hi = state.ff_freq_hi.get();
+        let band_ff_lo = state.band_ff_freq_lo.get();
+        let band_ff_hi = state.band_ff_freq_hi.get();
         let playback_mode = state.playback_mode.get();
 
         match bp_mode {
@@ -234,7 +234,7 @@ pub fn HfrButton() -> impl IntoView {
                 state.filter_enabled.set(false);
             }
             BandpassMode::Auto => {
-                let has_ff = ff_hi > ff_lo;
+                let has_ff = band_ff_hi > band_ff_lo;
                 match playback_mode {
                     PlaybackMode::Heterodyne => {
                         state.filter_enabled.set(false);
@@ -242,8 +242,8 @@ pub fn HfrButton() -> impl IntoView {
                     PlaybackMode::ZeroCrossing => {
                         state.filter_enabled.set(has_ff);
                         if has_ff {
-                            state.filter_freq_low.set(ff_lo);
-                            state.filter_freq_high.set(ff_hi);
+                            state.filter_freq_low.set(band_ff_lo);
+                            state.filter_freq_high.set(band_ff_hi);
                             state.filter_quality.set(FilterQuality::Spectral);
                             state.filter_db_below.set(-60.0);
                             state.filter_db_selected.set(0.0);
@@ -253,8 +253,8 @@ pub fn HfrButton() -> impl IntoView {
                     _ => {
                         state.filter_enabled.set(has_ff);
                         if has_ff {
-                            state.filter_freq_low.set(ff_lo);
-                            state.filter_freq_high.set(ff_hi);
+                            state.filter_freq_low.set(band_ff_lo);
+                            state.filter_freq_high.set(band_ff_hi);
                             state.filter_quality.set(FilterQuality::Spectral);
                             state.filter_db_below.set(-40.0);
                             state.filter_db_selected.set(0.0);
@@ -265,9 +265,9 @@ pub fn HfrButton() -> impl IntoView {
             }
             BandpassMode::On => {
                 state.filter_enabled.set(true);
-                if bp_range == BandpassRange::FollowFocus && ff_hi > ff_lo {
-                    state.filter_freq_low.set(ff_lo);
-                    state.filter_freq_high.set(ff_hi);
+                if bp_range == BandpassRange::FollowFocus && band_ff_hi > band_ff_lo {
+                    state.filter_freq_low.set(band_ff_lo);
+                    state.filter_freq_high.set(band_ff_hi);
                 }
             }
         }
@@ -420,11 +420,11 @@ pub fn HfrButton() -> impl IntoView {
     let set_output_highlight = move |factor_signal: RwSignal<f64>| {
         move |_: web_sys::MouseEvent| {
             let f = factor_signal.get_untracked();
-            let ff_lo = state.ff_freq_lo.get_untracked();
-            let ff_hi = state.ff_freq_hi.get_untracked();
-            if ff_hi > ff_lo {
-                let out_lo = output_freq(ff_lo, f);
-                let out_hi = output_freq(ff_hi, f);
+            let band_ff_lo = state.band_ff_freq_lo.get_untracked();
+            let band_ff_hi = state.band_ff_freq_hi.get_untracked();
+            if band_ff_hi > band_ff_lo {
+                let out_lo = output_freq(band_ff_lo, f);
+                let out_hi = output_freq(band_ff_hi, f);
                 let (lo, hi) = if out_lo < out_hi { (out_lo, out_hi) } else { (out_hi, out_lo) };
                 state.output_freq_highlight.set(Some((lo, hi)));
             }
@@ -480,10 +480,10 @@ pub fn HfrButton() -> impl IntoView {
                 >"ZC \u{2014} Zero Crossing"</button>
 
                 // ── Inaudible notice ──
-                {move || (state.playback_mode.get() == PlaybackMode::Normal && state.ff_freq_lo.get() >= 20_000.0).then(|| {
+                {move || (state.playback_mode.get() == PlaybackMode::Normal && state.band_ff_freq_lo.get() >= 20_000.0).then(|| {
                     view! {
                         <div style="padding: 4px 8px; font-size: 10px; color: #e0a030; line-height: 1.3;">
-                            "Focus is above human hearing. 1:1 mode won\u{2019}t make it audible"
+                            "Band is above human hearing. 1:1 mode won\u{2019}t make it audible"
                         </div>
                     }
                 })}
@@ -567,16 +567,16 @@ pub fn HfrButton() -> impl IntoView {
                                     }).collect::<Vec<_>>()}
                                 </div>
                                 // Frequency summary
-                                <Show when=move || { let (h, l) = (state.ff_freq_hi.get(), state.ff_freq_lo.get()); h > l }>
+                                <Show when=move || { let (h, l) = (state.band_ff_freq_hi.get(), state.band_ff_freq_lo.get()); h > l }>
                                     <div class="freq-summary">
-                                        <div>"Input: "{move || format!("{}\u{2013}{}", format_freq_khz(state.ff_freq_lo.get()), format_freq_khz(state.ff_freq_hi.get()))}</div>
+                                        <div>"Input: "{move || format!("{}\u{2013}{}", format_freq_khz(state.band_ff_freq_lo.get()), format_freq_khz(state.band_ff_freq_hi.get()))}</div>
                                         <div class="freq-summary-output"
                                             on:mouseenter=set_output_highlight(state.te_factor)
                                             on:mouseleave=clear_output_highlight
                                         >"Output: "{move || {
                                             let f = state.te_factor.get();
-                                            let lo = output_freq(state.ff_freq_lo.get(), f);
-                                            let hi = output_freq(state.ff_freq_hi.get(), f);
+                                            let lo = output_freq(state.band_ff_freq_lo.get(), f);
+                                            let hi = output_freq(state.band_ff_freq_hi.get(), f);
                                             let (lo, hi) = if lo < hi { (lo, hi) } else { (hi, lo) };
                                             format!("{}\u{2013}{}", format_freq_khz(lo), format_freq_khz(hi))
                                         }}</div>
@@ -618,16 +618,16 @@ pub fn HfrButton() -> impl IntoView {
                                         }
                                     }).collect::<Vec<_>>()}
                                 </div>
-                                <Show when=move || { let (h, l) = (state.ff_freq_hi.get(), state.ff_freq_lo.get()); h > l }>
+                                <Show when=move || { let (h, l) = (state.band_ff_freq_hi.get(), state.band_ff_freq_lo.get()); h > l }>
                                     <div class="freq-summary">
-                                        <div>"Input: "{move || format!("{}\u{2013}{}", format_freq_khz(state.ff_freq_lo.get()), format_freq_khz(state.ff_freq_hi.get()))}</div>
+                                        <div>"Input: "{move || format!("{}\u{2013}{}", format_freq_khz(state.band_ff_freq_lo.get()), format_freq_khz(state.band_ff_freq_hi.get()))}</div>
                                         <div class="freq-summary-output"
                                             on:mouseenter=set_output_highlight(state.ps_factor)
                                             on:mouseleave=clear_output_highlight
                                         >"Output: "{move || {
                                             let f = state.ps_factor.get();
-                                            let lo = output_freq(state.ff_freq_lo.get(), f);
-                                            let hi = output_freq(state.ff_freq_hi.get(), f);
+                                            let lo = output_freq(state.band_ff_freq_lo.get(), f);
+                                            let hi = output_freq(state.band_ff_freq_hi.get(), f);
                                             let (lo, hi) = if lo < hi { (lo, hi) } else { (hi, lo) };
                                             format!("{}\u{2013}{}", format_freq_khz(lo), format_freq_khz(hi))
                                         }}</div>
@@ -680,16 +680,16 @@ pub fn HfrButton() -> impl IntoView {
                                         }
                                     }).collect::<Vec<_>>()}
                                 </div>
-                                <Show when=move || { let (h, l) = (state.ff_freq_hi.get(), state.ff_freq_lo.get()); h > l }>
+                                <Show when=move || { let (h, l) = (state.band_ff_freq_hi.get(), state.band_ff_freq_lo.get()); h > l }>
                                     <div class="freq-summary">
-                                        <div>"Input: "{move || format!("{}\u{2013}{}", format_freq_khz(state.ff_freq_lo.get()), format_freq_khz(state.ff_freq_hi.get()))}</div>
+                                        <div>"Input: "{move || format!("{}\u{2013}{}", format_freq_khz(state.band_ff_freq_lo.get()), format_freq_khz(state.band_ff_freq_hi.get()))}</div>
                                         <div class="freq-summary-output"
                                             on:mouseenter=set_output_highlight(state.pv_factor)
                                             on:mouseleave=clear_output_highlight
                                         >"Output: "{move || {
                                             let f = state.pv_factor.get();
-                                            let lo = output_freq(state.ff_freq_lo.get(), f);
-                                            let hi = output_freq(state.ff_freq_hi.get(), f);
+                                            let lo = output_freq(state.band_ff_freq_lo.get(), f);
+                                            let hi = output_freq(state.band_ff_freq_hi.get(), f);
                                             let (lo, hi) = if lo < hi { (lo, hi) } else { (hi, lo) };
                                             format!("{}\u{2013}{}", format_freq_khz(lo), format_freq_khz(hi))
                                         }}</div>
@@ -749,7 +749,7 @@ pub fn HfrButton() -> impl IntoView {
                 <Show when=move || {
                     let bp = state.bandpass_mode.get();
                     bp == BandpassMode::On
-                        || (bp == BandpassMode::Auto && state.ff_freq_hi.get() > state.ff_freq_lo.get())
+                        || (bp == BandpassMode::Auto && state.band_ff_freq_hi.get() > state.band_ff_freq_lo.get())
                 }>
                     {
                         let make_db_handler = |signal: RwSignal<f64>| {
@@ -790,7 +790,7 @@ pub fn HfrButton() -> impl IntoView {
                             <div style="display: flex; gap: 2px; padding: 0 6px 2px;">
                                 <button class=move || layer_opt_class(state.bandpass_range.get() == BandpassRange::FollowFocus)
                                     on:click=move |_| state.bandpass_range.set(BandpassRange::FollowFocus)
-                                >"Focus"</button>
+                                >"Band"</button>
                                 <button class=move || layer_opt_class(state.bandpass_range.get() == BandpassRange::Custom)
                                     on:click=move |_| state.bandpass_range.set(BandpassRange::Custom)
                                 >"Custom"</button>
@@ -846,7 +846,7 @@ pub fn HfrButton() -> impl IntoView {
                                 on:mouseenter=move |_| state.filter_hovering_band.set(Some(1))
                                 on:mouseleave=move |_| state.filter_hovering_band.set(None)
                             >
-                                <label>"Focus"</label>
+                                <label>"Band"</label>
                                 <input type="range" min="-60" max="6" step="1"
                                     prop:value=move || state.filter_db_selected.get().to_string()
                                     on:input=on_selected_change

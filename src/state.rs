@@ -326,7 +326,7 @@ pub enum FilterQuality {
 
 // ── New enums ────────────────────────────────────────────────────────────────
 
-/// Bandpass filter mode: Auto (from FF), Off, or On (manual).
+/// Bandpass filter mode: Auto (from BandFF), Off, or On (manual).
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
 pub enum BandpassMode {
     #[default]
@@ -346,9 +346,9 @@ pub enum BandpassRange {
 /// Which spectrogram overlay handle is being dragged / hovered.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum SpectrogramHandle {
-    FfUpper,       // FF upper boundary
-    FfLower,       // FF lower boundary
-    FfMiddle,      // FF midpoint (transpose whole range)
+    BandFfUpper,       // BandFF upper boundary
+    BandFfLower,       // BandFF lower boundary
+    BandFfMiddle,      // BandFF midpoint (transpose whole range)
     HetCenter,     // HET center freq
     HetBandUpper,  // HET upper band edge
     HetBandLower,  // HET lower band edge
@@ -1131,15 +1131,15 @@ pub struct AppState {
     // Main panel view mode
     pub main_view: RwSignal<MainView>,
 
-    // Spectrogram drag handles (FF + HET)
+    // Spectrogram drag handles (BandFF + HET)
     pub spec_drag_handle: RwSignal<Option<SpectrogramHandle>>,
     pub spec_hover_handle: RwSignal<Option<SpectrogramHandle>>,
 
-    // FF frequency range (0.0 = no FF active)
-    pub ff_freq_lo: RwSignal<f64>,
-    pub ff_freq_hi: RwSignal<f64>,
+    // BandFF frequency range (0.0 = no BandFF active)
+    pub band_ff_freq_lo: RwSignal<f64>,
+    pub band_ff_freq_hi: RwSignal<f64>,
 
-    // Per-parameter auto flags (true = computed from FF)
+    // Per-parameter auto flags (true = computed from BandFF)
     pub het_freq_auto: RwSignal<bool>,
     pub het_cutoff_auto: RwSignal<bool>,
     pub te_factor_auto: RwSignal<bool>,
@@ -1633,8 +1633,8 @@ impl AppState {
             main_view: RwSignal::new(MainView::Spectrogram),
             spec_drag_handle: RwSignal::new(None),
             spec_hover_handle: RwSignal::new(None),
-            ff_freq_lo: RwSignal::new(0.0),
-            ff_freq_hi: RwSignal::new(0.0),
+            band_ff_freq_lo: RwSignal::new(0.0),
+            band_ff_freq_hi: RwSignal::new(0.0),
             het_freq_auto: RwSignal::new(true),
             het_cutoff_auto: RwSignal::new(true),
             te_factor_auto: RwSignal::new(true),
@@ -2166,7 +2166,7 @@ impl AppState {
 
     /// Called by drag handles, axis drag, input fields.
     /// Updates the focus stack and syncs output signals immediately.
-    pub fn set_ff_range(&self, lo: f64, hi: f64) {
+    pub fn set_band_ff_range(&self, lo: f64, hi: f64) {
         use crate::focus_stack::FocusRange;
         self.focus_stack.update(|s| {
             s.set_user_range(FocusRange::new(lo, hi));
@@ -2174,19 +2174,19 @@ impl AppState {
         self.sync_focus_outputs();
     }
 
-    /// Set only the lower FF bound (for drag handles).
-    pub fn set_ff_lo(&self, lo: f64) {
-        let hi = self.ff_freq_hi.get_untracked();
-        self.set_ff_range(lo, hi);
+    /// Set only the lower BandFF bound (for drag handles).
+    pub fn set_band_ff_lo(&self, lo: f64) {
+        let hi = self.band_ff_freq_hi.get_untracked();
+        self.set_band_ff_range(lo, hi);
     }
 
-    /// Set only the upper FF bound (for drag handles).
-    pub fn set_ff_hi(&self, hi: f64) {
-        let lo = self.ff_freq_lo.get_untracked();
-        self.set_ff_range(lo, hi);
+    /// Set only the upper BandFF bound (for drag handles).
+    pub fn set_band_ff_hi(&self, hi: f64) {
+        let lo = self.band_ff_freq_lo.get_untracked();
+        self.set_band_ff_range(lo, hi);
     }
 
-    /// Push a bat book FF override. Enables HFR if not already on.
+    /// Push a bat book BandFF override. Enables HFR if not already on.
     pub fn push_bat_book_ff(&self, lo: f64, hi: f64) {
         use crate::focus_stack::{FocusRange, FocusSource};
         self.focus_stack.update(|s| {
@@ -2207,7 +2207,7 @@ impl AppState {
         self.sync_focus_outputs();
     }
 
-    /// Pop the bat book FF override. Restores previous state if not adopted.
+    /// Pop the bat book BandFF override. Restores previous state if not adopted.
     pub fn pop_bat_book_ff(&self) {
         use crate::focus_stack::{FocusRange, FocusSource};
         let mut restore: Option<FocusRange> = None;
@@ -2226,7 +2226,7 @@ impl AppState {
         self.sync_focus_outputs();
     }
 
-    /// Push an annotation FF override. Only for annotations with freq bounds.
+    /// Push an annotation BandFF override. Only for annotations with freq bounds.
     pub fn push_annotation_ff(&self, lo: f64, hi: f64) {
         use crate::focus_stack::{FocusRange, FocusSource};
         self.focus_stack.update(|s| {
@@ -2246,7 +2246,7 @@ impl AppState {
         self.sync_focus_outputs();
     }
 
-    /// Pop the annotation FF override.
+    /// Pop the annotation BandFF override.
     pub fn pop_annotation_ff(&self) {
         use crate::focus_stack::{FocusRange, FocusSource};
         let mut restore: Option<FocusRange> = None;
@@ -2365,16 +2365,16 @@ impl AppState {
     }
 
     /// Sync the focus stack's effective range to the output signals
-    /// (ff_freq_lo, ff_freq_hi, hfr_enabled).
+    /// (band_ff_freq_lo, band_ff_freq_hi, hfr_enabled).
     fn sync_focus_outputs(&self) {
         let stack = self.focus_stack.get_untracked();
         let eff = stack.effective_range();
         let hfr = stack.hfr_enabled();
-        if self.ff_freq_lo.get_untracked() != eff.lo {
-            self.ff_freq_lo.set(eff.lo);
+        if self.band_ff_freq_lo.get_untracked() != eff.lo {
+            self.band_ff_freq_lo.set(eff.lo);
         }
-        if self.ff_freq_hi.get_untracked() != eff.hi {
-            self.ff_freq_hi.set(eff.hi);
+        if self.band_ff_freq_hi.get_untracked() != eff.hi {
+            self.band_ff_freq_hi.set(eff.hi);
         }
         if self.hfr_enabled.get_untracked() != hfr {
             self.hfr_enabled.set(hfr);

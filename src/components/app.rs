@@ -318,24 +318,24 @@ pub fn App() -> impl IntoView {
         }
     });
 
-    // Sync focus_stack → ff_freq_lo/hi + hfr_enabled output signals.
+    // Sync focus_stack → band_ff_freq_lo/hi + hfr_enabled output signals.
     // This keeps downstream Effects (B, C, D in hfr_button) working unchanged.
     Effect::new(move |_| {
         let stack = state.focus_stack.get();
         let eff = stack.effective_range();
         let hfr = stack.hfr_enabled();
-        if state.ff_freq_lo.get_untracked() != eff.lo {
-            state.ff_freq_lo.set(eff.lo);
+        if state.band_ff_freq_lo.get_untracked() != eff.lo {
+            state.band_ff_freq_lo.set(eff.lo);
         }
-        if state.ff_freq_hi.get_untracked() != eff.hi {
-            state.ff_freq_hi.set(eff.hi);
+        if state.band_ff_freq_hi.get_untracked() != eff.hi {
+            state.band_ff_freq_hi.set(eff.hi);
         }
         if state.hfr_enabled.get_untracked() != hfr {
             state.hfr_enabled.set(hfr);
         }
     });
 
-    // Keep annotation-driven FF in sync regardless of whether selection happened
+    // Keep annotation-driven BandFF in sync regardless of whether selection happened
     // from the sidebar or directly on the canvas.
     Effect::new(move |_| {
         let _ = state.current_file_index.get();
@@ -693,7 +693,7 @@ pub fn App() -> impl IntoView {
                     }));
                     state_kb.show_info_toast("Region → Segment (Q)");
                 } else {
-                    // Restore freq bounds from FF range: segment → region
+                    // Restore freq bounds from BandFF range: segment → region
                     let ff = state_kb.focus_stack.get_untracked().effective_range_ignoring_hfr();
                     let (lo, hi) = if ff.is_active() {
                         (ff.lo, ff.hi)
@@ -730,7 +730,7 @@ pub fn App() -> impl IntoView {
                     drop(store);
                     state_kb.snapshot_annotations();
                     if all_have_freq {
-                        // Region → Segment: strip freq bounds, don't reset FF
+                        // Region → Segment: strip freq bounds, don't reset BandFF
                         state_kb.annotation_store.update(|store| {
                             if let Some(Some(ref mut set)) = store.sets.get_mut(idx) {
                                 for ann in set.annotations.iter_mut() {
@@ -747,7 +747,7 @@ pub fn App() -> impl IntoView {
                         state_kb.annotations_dirty.set(true);
                         state_kb.show_info_toast("Region → Segment (Q)");
                     } else {
-                        // Segment → Region: use FF height
+                        // Segment → Region: use BandFF height
                         let ff = state_kb.focus_stack.get_untracked().effective_range_ignoring_hfr();
                         let (lo, hi) = if ff.is_active() {
                             (ff.lo, ff.hi)

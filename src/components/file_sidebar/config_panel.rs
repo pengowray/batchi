@@ -239,7 +239,7 @@ pub(super) fn ConfigPanel() -> impl IntoView {
             <div class="setting-group">
                 <div class="setting-group-title">"Selection"</div>
                 <div class="setting-row">
-                    <span class="setting-label">"Auto-focus: Selection"</span>
+                    <span class="setting-label">"Auto-band: Selection"</span>
                     <input
                         type="checkbox"
                         class="setting-checkbox"
@@ -252,7 +252,7 @@ pub(super) fn ConfigPanel() -> impl IntoView {
                     />
                 </div>
                 <div class="setting-row">
-                    <span class="setting-label">"Auto-focus: Annotation"</span>
+                    <span class="setting-label">"Auto-band: Annotation"</span>
                     <input
                         type="checkbox"
                         class="setting-checkbox"
@@ -265,7 +265,7 @@ pub(super) fn ConfigPanel() -> impl IntoView {
                     />
                 </div>
                 <div class="setting-row">
-                    <span class="setting-label">"Auto-focus: Bat Book"</span>
+                    <span class="setting-label">"Auto-band: Bat Book"</span>
                     <input
                         type="checkbox"
                         class="setting-checkbox"

@@ -87,13 +87,13 @@ pub fn AnalysisPanel() -> impl IntoView {
                     }.into_any();
                 }
 
-                // FF / HET handle interaction
+                // BandFF / HET handle interaction
                 if let Some(handle) = state.spec_drag_handle.get() {
                     let msg = match handle {
-                        SpectrogramHandle::FfUpper | SpectrogramHandle::FfLower | SpectrogramHandle::FfMiddle => {
-                            let lo = state.ff_freq_lo.get();
-                            let hi = state.ff_freq_hi.get();
-                            format!("Frequency focus: {} – {}", fmt_freq(lo), fmt_freq(hi))
+                        SpectrogramHandle::BandFfUpper | SpectrogramHandle::BandFfLower | SpectrogramHandle::BandFfMiddle => {
+                            let lo = state.band_ff_freq_lo.get();
+                            let hi = state.band_ff_freq_hi.get();
+                            format!("Band: {} – {}", fmt_freq(lo), fmt_freq(hi))
                         }
                         SpectrogramHandle::HetCenter => {
                             let f = state.het_frequency.get();
@@ -141,7 +141,7 @@ pub fn AnalysisPanel() -> impl IntoView {
                 // Hovering label area
                 if state.mouse_in_label_area.get() {
                     return view! {
-                        <span style="color: #666">"Drag to set frequency focus"</span>
+                        <span style="color: #666">"Drag to set band"</span>
                     }.into_any();
                 }
 

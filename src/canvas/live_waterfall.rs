@@ -242,11 +242,11 @@ fn apply_colormap_mode(
 ) -> [u8; 3] {
     match mode {
         ColormapMode::Uniform(cm) => cm.apply(grey),
-        ColormapMode::HfrFocus { colormap: cm, ff_lo_frac, ff_hi_frac } => {
+        ColormapMode::HfrFocus { colormap: cm, band_ff_lo_frac, band_ff_hi_frac } => {
             // Convert canvas row to frequency fraction.
             let h = canvas_height as f64;
-            let focus_top = (h * (1.0 - ff_hi_frac)).round() as usize;
-            let focus_bot = (h * (1.0 - ff_lo_frac)).round() as usize;
+            let focus_top = (h * (1.0 - band_ff_hi_frac)).round() as usize;
+            let focus_bot = (h * (1.0 - band_ff_lo_frac)).round() as usize;
             if canvas_row >= focus_top && canvas_row < focus_bot {
                 cm.apply(grey)
             } else {

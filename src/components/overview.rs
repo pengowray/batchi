@@ -91,8 +91,8 @@ fn draw_overview_spectrogram(
     main_freq_crop_hi: f64,   // 0..1: high fraction of Nyquist shown in main view
     bookmarks: &[(f64,)],
     overview_freq_crop: f64,  // 0..1: fraction shown in the overview itself
-    ff_range: Option<(f64, f64)>, // FF range as (lo_frac, hi_frac) of Nyquist
-    clean_view: bool,         // hide all overlays (viewport rect, bookmarks, FF range)
+    band_ff_range: Option<(f64, f64)>, // BandFF range as (lo_frac, hi_frac) of Nyquist
+    clean_view: bool,         // hide all overlays (viewport rect, bookmarks, BandFF range)
 ) {
     let cw = canvas.width() as f64;
     let ch = canvas.height() as f64;
@@ -165,16 +165,16 @@ fn draw_overview_spectrogram(
         ctx.set_line_width(1.0);
         ctx.stroke_rect(vp_x, vp_y1, vp_w, vp_h);
 
-        // FF range highlight (nested inside viewport rect)
-        if let Some((ff_lo, ff_hi)) = ff_range {
-            let ff_y1 = (ch * (1.0 - ff_hi / ofc)).clamp(0.0, ch);
-            let ff_y2 = (ch * (1.0 - ff_lo / ofc)).clamp(0.0, ch);
-            if ff_y2 - ff_y1 > 0.5 {
+        // BandFF range highlight (nested inside viewport rect)
+        if let Some((band_ff_lo, band_ff_hi)) = band_ff_range {
+            let band_ff_y1 = (ch * (1.0 - band_ff_hi / ofc)).clamp(0.0, ch);
+            let band_ff_y2 = (ch * (1.0 - band_ff_lo / ofc)).clamp(0.0, ch);
+            if band_ff_y2 - band_ff_y1 > 0.5 {
                 ctx.set_fill_style_str("rgba(120, 200, 160, 0.15)");
-                ctx.fill_rect(vp_x, ff_y1, vp_w, ff_y2 - ff_y1);
+                ctx.fill_rect(vp_x, band_ff_y1, vp_w, band_ff_y2 - band_ff_y1);
                 ctx.set_stroke_style_str("rgba(120, 200, 160, 0.7)");
                 ctx.set_line_width(1.0);
-                ctx.stroke_rect(vp_x, ff_y1, vp_w, ff_y2 - ff_y1);
+                ctx.stroke_rect(vp_x, band_ff_y1, vp_w, band_ff_y2 - band_ff_y1);
             }
         }
 
@@ -648,8 +648,8 @@ pub fn OverviewPanel() -> impl IntoView {
         let main_canvas_w = state.spectrogram_canvas_width.get();
         let min_display_freq = state.min_display_freq.get();
         let max_display_freq = state.max_display_freq.get();
-        let ff_lo_hz = state.ff_freq_lo.get();
-        let ff_hi_hz = state.ff_freq_hi.get();
+        let band_ff_lo_hz = state.band_ff_freq_lo.get();
+        let band_ff_hi_hz = state.band_ff_freq_hi.get();
         let overview_view = state.overview_view.get();
         // Re-sync overlay dimensions when sidebar layout changes
         let _sidebar = state.sidebar_collapsed.get();
@@ -783,18 +783,18 @@ pub fn OverviewPanel() -> impl IntoView {
                     ctx.set_line_width(1.0);
                     ctx.stroke_rect(vp_x, vp_y1, vp_w, vp_h);
 
-                    // FF range highlight
-                    if ff_hi_hz > ff_lo_hz {
-                        let lo_frac = (ff_lo_hz / max_freq).clamp(0.0, 1.0);
-                        let hi_frac = (ff_hi_hz.min(max_freq) / max_freq).clamp(0.0, 1.0);
-                        let ff_y1 = (ch * (1.0 - hi_frac / ofc)).clamp(0.0, ch);
-                        let ff_y2 = (ch * (1.0 - lo_frac / ofc)).clamp(0.0, ch);
-                        if ff_y2 - ff_y1 > 0.5 {
+                    // BandFF range highlight
+                    if band_ff_hi_hz > band_ff_lo_hz {
+                        let lo_frac = (band_ff_lo_hz / max_freq).clamp(0.0, 1.0);
+                        let hi_frac = (band_ff_hi_hz.min(max_freq) / max_freq).clamp(0.0, 1.0);
+                        let band_ff_y1 = (ch * (1.0 - hi_frac / ofc)).clamp(0.0, ch);
+                        let band_ff_y2 = (ch * (1.0 - lo_frac / ofc)).clamp(0.0, ch);
+                        if band_ff_y2 - band_ff_y1 > 0.5 {
                             ctx.set_fill_style_str("rgba(120, 200, 160, 0.15)");
-                            ctx.fill_rect(vp_x, ff_y1, vp_w, ff_y2 - ff_y1);
+                            ctx.fill_rect(vp_x, band_ff_y1, vp_w, band_ff_y2 - band_ff_y1);
                             ctx.set_stroke_style_str("rgba(120, 200, 160, 0.7)");
                             ctx.set_line_width(1.0);
-                            ctx.stroke_rect(vp_x, ff_y1, vp_w, ff_y2 - ff_y1);
+                            ctx.stroke_rect(vp_x, band_ff_y1, vp_w, band_ff_y2 - band_ff_y1);
                         }
                     }
                 }

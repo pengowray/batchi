@@ -26,18 +26,18 @@ pub(crate) fn PulsePanel() -> impl IntoView {
         let tab = state.right_sidebar_tab.get();
         let files = state.files.get();
         let idx = state.current_file_index.get();
-        let ff_lo = state.ff_freq_lo.get();
-        let ff_hi = state.ff_freq_hi.get();
+        let band_ff_lo = state.band_ff_freq_lo.get();
+        let band_ff_hi = state.band_ff_freq_hi.get();
         let _trigger = redetect_trigger.get(); // subscribe so Re-detect re-runs this Effect
 
         if tab != RightSidebarTab::Pulses {
             return;
         }
 
-        let ff_pair = (ff_lo, ff_hi);
-        // Already computed for this file + same FF range (trigger bypass: cache was cleared)
+        let band_ff_pair = (band_ff_lo, band_ff_hi);
+        // Already computed for this file + same BandFF range (trigger bypass: cache was cleared)
         if idx == last_computed_idx.get_untracked()
-            && ff_pair == last_computed_ff.get_untracked()
+            && band_ff_pair == last_computed_ff.get_untracked()
             && !state.detected_pulses.get_untracked().is_empty()
         {
             return;
@@ -56,7 +56,7 @@ pub(crate) fn PulsePanel() -> impl IntoView {
         state.selected_pulse_index.set(None);
         state.pulse_detecting.set(true);
         last_computed_idx.set(idx);
-        last_computed_ff.set(ff_pair);
+        last_computed_ff.set(band_ff_pair);
         compute_gen.update(|g| *g += 1);
         let generation = compute_gen.get_untracked();
 
@@ -76,8 +76,8 @@ pub(crate) fn PulsePanel() -> impl IntoView {
                 max_pulse_duration_ms: max_dur,
                 min_gap_ms: gap,
                 threshold_db: thresh,
-                bandpass_low_hz: ff_lo,
-                bandpass_high_hz: if ff_hi > ff_lo { ff_hi } else { 0.0 },
+                bandpass_low_hz: band_ff_lo,
+                bandpass_high_hz: if band_ff_hi > band_ff_lo { band_ff_hi } else { 0.0 },
             };
 
             let pulses = pulse_detect::detect_pulses(&audio, &spectrogram, &params);

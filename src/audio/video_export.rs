@@ -167,14 +167,14 @@ async fn export_video_impl(state: &AppState) -> Result<(), JsValue> {
     let hfr_enabled = state.hfr_enabled.get_untracked();
     let colormap_pref = state.colormap_preference.get_untracked();
     let hfr_colormap_pref = state.hfr_colormap_preference.get_untracked();
-    let ff_lo = state.ff_freq_lo.get_untracked();
-    let ff_hi = state.ff_freq_hi.get_untracked();
+    let band_ff_lo = state.band_ff_freq_lo.get_untracked();
+    let band_ff_hi = state.band_ff_freq_hi.get_untracked();
 
-    let colormap = if hfr_enabled && ff_hi > ff_lo {
+    let colormap = if hfr_enabled && band_ff_hi > band_ff_lo {
         ColormapMode::HfrFocus {
             colormap: hfr_colormap_pref,
-            ff_lo_frac: ff_lo / file_max_freq,
-            ff_hi_frac: ff_hi / file_max_freq,
+            band_ff_lo_frac: band_ff_lo / file_max_freq,
+            band_ff_hi_frac: band_ff_hi / file_max_freq,
         }
     } else if hfr_enabled {
         ColormapMode::Uniform(hfr_colormap_pref)
@@ -639,10 +639,10 @@ fn render_frame(
         file_max_freq: r.file_max_freq,
         axis_drag_lo: None,
         axis_drag_hi: None,
-        ff_drag_active: false,
-        ff_lo: r.min_freq,
-        ff_hi: r.max_freq,
-        ff_handles_active: false,
+        band_ff_drag_active: false,
+        band_ff_lo: r.min_freq,
+        band_ff_hi: r.max_freq,
+        band_ff_handles_active: false,
         shield_style: r.shield_style,
     };
     crate::canvas::overlays::draw_freq_markers(

@@ -30,12 +30,12 @@ pub struct FreqMarkerState {
     /// Axis drag range for lighting up color bars
     pub axis_drag_lo: Option<f64>,
     pub axis_drag_hi: Option<f64>,
-    /// FF handle drag is active (light up FF range bars)
-    pub ff_drag_active: bool,
-    pub ff_lo: f64,
-    pub ff_hi: f64,
-    /// FF handles are hovered or being dragged (hide cursor indicator)
-    pub ff_handles_active: bool,
+    /// BandFF handle drag is active (light up BandFF range bars)
+    pub band_ff_drag_active: bool,
+    pub band_ff_lo: f64,
+    pub band_ff_hi: f64,
+    /// BandFF handles are hovered or being dragged (hide cursor indicator)
+    pub band_ff_handles_active: bool,
     /// Shield/flag color bar style
     pub shield_style: ShieldStyle,
 }
@@ -224,7 +224,7 @@ pub fn draw_freq_markers(
         };
 
         // --- Color range bar (covering the interval above this division) ---
-        // Only show bands within: axis drag range, FF handle drag range, or active FF range.
+        // Only show bands within: axis drag range, BandFF handle drag range, or active BandFF range.
         // Skip major bars below 20 kHz when minor bars will provide finer coverage.
         let has_minor_coverage = div_interval >= 5_000.0 && freq < 20_000.0;
         let bar_top_freq = (freq + div_interval).min(max_freq);
@@ -233,15 +233,15 @@ pub fn draw_freq_markers(
                 (Some(lo), Some(hi)) => bar_top_freq > lo && freq < hi,
                 _ => false,
             };
-            let ff_drag_in_range = ms.ff_drag_active && ms.ff_hi > ms.ff_lo && bar_top_freq > ms.ff_lo && freq < ms.ff_hi;
-            let ff_active_in_range = !ms.ff_drag_active && ms.ff_hi > ms.ff_lo && bar_top_freq > ms.ff_lo && freq < ms.ff_hi;
-            if axis_drag_in_range || ff_drag_in_range || ff_active_in_range {
-                let bar_alpha = if axis_drag_in_range || ff_drag_in_range { 0.8 } else { 0.6 };
+            let band_ff_drag_in_range = ms.band_ff_drag_active && ms.band_ff_hi > ms.band_ff_lo && bar_top_freq > ms.band_ff_lo && freq < ms.band_ff_hi;
+            let band_ff_active_in_range = !ms.band_ff_drag_active && ms.band_ff_hi > ms.band_ff_lo && bar_top_freq > ms.band_ff_lo && freq < ms.band_ff_hi;
+            if axis_drag_in_range || band_ff_drag_in_range || band_ff_active_in_range {
+                let bar_alpha = if axis_drag_in_range || band_ff_drag_in_range { 0.8 } else { 0.6 };
                 // Clamp bar extent to active range boundaries
                 let (clamp_lo, clamp_hi) = if axis_drag_in_range {
                     (ms.axis_drag_lo.unwrap(), ms.axis_drag_hi.unwrap())
                 } else {
-                    (ms.ff_lo, ms.ff_hi)
+                    (ms.band_ff_lo, ms.band_ff_hi)
                 };
                 let clamped_lo = freq.max(clamp_lo);
                 let clamped_hi = bar_top_freq.min(clamp_hi);
@@ -441,15 +441,15 @@ pub fn draw_freq_markers(
                 (Some(lo), Some(hi)) => bar_top_freq_m > lo && mf < hi,
                 _ => false,
             };
-            let ff_drag_in_m = ms.ff_drag_active && ms.ff_hi > ms.ff_lo && bar_top_freq_m > ms.ff_lo && mf < ms.ff_hi;
-            let ff_active_in_m = !ms.ff_drag_active && ms.ff_hi > ms.ff_lo && bar_top_freq_m > ms.ff_lo && mf < ms.ff_hi;
-            if axis_drag_in_m || ff_drag_in_m || ff_active_in_m {
-                let bar_alpha_m = if axis_drag_in_m || ff_drag_in_m { 0.6 } else { 0.4 };
+            let band_ff_drag_in_m = ms.band_ff_drag_active && ms.band_ff_hi > ms.band_ff_lo && bar_top_freq_m > ms.band_ff_lo && mf < ms.band_ff_hi;
+            let band_ff_active_in_m = !ms.band_ff_drag_active && ms.band_ff_hi > ms.band_ff_lo && bar_top_freq_m > ms.band_ff_lo && mf < ms.band_ff_hi;
+            if axis_drag_in_m || band_ff_drag_in_m || band_ff_active_in_m {
+                let bar_alpha_m = if axis_drag_in_m || band_ff_drag_in_m { 0.6 } else { 0.4 };
                 // Clamp bar extent to active range boundaries
                 let (clamp_lo, clamp_hi) = if axis_drag_in_m {
                     (ms.axis_drag_lo.unwrap(), ms.axis_drag_hi.unwrap())
                 } else {
-                    (ms.ff_lo, ms.ff_hi)
+                    (ms.band_ff_lo, ms.band_ff_hi)
                 };
                 let clamped_lo = mf.max(clamp_lo);
                 let clamped_hi = bar_top_freq_m.min(clamp_hi);
@@ -511,13 +511,13 @@ pub fn draw_freq_markers(
     ctx.set_text_baseline("alphabetic"); // reset
 }
 
-/// Draw the Frequency Focus overlay: dim outside the FF range, amber edge lines with drag handles.
+/// Draw the Frequency Focus overlay: dim outside the BandFF range, amber edge lines with drag handles.
 /// Handles are diamond-shaped and centered horizontally. They appear on hover, pointer-down,
 /// or always on mobile.
-pub fn draw_ff_overlay(
+pub fn draw_band_ff_overlay(
     ctx: &CanvasRenderingContext2d,
-    ff_lo: f64,
-    ff_hi: f64,
+    band_ff_lo: f64,
+    band_ff_hi: f64,
     min_freq: f64,
     max_freq: f64,
     canvas_height: f64,
@@ -525,16 +525,16 @@ pub fn draw_ff_overlay(
     hover_handle: Option<SpectrogramHandle>,
     drag_handle: Option<SpectrogramHandle>,
     is_mobile: bool,
-    ff_focused: bool,
+    band_ff_focused: bool,
     pointer_down: bool,
     mouse_freq: Option<f64>,
 ) {
-    if ff_hi <= ff_lo { return; }
+    if band_ff_hi <= band_ff_lo { return; }
 
-    let y_top = freq_to_y(ff_hi.min(max_freq), min_freq, max_freq, canvas_height);
-    let y_bottom = freq_to_y(ff_lo.max(min_freq), min_freq, max_freq, canvas_height);
+    let y_top = freq_to_y(band_ff_hi.min(max_freq), min_freq, max_freq, canvas_height);
+    let y_bottom = freq_to_y(band_ff_lo.max(min_freq), min_freq, max_freq, canvas_height);
 
-    // Dim outside the FF range
+    // Dim outside the BandFF range
     ctx.set_fill_style_str("rgba(0, 0, 0, 0.45)");
     if y_top > 0.0 {
         ctx.fill_rect(0.0, 0.0, canvas_width, y_top);
@@ -543,8 +543,8 @@ pub fn draw_ff_overlay(
         ctx.fill_rect(0.0, y_bottom, canvas_width, canvas_height - y_bottom);
     }
 
-    let any_ff_active = matches!(hover_handle, Some(SpectrogramHandle::FfUpper | SpectrogramHandle::FfLower | SpectrogramHandle::FfMiddle))
-        || matches!(drag_handle, Some(SpectrogramHandle::FfUpper | SpectrogramHandle::FfLower | SpectrogramHandle::FfMiddle));
+    let any_band_ff_active = matches!(hover_handle, Some(SpectrogramHandle::BandFfUpper | SpectrogramHandle::BandFfLower | SpectrogramHandle::BandFfMiddle))
+        || matches!(drag_handle, Some(SpectrogramHandle::BandFfUpper | SpectrogramHandle::BandFfLower | SpectrogramHandle::BandFfMiddle));
 
     let is_active = |handle: SpectrogramHandle| -> bool {
         drag_handle == Some(handle) || hover_handle == Some(handle)
@@ -558,9 +558,9 @@ pub fn draw_ff_overlay(
 
     // Edge lines (full width) + centered diamond drag handles
     // Focused: dotted yellow lines; Unfocused: solid muted blue-gray lines
-    for &(y, handle) in &[(y_top, SpectrogramHandle::FfUpper), (y_bottom, SpectrogramHandle::FfLower)] {
+    for &(y, handle) in &[(y_top, SpectrogramHandle::BandFfUpper), (y_bottom, SpectrogramHandle::BandFfLower)] {
         let active = is_active(handle);
-        if ff_focused {
+        if band_ff_focused {
             // Focused: dotted yellow/amber lines
             let line_alpha = if active { 0.9 } else { 0.5 };
             let width = if active { 2.0 } else { 1.5 };
@@ -585,9 +585,9 @@ pub fn draw_ff_overlay(
         // Reset line dash
         let _ = ctx.set_line_dash(&js_sys::Array::new());
 
-        // Diamond handle at center — visible when FF is focused and
-        // hovering/dragging any FF handle, pointer is held down, or on mobile
-        let show_handle = ff_focused && (active || any_ff_active || is_mobile || pointer_down);
+        // Diamond handle at center — visible when BandFF is focused and
+        // hovering/dragging any BandFF handle, pointer is held down, or on mobile
+        let show_handle = band_ff_focused && (active || any_band_ff_active || is_mobile || pointer_down);
         if show_handle {
             let handle_size = if active { 8.0 } else if is_mobile { 6.0 } else { 5.0 };
             let handle_alpha = if active { 0.9 } else if is_mobile { 0.5 } else { 0.45 };
@@ -614,10 +614,10 @@ pub fn draw_ff_overlay(
     // Middle handle (diamond at midpoint, centered)
     // Only shown when mouse is within ~100px of the midpoint (or mobile/actively dragging)
     let mid_y = (y_top + y_bottom) / 2.0;
-    let mid_active = is_active(SpectrogramHandle::FfMiddle);
+    let mid_active = is_active(SpectrogramHandle::BandFfMiddle);
     let mid_near = mouse_y.map_or(false, |my| (my - mid_y).abs() < 100.0);
-    let show_mid = ff_focused && (mid_active || is_mobile
-        || ((any_ff_active || pointer_down) && mid_near));
+    let show_mid = band_ff_focused && (mid_active || is_mobile
+        || ((any_band_ff_active || pointer_down) && mid_near));
     if show_mid {
         let mid_size = if mid_active { 7.0 } else if is_mobile { 5.0 } else { 4.0 };
         let mid_alpha = if mid_active { 0.9 } else if is_mobile { 0.4 } else { 0.35 };
@@ -631,15 +631,15 @@ pub fn draw_ff_overlay(
         ctx.fill();
     }
 
-    // FF range labels — only when hovering/dragging FF handles specifically
-    let ff_handle_active = any_ff_active
-        || matches!(drag_handle, Some(SpectrogramHandle::FfUpper | SpectrogramHandle::FfLower | SpectrogramHandle::FfMiddle));
-    if ff_focused && ff_handle_active {
+    // BandFF range labels — only when hovering/dragging BandFF handles specifically
+    let band_ff_handle_active = any_band_ff_active
+        || matches!(drag_handle, Some(SpectrogramHandle::BandFfUpper | SpectrogramHandle::BandFfLower | SpectrogramHandle::BandFfMiddle));
+    if band_ff_focused && band_ff_handle_active {
         ctx.set_font("11px sans-serif");
         let label_x = center_x + handle_zone_half + 8.0;
 
-        // Top frequency label: just above the upper FF line
-        let top_label = format!("{:.1} kHz", ff_hi / 1000.0);
+        // Top frequency label: just above the upper BandFF line
+        let top_label = format!("{:.1} kHz", band_ff_hi / 1000.0);
         ctx.set_text_baseline("bottom");
         let top_metrics = ctx.measure_text(&top_label).unwrap();
         let bg_w = top_metrics.width() + 6.0;
@@ -649,8 +649,8 @@ pub fn draw_ff_overlay(
         ctx.set_fill_style_str("rgba(255, 180, 60, 0.9)");
         let _ = ctx.fill_text(&top_label, label_x, y_top - 4.0);
 
-        // Bottom frequency label: just below the lower FF line
-        let bottom_label = format!("{:.1} kHz", ff_lo / 1000.0);
+        // Bottom frequency label: just below the lower BandFF line
+        let bottom_label = format!("{:.1} kHz", band_ff_lo / 1000.0);
         ctx.set_text_baseline("top");
         let bot_metrics = ctx.measure_text(&bottom_label).unwrap();
         let bg_w = bot_metrics.width() + 6.0;
@@ -663,7 +663,7 @@ pub fn draw_ff_overlay(
     }
 }
 
-/// Draw the heterodyne frequency overlay: cyan center + band edge lines (no dimming — FF handles that).
+/// Draw the heterodyne frequency overlay: cyan center + band edge lines (no dimming — BandFF handles that).
 pub fn draw_het_overlay(
     ctx: &CanvasRenderingContext2d,
     het_freq: f64,

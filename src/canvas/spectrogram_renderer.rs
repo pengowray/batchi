@@ -17,7 +17,7 @@ use crate::viewport;
 pub use crate::canvas::flow::{FlowAlgo, FlowData, compute_flow_data, composite_flow, pre_render_flow_columns};
 pub use crate::canvas::overlays::{
     FreqShiftMode, FreqMarkerState,
-    draw_freq_markers, draw_time_markers, draw_ff_overlay, draw_het_overlay,
+    draw_freq_markers, draw_time_markers, draw_band_ff_overlay, draw_het_overlay,
     draw_pulses, draw_selection, draw_harmonic_shadows, draw_filter_overlay,
     pixel_to_time_freq, draw_notch_bands, draw_tile_debug_overlay, draw_annotations,
 };
@@ -179,7 +179,7 @@ pub enum ColormapMode {
     Uniform(Colormap),
     /// Colormap inside HFR focus band, greyscale outside.
     /// Fractions are relative to the full image (0 Hz = 0.0, file_max_freq = 1.0).
-    HfrFocus { colormap: Colormap, ff_lo_frac: f64, ff_hi_frac: f64 },
+    HfrFocus { colormap: Colormap, band_ff_lo_frac: f64, band_ff_hi_frac: f64 },
 }
 
 /// Blit the pre-rendered spectrogram to a visible canvas, handling scroll, zoom, and freq crop.
@@ -259,14 +259,14 @@ pub fn blit_viewport(
                 &mapped_pixels
             }
         }
-        ColormapMode::HfrFocus { colormap: cm, ff_lo_frac, ff_hi_frac } => {
+        ColormapMode::HfrFocus { colormap: cm, band_ff_lo_frac, band_ff_hi_frac } => {
             mapped_pixels = {
                 let mut buf = pre_rendered.pixels.clone();
                 let h = pre_rendered.height as f64;
                 let w = pre_rendered.width as usize;
                 // Row 0 = highest freq; last row = 0 Hz
-                let focus_top = (h * (1.0 - ff_hi_frac)).round() as usize;
-                let focus_bot = (h * (1.0 - ff_lo_frac)).round() as usize;
+                let focus_top = (h * (1.0 - band_ff_hi_frac)).round() as usize;
+                let focus_bot = (h * (1.0 - band_ff_lo_frac)).round() as usize;
                 for row in 0..pre_rendered.height as usize {
                     if row >= focus_top && row < focus_bot {
                         let base = row * w * 4;
@@ -376,10 +376,10 @@ pub fn blit_preview_as_background(
     let mut pixels = preview.pixels.as_ref().clone();
     match colormap {
         ColormapMode::Uniform(cm) => apply_colormap_to_tile(&mut pixels, cm),
-        ColormapMode::HfrFocus { colormap: cm, ff_lo_frac, ff_hi_frac } => {
+        ColormapMode::HfrFocus { colormap: cm, band_ff_lo_frac, band_ff_hi_frac } => {
             apply_hfr_colormap_to_tile(
                 &mut pixels, preview.width, preview.height,
-                cm, ff_lo_frac, ff_hi_frac,
+                cm, band_ff_lo_frac, band_ff_hi_frac,
             );
         }
     }
@@ -495,11 +495,11 @@ fn tile_render_fingerprint(
                 mix(&mut h, 0);
                 mix(&mut h, *cm as u64);
             }
-            ColormapMode::HfrFocus { colormap: cm, ff_lo_frac, ff_hi_frac } => {
+            ColormapMode::HfrFocus { colormap: cm, band_ff_lo_frac, band_ff_hi_frac } => {
                 mix(&mut h, 1);
                 mix(&mut h, *cm as u64);
-                mix(&mut h, ff_lo_frac.to_bits());
-                mix(&mut h, ff_hi_frac.to_bits());
+                mix(&mut h, band_ff_lo_frac.to_bits());
+                mix(&mut h, band_ff_hi_frac.to_bits());
             }
         },
         TileRenderMode::Flow { intensity_gate, flow_gate, opacity, shift_gain, color_gamma, algo, scheme } => {
@@ -580,12 +580,12 @@ fn apply_colormap_to_tile(pixels: &mut [u8], colormap: Colormap) {
 /// Apply HFR-focus colormap: color inside focus band, greyscale outside.
 fn apply_hfr_colormap_to_tile(
     pixels: &mut [u8], width: u32, height: u32,
-    colormap: Colormap, ff_lo_frac: f64, ff_hi_frac: f64,
+    colormap: Colormap, band_ff_lo_frac: f64, band_ff_hi_frac: f64,
 ) {
     let h = height as f64;
     let w = width as usize;
-    let focus_top = (h * (1.0 - ff_hi_frac)).round() as usize;
-    let focus_bot = (h * (1.0 - ff_lo_frac)).round() as usize;
+    let focus_top = (h * (1.0 - band_ff_hi_frac)).round() as usize;
+    let focus_bot = (h * (1.0 - band_ff_lo_frac)).round() as usize;
     for row in 0..height as usize {
         if row >= focus_top && row < focus_bot {
             let base = row * w * 4;
@@ -628,10 +628,10 @@ fn tile_to_rgba(
                     rgba[pi + 3] = 255;
                 }
             }
-            ColormapMode::HfrFocus { colormap: cm, ff_lo_frac, ff_hi_frac } => {
+            ColormapMode::HfrFocus { colormap: cm, band_ff_lo_frac, band_ff_hi_frac } => {
                 let h = rendered.height as f64;
-                let focus_top = (h * (1.0 - ff_hi_frac)).round() as usize;
-                let focus_bot = (h * (1.0 - ff_lo_frac)).round() as usize;
+                let focus_top = (h * (1.0 - band_ff_hi_frac)).round() as usize;
+                let focus_bot = (h * (1.0 - band_ff_lo_frac)).round() as usize;
                 for (i, &db) in db_data.iter().enumerate() {
                     let row = if w > 0 { i / w } else { 0 };
                     let extra = freq_adjustments.and_then(|a| a.get(row).copied()).unwrap_or(0.0);
@@ -807,10 +807,10 @@ pub fn blit_tiles_viewport(
                 if let TileRenderMode::Spectrogram(colormap) = &render_mode {
                     match colormap {
                         ColormapMode::Uniform(cm) => apply_colormap_to_tile(&mut px, *cm),
-                        ColormapMode::HfrFocus { colormap: cm, ff_lo_frac, ff_hi_frac } => {
+                        ColormapMode::HfrFocus { colormap: cm, band_ff_lo_frac, band_ff_hi_frac } => {
                             apply_hfr_colormap_to_tile(
                                 &mut px, tile.rendered.width, tile.rendered.height,
-                                *cm, *ff_lo_frac, *ff_hi_frac,
+                                *cm, *band_ff_lo_frac, *band_ff_hi_frac,
                             );
                         }
                     }

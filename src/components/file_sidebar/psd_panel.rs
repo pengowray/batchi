@@ -18,7 +18,7 @@ enum PsdFreqRangeMode {
     Auto,
     All,
     Selection,
-    FF,
+    BandFF,
 }
 
 /// Colors for peak markers (primary, then secondary peaks).
@@ -372,7 +372,7 @@ pub(crate) fn PsdPanel() -> impl IntoView {
                     <button
                         class=move || if freq_range_mode.get() == PsdFreqRangeMode::Auto { "psd-btn psd-btn-active" } else { "psd-btn" }
                         on:click=move |_| freq_range_mode.set(PsdFreqRangeMode::Auto)
-                        title="Auto: use selection if available, otherwise use frequency focus range"
+                        title="Auto: use selection if available, otherwise use band range"
                     >"Auto"</button>
                     <button
                         class=move || if freq_range_mode.get() == PsdFreqRangeMode::All { "psd-btn psd-btn-active" } else { "psd-btn" }
@@ -398,14 +398,14 @@ pub(crate) fn PsdPanel() -> impl IntoView {
                         class=move || {
                             let mode = freq_range_mode.get();
                             let has_ff = state.hfr_enabled.get();
-                            if mode == PsdFreqRangeMode::FF && has_ff { "psd-btn psd-btn-active" }
-                            else if mode == PsdFreqRangeMode::FF { "psd-btn psd-btn-active psd-btn-dimmed" }
+                            if mode == PsdFreqRangeMode::BandFF && has_ff { "psd-btn psd-btn-active" }
+                            else if mode == PsdFreqRangeMode::BandFF { "psd-btn psd-btn-active psd-btn-dimmed" }
                             else if !has_ff { "psd-btn psd-btn-disabled" }
                             else { "psd-btn" }
                         }
-                        on:click=move |_| freq_range_mode.set(PsdFreqRangeMode::FF)
-                        title="Use frequency focus (HF) range"
-                    >"FF"</button>
+                        on:click=move |_| freq_range_mode.set(PsdFreqRangeMode::BandFF)
+                        title="Use band range"
+                    >"Band"</button>
                 </div>
             </div>
 
@@ -998,7 +998,7 @@ fn start_psd_compute(
                     _ => None,
                 })
             }
-            PsdFreqRangeMode::FF => {
+            PsdFreqRangeMode::BandFF => {
                 if state.hfr_enabled.get_untracked() {
                     let lo = state.filter_freq_low.get_untracked();
                     let hi = state.filter_freq_high.get_untracked();
@@ -1008,7 +1008,7 @@ fn start_psd_compute(
                 }
             }
             PsdFreqRangeMode::Auto => {
-                // Try selection first, then FF
+                // Try selection first, then BandFF
                 let sel_range = effective_selection(&state).and_then(|s| match (s.freq_low, s.freq_high) {
                     (Some(lo), Some(hi)) if lo < hi => Some((lo, hi)),
                     _ => None,

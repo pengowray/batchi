@@ -3,14 +3,14 @@ use crate::annotations::{AnnotationId, AnnotationKind, AnnotationSet};
 use crate::canvas::spectrogram_renderer;
 use crate::state::{AppState, PlaybackMode, ResizeHandlePosition, SpectrogramHandle};
 
-/// Half-width of the FF handle interaction zone (pixels from center).
+/// Half-width of the BandFF handle interaction zone (pixels from center).
 pub const FF_HANDLE_HALF_WIDTH: f64 = 50.0;
 
-/// Hit-test all spectrogram overlay handles (FF + HET).
+/// Hit-test all spectrogram overlay handles (BandFF + HET).
 /// Returns the closest handle within `threshold` pixels of mouse_y, or None.
-/// HET handles take priority over FF when they overlap and HET is manual.
-/// FF hover is full-width; drag zone is checked separately via `is_in_ff_drag_zone`.
-/// FF handles are only hittable when `ff_focused` is true (FF has active focus).
+/// HET handles take priority over BandFF when they overlap and HET is manual.
+/// BandFF hover is full-width; drag zone is checked separately via `is_in_band_ff_drag_zone`.
+/// BandFF handles are only hittable when `band_ff_focused` is true (BandFF has active focus).
 pub fn hit_test_spec_handles(
     state: &AppState,
     mouse_y: f64,
@@ -18,25 +18,25 @@ pub fn hit_test_spec_handles(
     max_freq: f64,
     canvas_height: f64,
     threshold: f64,
-    ff_focused: bool,
+    band_ff_focused: bool,
 ) -> Option<SpectrogramHandle> {
     let mut candidates: Vec<(SpectrogramHandle, f64)> = Vec::new();
 
-    // FF handles — only hittable when FF has active focus
-    let ff_lo = state.ff_freq_lo.get_untracked();
-    let ff_hi = state.ff_freq_hi.get_untracked();
-    if ff_focused && ff_hi > ff_lo {
-        let y_upper = spectrogram_renderer::freq_to_y(ff_hi.min(max_freq), min_freq, max_freq, canvas_height);
-        let y_lower = spectrogram_renderer::freq_to_y(ff_lo.max(min_freq), min_freq, max_freq, canvas_height);
+    // BandFF handles — only hittable when BandFF has active focus
+    let band_ff_lo = state.band_ff_freq_lo.get_untracked();
+    let band_ff_hi = state.band_ff_freq_hi.get_untracked();
+    if band_ff_focused && band_ff_hi > band_ff_lo {
+        let y_upper = spectrogram_renderer::freq_to_y(band_ff_hi.min(max_freq), min_freq, max_freq, canvas_height);
+        let y_lower = spectrogram_renderer::freq_to_y(band_ff_lo.max(min_freq), min_freq, max_freq, canvas_height);
         let d_upper = (mouse_y - y_upper).abs();
         let d_lower = (mouse_y - y_lower).abs();
-        if d_upper <= threshold { candidates.push((SpectrogramHandle::FfUpper, d_upper)); }
-        if d_lower <= threshold { candidates.push((SpectrogramHandle::FfLower, d_lower)); }
+        if d_upper <= threshold { candidates.push((SpectrogramHandle::BandFfUpper, d_upper)); }
+        if d_lower <= threshold { candidates.push((SpectrogramHandle::BandFfLower, d_lower)); }
         // Middle handle (midpoint between boundaries)
-        let mid_freq = (ff_lo + ff_hi) / 2.0;
+        let mid_freq = (band_ff_lo + band_ff_hi) / 2.0;
         let y_mid = spectrogram_renderer::freq_to_y(mid_freq.clamp(min_freq, max_freq), min_freq, max_freq, canvas_height);
         let d_mid = (mouse_y - y_mid).abs();
-        if d_mid <= threshold { candidates.push((SpectrogramHandle::FfMiddle, d_mid)); }
+        if d_mid <= threshold { candidates.push((SpectrogramHandle::BandFfMiddle, d_mid)); }
     }
 
     // HET handles (only when in HET mode and parameter is manual)
@@ -65,7 +65,7 @@ pub fn hit_test_spec_handles(
 
     if candidates.is_empty() { return None; }
 
-    // Sort by distance, then prefer HET over FF when tied
+    // Sort by distance, then prefer HET over BandFF when tied
     candidates.sort_by(|a, b| {
         a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal)
             .then_with(|| {
@@ -78,8 +78,8 @@ pub fn hit_test_spec_handles(
     Some(candidates[0].0)
 }
 
-/// Check whether a given x position is within the FF handle drag zone (center strip).
-pub fn is_in_ff_drag_zone(mouse_x: f64, canvas_width: f64) -> bool {
+/// Check whether a given x position is within the BandFF handle drag zone (center strip).
+pub fn is_in_band_ff_drag_zone(mouse_x: f64, canvas_width: f64) -> bool {
     let center_x = canvas_width / 2.0;
     (mouse_x - center_x).abs() <= FF_HANDLE_HALF_WIDTH
 }
@@ -275,18 +275,18 @@ pub fn get_annotation_handle_positions(
     )
 }
 
-/// Hit-test whether a pixel Y coordinate falls within the FF band.
-/// Used for click-to-select the FF overlay.
-pub fn hit_test_ff_body(
+/// Hit-test whether a pixel Y coordinate falls within the BandFF band.
+/// Used for click-to-select the BandFF overlay.
+pub fn hit_test_band_ff_body(
     px_y: f64,
-    ff_lo: f64,
-    ff_hi: f64,
+    band_ff_lo: f64,
+    band_ff_hi: f64,
     min_freq: f64,
     max_freq: f64,
     canvas_height: f64,
 ) -> bool {
-    if ff_hi <= ff_lo { return false; }
-    let y_top = spectrogram_renderer::freq_to_y(ff_hi.min(max_freq), min_freq, max_freq, canvas_height);
-    let y_bottom = spectrogram_renderer::freq_to_y(ff_lo.max(min_freq), min_freq, max_freq, canvas_height);
+    if band_ff_hi <= band_ff_lo { return false; }
+    let y_top = spectrogram_renderer::freq_to_y(band_ff_hi.min(max_freq), min_freq, max_freq, canvas_height);
+    let y_bottom = spectrogram_renderer::freq_to_y(band_ff_lo.max(min_freq), min_freq, max_freq, canvas_height);
     px_y >= y_top && px_y <= y_bottom
 }

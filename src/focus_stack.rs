@@ -69,7 +69,7 @@ pub struct DebugLayer {
 /// (BatBook, Annotation) on top. The effective range is the topmost layer when
 /// HFR is enabled, or inactive (0/0) when HFR is off.
 ///
-/// When the user manually modifies the FF range while an override is active,
+/// When the user manually modifies the BandFF range while an override is active,
 /// the override is marked "adopted" — it won't restore the previous range
 /// when popped.
 #[derive(Clone, Debug)]
@@ -106,7 +106,7 @@ impl FocusStack {
 
     // ── Queries ──────────────────────────────────────────────────────────
 
-    /// The effective FF range: highest-priority override, or user_range.
+    /// The effective BandFF range: highest-priority override, or user_range.
     /// Returns inactive (0/0) when HFR is off.
     pub fn effective_range(&self) -> FocusRange {
         if !self.hfr_enabled {
@@ -189,7 +189,7 @@ impl FocusStack {
 
     // ── Mutations ────────────────────────────────────────────────────────
 
-    /// User sets FF directly (drag handle, axis drag, input field).
+    /// User sets BandFF directly (drag handle, axis drag, input field).
     /// If an override is active, marks it as "adopted" (user took ownership).
     pub fn set_user_range(&mut self, range: FocusRange) {
         self.user_range = range;

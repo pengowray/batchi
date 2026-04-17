@@ -111,7 +111,7 @@ pub fn BatBookRefPanel() -> impl IntoView {
             let new_id = manifest.entries[next].id.to_string();
             state.bat_book_selected_ids.set(vec![new_id]);
 
-            // Apply FF for the new entry via focus stack
+            // Apply BandFF for the new entry via focus stack
             let entry = &manifest.entries[next];
             if let Some(idx) = state.current_file_index.get_untracked() {
                 let files = state.files.get_untracked();
