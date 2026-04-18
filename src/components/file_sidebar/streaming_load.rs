@@ -2008,8 +2008,16 @@ async fn background_m4a_decode(
     let hop_size = 512usize;
     let tile_samples = TILE_COLS * hop_size;
     let mut last_tile_scheduled: Option<usize> = None;
+    // Local cursor — advances regardless of whether prefetch_region actually
+    // decoded (it may be a no-op if the range is already cached, or bail out
+    // because another task is mid-decode). Using source.decode_frame_cursor
+    // as a "still making progress" signal caused bg to give up permanently
+    // the first time a viewport prefetch raced it.
+    use crate::audio::source::AudioSource;
+    let total_frames = source.total_samples();
+    let mut bg_cursor: u64 = source.decode_frame_cursor_value();
 
-    while !source.is_fully_decoded() {
+    while bg_cursor < total_frames && !source.is_fully_decoded() {
         let still_valid = state.files.get_untracked()
             .get(file_index)
             .map(|f| f.name == expected_name)
@@ -2027,24 +2035,21 @@ async fn background_m4a_decode(
             continue;
         }
 
-        let cursor_before = source.decode_frame_cursor_value();
-        source.prefetch_region(cursor_before, 262_144).await;
-        let cursor_after = source.decode_frame_cursor_value();
+        let cursor_before = bg_cursor;
+        source.prefetch_region(bg_cursor, 262_144).await;
+        bg_cursor = (bg_cursor + 262_144).min(total_frames);
 
-        if cursor_after > cursor_before && tile_samples > 0 {
+        if tile_samples > 0 && bg_cursor > cursor_before {
             let first_tile = cursor_before as usize / tile_samples;
-            let last_tile = cursor_after as usize / tile_samples;
+            let last_tile = (bg_cursor - 1) as usize / tile_samples;
             let start = last_tile_scheduled.map(|t| t + 1).unwrap_or(first_tile);
-            for t in start..=last_tile {
-                tile_cache::schedule_tile_on_demand(state, file_index, t);
+            if start <= last_tile {
+                for t in start..=last_tile {
+                    tile_cache::schedule_tile_on_demand(state, file_index, t);
+                }
+                last_tile_scheduled = Some(last_tile);
+                state.tile_ready_signal.update(|n| *n = n.wrapping_add(1));
             }
-            last_tile_scheduled = Some(last_tile);
-            state.tile_ready_signal.update(|n| *n = n.wrapping_add(1));
-        }
-
-        // Guard against no-progress stalls.
-        if cursor_after == cursor_before {
-            break;
         }
 
         let p = js_sys::Promise::new(&mut |resolve, _| {
