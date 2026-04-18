@@ -1211,6 +1211,43 @@ pub fn parse_m4a_chapters(bytes: &[u8], sample_rate: u32) -> Vec<WavMarker> {
         .unwrap_or_default()
 }
 
+/// Read the audio track's native sample rate from the MP4's `mdhd` atom timescale.
+/// Returns `None` if the sample table can't be walked. Used so the browser's
+/// AudioContext can be instantiated at the source rate instead of the default
+/// output rate (otherwise high-frequency content above 24 kHz gets discarded).
+pub fn parse_m4a_sample_rate(bytes: &[u8]) -> Option<u32> {
+    let moov = find_top_level_atom(bytes, *b"moov")?;
+    let mut pos = 0usize;
+    while pos + 8 <= moov.len() {
+        let size = u32::from_be_bytes(moov[pos..pos + 4].try_into().ok()?) as u64;
+        let id = &moov[pos + 4..pos + 8];
+        let (body_start, body_end) = mp4_box_body_range(moov, pos, size)?;
+        if id == b"trak" {
+            let trak = &moov[body_start..body_end];
+            let mdia = find_child_atom(trak, *b"mdia")?;
+            // Require this track to be audio ("soun"). hdlr layout:
+            // 1B version + 3B flags + 4B pre_defined + 4B handler_type + ...
+            if let Some(hdlr) = find_child_atom(mdia, *b"hdlr") {
+                if hdlr.len() >= 12 && &hdlr[8..12] == b"soun" {
+                    if let Some(mdhd) = find_child_atom(mdia, *b"mdhd") {
+                        if mdhd.len() >= 4 {
+                            let version = mdhd[0];
+                            let ts_off = if version == 1 { 4 + 8 + 8 } else { 4 + 4 + 4 };
+                            if mdhd.len() >= ts_off + 4 {
+                                let ts_bytes: [u8; 4] = mdhd[ts_off..ts_off + 4].try_into().ok()?;
+                                let ts = u32::from_be_bytes(ts_bytes);
+                                if ts > 0 { return Some(ts); }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        pos = body_end;
+    }
+    None
+}
+
 /// Parse iTunes-style metadata (`moov/udta/meta/ilst`) from raw bytes.
 /// Returns key/value pairs where keys are the fourcc (e.g. "©nam" for title,
 /// "©ART" for artist) rendered as UTF-8 where possible. Empty if nothing found.
@@ -1240,6 +1277,8 @@ pub fn parse_m4a_tags(bytes: &[u8]) -> Vec<(String, String)> {
                 let type_indicator = u32::from_be_bytes(data[0..4].try_into().unwrap_or([0; 4])) & 0x00FF_FFFF;
                 let payload = &data[8..];
                 let key_raw: [u8; 4] = key_bytes.try_into().unwrap_or([0; 4]);
+                // Skip binary blob tags (cover art, preview jpeg, etc.)
+                if matches!(&key_raw, b"covr" | b"----") { pos = body_end; continue; }
                 let key = friendly_ilst_key(key_raw).unwrap_or_else(|| render_fourcc(key_bytes));
                 let value = render_ilst_value(type_indicator, key_raw, payload);
                 if !value.is_empty() {
@@ -1281,11 +1320,14 @@ fn render_ilst_value(type_indicator: u32, key: [u8; 4], payload: &[u8]) -> Strin
             }
         }
         _ => {
-            if payload.iter().all(|&b| b != 0 && b.is_ascii() || b >= 0x20) {
-                String::from_utf8_lossy(payload).into_owned()
-            } else {
-                String::new()
+            // Implicit: only surface if it parses as valid UTF-8 and looks
+            // text-like (no control bytes except common whitespace).
+            if let Ok(s) = std::str::from_utf8(payload) {
+                if s.chars().all(|c| !c.is_control() || matches!(c, '\t' | '\n' | '\r')) {
+                    return s.to_string();
+                }
             }
+            String::new()
         }
     }
 }

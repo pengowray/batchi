@@ -122,7 +122,8 @@ pub(crate) async fn load_named_bytes(name: String, bytes: &[u8], xc_metadata: Op
     // outputs where symphonia can't extract channel info). Fall back to
     // symphonia only if the browser refuses the file.
     let mut audio = if is_m4a {
-        match crate::audio::browser_decode::decode_via_audio_context(bytes, "M4A").await {
+        let native_rate = crate::audio::loader::parse_m4a_sample_rate(bytes);
+        match crate::audio::browser_decode::decode_via_audio_context(bytes, "M4A", native_rate).await {
             Ok(a) => a,
             Err(browser_err) => {
                 log::info!("browser AudioContext rejected m4a ({browser_err}); trying symphonia");

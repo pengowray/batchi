@@ -9,15 +9,29 @@ use std::sync::Arc;
 use js_sys::{ArrayBuffer, Uint8Array};
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
-use web_sys::{AudioBuffer, AudioContext};
+use web_sys::{AudioBuffer, AudioContext, AudioContextOptions};
 
 use crate::audio::source::InMemorySource;
 use crate::types::{AudioData, FileMetadata};
 
 /// Decode `bytes` using the browser's native audio decoder.
-/// Returns `AudioData` compatible with the rest of the pipeline.
-pub async fn decode_via_audio_context(bytes: &[u8], format_label: &'static str) -> Result<AudioData, String> {
-    let ctx = AudioContext::new().map_err(|e| format!("AudioContext: {e:?}"))?;
+/// `preferred_rate` (if supplied) attempts to create the AudioContext at the
+/// source sample rate so the decoder doesn't resample to the output hardware
+/// rate, which would otherwise discard frequencies above ~24 kHz.
+pub async fn decode_via_audio_context(
+    bytes: &[u8],
+    format_label: &'static str,
+    preferred_rate: Option<u32>,
+) -> Result<AudioData, String> {
+    let ctx = if let Some(rate) = preferred_rate {
+        let opts = AudioContextOptions::new();
+        opts.set_sample_rate(rate as f32);
+        AudioContext::new_with_context_options(&opts)
+            .or_else(|_| AudioContext::new())
+            .map_err(|e| format!("AudioContext: {e:?}"))?
+    } else {
+        AudioContext::new().map_err(|e| format!("AudioContext: {e:?}"))?
+    };
 
     // Copy bytes into a fresh ArrayBuffer — decodeAudioData transfers ownership.
     let ab = ArrayBuffer::new(bytes.len() as u32);
