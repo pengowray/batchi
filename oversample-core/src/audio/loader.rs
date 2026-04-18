@@ -1211,6 +1211,69 @@ pub fn parse_m4a_chapters(bytes: &[u8], sample_rate: u32) -> Vec<WavMarker> {
         .unwrap_or_default()
 }
 
+/// Find the audio-track `mp4a` / `enca` sample entry and return its
+/// `(channel_count, sample_rate)`. Some ffmpeg/Audible files have a malformed
+/// AudioSpecificConfig which leaves symphonia's `codec_params.channels` as
+/// `None`; this walker reads the values straight from the sample description.
+pub fn parse_m4a_audio_entry(bytes: &[u8]) -> Option<(u16, u32)> {
+    let moov = find_top_level_atom(bytes, *b"moov")?;
+    let mut pos = 0usize;
+    while pos + 8 <= moov.len() {
+        let size = u32::from_be_bytes(moov[pos..pos + 4].try_into().ok()?) as u64;
+        let id = &moov[pos + 4..pos + 8];
+        let (body_start, body_end) = mp4_box_body_range(moov, pos, size)?;
+        if id == b"trak" {
+            let trak = &moov[body_start..body_end];
+            if let Some(mdia) = find_child_atom(trak, *b"mdia") {
+                // Confirm audio track via hdlr.
+                let is_audio = find_child_atom(mdia, *b"hdlr")
+                    .map(|h| h.len() >= 12 && &h[8..12] == b"soun")
+                    .unwrap_or(false);
+                if is_audio {
+                    if let Some(minf) = find_child_atom(mdia, *b"minf") {
+                        if let Some(stbl) = find_child_atom(minf, *b"stbl") {
+                            if let Some(stsd) = find_child_atom(stbl, *b"stsd") {
+                                // stsd: 1B version + 3B flags + 4B entry_count, then entries
+                                if stsd.len() >= 8 {
+                                    if let Some(entry) = parse_first_audio_sample_entry(&stsd[8..]) {
+                                        return Some(entry);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        pos = body_end;
+    }
+    None
+}
+
+/// Parse the first audio sample entry (mp4a/enca/etc.) in a stsd body.
+/// Returns (channel_count, sample_rate). Sample rate is stored in the upper 16
+/// bits for rates <= 65535; higher rates live in esds/AudioSpecificConfig and
+/// this function may return 0 or a truncated value for those.
+fn parse_first_audio_sample_entry(entries_body: &[u8]) -> Option<(u16, u32)> {
+    if entries_body.len() < 8 { return None; }
+    // First entry: 4B size + 4B type + body
+    let size = u32::from_be_bytes(entries_body[0..4].try_into().ok()?) as u64;
+    let type_code = &entries_body[4..8];
+    let (body_start, body_end) = mp4_box_body_range(entries_body, 0, size)?;
+    // Recognize any audio sample entry type — we only read the fixed-layout fields.
+    // mp4a/enca/alac/opus/Opus/fLaC/etc. all share the same AudioSampleEntry prefix.
+    let _ = type_code;
+    let body = &entries_body[body_start..body_end];
+    // AudioSampleEntry layout (version 0):
+    //   6B reserved + 2B data_ref_idx + 8B reserved(0) + 2B channel_count
+    //   + 2B sample_size + 4B pre_defined/reserved + 4B sample_rate (upper 16 = integer)
+    if body.len() < 28 { return None; }
+    let channels = u16::from_be_bytes(body[16..18].try_into().ok()?);
+    // sample_rate is at offset 24, upper 16 bits = integer part
+    let sr_int = u16::from_be_bytes(body[24..26].try_into().ok()?);
+    Some((channels, sr_int as u32))
+}
+
 /// Read the audio track's native sample rate from the MP4's `mdhd` atom timescale.
 /// Returns `None` if the sample table can't be walked. Used so the browser's
 /// AudioContext can be instantiated at the source rate instead of the default
@@ -1517,12 +1580,37 @@ fn load_m4a(bytes: &[u8]) -> Result<AudioData, String> {
         .find(|t| t.codec_params.codec != CODEC_TYPE_NULL)
         .ok_or("No audio track found in M4A")?;
 
-    let sample_rate = track.codec_params.sample_rate.ok_or("M4A missing sample rate")?;
-    let channels = track.codec_params.channels.ok_or("M4A missing channel info")?.count() as u32;
+    // Fall back to the mp4a sample entry for files where symphonia can't
+    // derive channels/sample_rate from the AudioSpecificConfig.
+    let atom_entry = parse_m4a_audio_entry(bytes);
+    let sample_rate = track.codec_params.sample_rate
+        .or_else(|| atom_entry.map(|(_, sr)| sr).filter(|&sr| sr > 0))
+        .or_else(|| parse_m4a_sample_rate(bytes))
+        .ok_or("M4A missing sample rate")?;
+    let channels = match track.codec_params.channels {
+        Some(c) => c.count() as u32,
+        None => atom_entry
+            .map(|(c, _)| c as u32)
+            .filter(|&c| (1..=8).contains(&c))
+            .ok_or("M4A missing channel info (not in codec_params nor mp4a atom)")?,
+    };
     let track_id = track.id;
 
+    let mut codec_params = track.codec_params.clone();
+    if codec_params.channels.is_none() {
+        use symphonia::core::audio::Channels;
+        let layout = match channels {
+            1 => Channels::FRONT_LEFT,
+            2 => Channels::FRONT_LEFT | Channels::FRONT_RIGHT,
+            _ => Channels::from_bits_truncate((1u32 << channels).saturating_sub(1)),
+        };
+        codec_params.channels = Some(layout);
+    }
+    if codec_params.sample_rate.is_none() {
+        codec_params.sample_rate = Some(sample_rate);
+    }
     let mut decoder = symphonia::default::get_codecs()
-        .make(&track.codec_params, &DecoderOptions::default())
+        .make(&codec_params, &DecoderOptions::default())
         .map_err(|e| format!("M4A decoder error: {e}"))?;
 
     // Collect iTunes-style tags from probe metadata + any format-level metadata.

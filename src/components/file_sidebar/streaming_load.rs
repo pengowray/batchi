@@ -1662,8 +1662,21 @@ pub(super) async fn try_streaming_m4a(file: &File, name: &str, state: AppState, 
         .find(|t| t.codec_params.codec != CODEC_TYPE_NULL)
         .ok_or("No audio track in M4A")?;
 
-    let sample_rate = track.codec_params.sample_rate.ok_or("M4A missing sample rate")?;
-    let channels = track.codec_params.channels.ok_or("M4A missing channel info")?.count();
+    // Some ffmpeg/Audible-encoded files leave symphonia's codec_params.channels
+    // (and sometimes sample_rate) unset. Fall back to reading the mp4a sample
+    // entry directly so we can still stream them.
+    let atom_entry = crate::audio::loader::parse_m4a_audio_entry(&all_bytes);
+    let sample_rate = track.codec_params.sample_rate
+        .or_else(|| atom_entry.map(|(_, sr)| sr).filter(|&sr| sr > 0))
+        .or_else(|| crate::audio::loader::parse_m4a_sample_rate(&all_bytes))
+        .ok_or("M4A missing sample rate")?;
+    let channels = match track.codec_params.channels {
+        Some(c) => c.count(),
+        None => atom_entry
+            .map(|(c, _)| c as usize)
+            .filter(|&c| c >= 1 && c <= 8)
+            .ok_or("M4A missing channel info (not in codec_params nor mp4a atom)")?,
+    };
     let track_id = track.id;
     let total_frames = track.codec_params.n_frames
         .ok_or("M4A missing total frame count (sample table incomplete)")?;
@@ -1699,8 +1712,24 @@ pub(super) async fn try_streaming_m4a(file: &File, name: &str, state: AppState, 
         }
     }
 
+    // If symphonia's codec_params are missing channels/sample_rate (Audible,
+    // some ffmpeg outputs), inject our mp4a-parsed values before creating the
+    // decoder — many AAC decoder implementations refuse to initialize without.
+    let mut codec_params = track.codec_params.clone();
+    if codec_params.channels.is_none() {
+        use symphonia::core::audio::Channels;
+        let layout = match channels {
+            1 => Channels::FRONT_LEFT,
+            2 => Channels::FRONT_LEFT | Channels::FRONT_RIGHT,
+            _ => Channels::from_bits_truncate((1u32 << channels).saturating_sub(1)),
+        };
+        codec_params.channels = Some(layout);
+    }
+    if codec_params.sample_rate.is_none() {
+        codec_params.sample_rate = Some(sample_rate);
+    }
     let mut decoder = symphonia::default::get_codecs()
-        .make(&track.codec_params, &DecoderOptions::default())
+        .make(&codec_params, &DecoderOptions::default())
         .map_err(|e| format!("M4A decoder error: {e}"))?;
 
     // Decode head (first ~30s).
