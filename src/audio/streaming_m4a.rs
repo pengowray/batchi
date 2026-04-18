@@ -148,14 +148,15 @@ impl StreamingM4aSource {
 
         let channels = self.channels as usize;
 
-        // Seek if we're not already near the target. Symphonia's seek is cheap
-        // for MP4 (direct sample-table lookup), but it discards any pending
-        // decoder state, so we avoid it for short forward gaps.
+        // Seek unless we're already *exactly* at chunk_start. The chunk cache
+        // is keyed by chunk_idx = frame / CHUNK_FRAMES, so the samples we
+        // flush MUST start at chunk_start — otherwise offsets within the
+        // chunk point at the wrong frames. Short sequential runs (chunk N
+        // followed by chunk N+1) already leave next_frame == chunk_start,
+        // so they skip the seek naturally.
         {
             let mut state = self.reader.borrow_mut();
-            let gap = chunk_start.saturating_sub(state.next_frame);
-            let need_seek = state.next_frame > chunk_start + CHUNK_FRAMES as u64
-                || gap > (CHUNK_FRAMES as u64 * 2);
+            let need_seek = state.next_frame != chunk_start;
             if need_seek {
                 let secs = chunk_start as f64 / self.sample_rate as f64;
                 let time = Time::new(secs.trunc() as u64, secs.fract());
@@ -164,8 +165,15 @@ impl StreamingM4aSource {
                     SeekMode::Accurate,
                     SeekTo::Time { time, track_id: Some(track_id) },
                 ) {
-                    Ok(seeked) => {
-                        state.next_frame = seeked.actual_ts;
+                    Ok(_seeked) => {
+                        // seeked.actual_ts is in the track's TimeBase (container
+                        // timescale) which may not match our self.sample_rate
+                        // (the decoder's actual output rate) when SBR halves
+                        // things. Treat the requested chunk_start as truth so
+                        // next_frame stays in the same units we use for
+                        // cache/chunk math; any small seek rounding error
+                        // shows up as a few ms of silence, which is harmless.
+                        state.next_frame = chunk_start;
                         state.decoder.reset();
                     }
                     Err(_) => {
