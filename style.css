@@ -1572,56 +1572,54 @@ body.sidebar-resizing {
     flex-shrink: 0;
 }
 
-.spectrogram-container {
-    flex: 3;
+/* Shared layout for every main chart host (spectrogram, chromagram,
+   waveform, ZC chart). Outer flex-column with [chart-row: stage + band
+   gutter] over [view-bottom-row: time gutter + corner]. Per-view sizing
+   modifiers live below and only override flex weight / heights / bg. */
+.spectrogram-container,
+.waveform-container {
     position: relative;
-    min-height: 0;
-    background: #000;
-    /* Outer column: [top row: stage + band gutter] [bottom row: time
-       gutter + corner]. Lets the time-axis labels live in a separate
-       strip below the canvas without stealing pixels from low frequencies. */
     display: flex;
     flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
 }
 
-.spectrogram-container .spectrogram-row {
+.chart-row {
     flex: 1 1 auto;
     min-height: 0;
     display: flex;
     flex-direction: row;
 }
 
-/* Canvas sits in a flex-1 stage wrapper so the band gutter can claim a
-   fixed-width column on the right without compressing the spectrogram. */
-.spectrogram-container .spectrogram-stage {
+.chart-stage {
     flex: 1 1 auto;
     position: relative;
     min-width: 0;
     min-height: 0;
 }
 
-.spectrogram-container canvas {
+.chart-stage > canvas {
     width: 100%;
     height: 100%;
     display: block;
 }
 
+/* Spectrogram + chromagram take three parts of the main flex. */
+.spectrogram-container {
+    flex: 3;
+    background: #000;
+}
+
+/* Waveform + ZC chart sit as a short sub-strip by default; the
+   .main-waveform-full wrapper lifts the height cap when they're the
+   primary view. */
 .waveform-container {
     flex: 1;
-    position: relative;
-    display: flex;
-    flex-direction: column;
     min-height: 80px;
     max-height: 170px;
     background: #0a0a0a;
     border-top: 1px solid #333;
-}
-
-.waveform-container .waveform-row {
-    flex: 1 1 auto;
-    min-height: 0;
-    display: flex;
-    flex-direction: row;
 }
 
 .band-gutter {
@@ -1719,18 +1717,6 @@ body.sidebar-resizing {
     white-space: nowrap;
     pointer-events: none;
     z-index: 10;
-}
-
-.waveform-container .waveform-stage {
-    flex: 1 1 auto;
-    position: relative;
-    min-width: 0;
-}
-
-.waveform-container .waveform-stage canvas {
-    width: 100%;
-    height: 100%;
-    display: block;
 }
 
 /* ── Playhead overlays (DOM-based for smooth animation) ──────────────── */
@@ -2575,12 +2561,6 @@ body.sidebar-resizing {
     pointer-events: none;
     transition: height 0.05s linear;
     border-radius: 1px 1px 0 0;
-}
-
-/* Spectrogram and waveform canvases clip their own content */
-.spectrogram-container,
-.waveform-container {
-    overflow: hidden;
 }
 
 /* When waveform is the main panel (not the sub-strip below spectrogram),

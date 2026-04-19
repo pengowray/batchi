@@ -811,8 +811,8 @@ pub fn ZcDotChart() -> impl IntoView {
                 }
             }
         >
-            <div class="waveform-row">
-            <div class="waveform-stage">
+            <div class="chart-row">
+            <div class="chart-stage">
                 <canvas
                     node_ref=canvas_ref
                     style:pointer-events=move || if state.viewport_zoomed.get() { "none" } else { "auto" }

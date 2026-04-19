@@ -402,8 +402,8 @@ pub fn ChromagramView() -> impl IntoView {
                 }
             }
         >
-            <div class="spectrogram-row">
-            <div class="spectrogram-stage">
+            <div class="chart-row">
+            <div class="chart-stage">
             <canvas
                 node_ref=canvas_ref
                 style:pointer-events=move || if state.viewport_zoomed.get() { "none" } else { "auto" }

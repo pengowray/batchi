@@ -487,7 +487,7 @@ pub fn Waveform() -> impl IntoView {
         }
 
         // Time gutter + selection highlight now live in a sibling
-        // <TimeGutter/> strip (mounted below the waveform-row).
+        // <TimeGutter/> strip (mounted below the chart-row).
     });
 
     // Auto-scroll to follow playhead during playback (with suspension support)
@@ -829,8 +829,8 @@ pub fn Waveform() -> impl IntoView {
                 }
             }
         >
-            <div class="waveform-row">
-            <div class="waveform-stage">
+            <div class="chart-row">
+            <div class="chart-stage">
                 <canvas
                     node_ref=canvas_ref
                     style:pointer-events=move || if state.viewport_zoomed.get() { "none" } else { "auto" }
