@@ -1137,9 +1137,11 @@ pub fn BottomToolbar() -> impl IntoView {
             }
 
             // ── Annotations visibility toggle ──
+            // Single-word button — on/off state is carried by the `active`
+            // highlight, so the "ANN" label doesn't need an On/Off value.
             {move || has_file().then(|| view! {
                 <button
-                    class=move || if state.annotations_visible.get() { "layer-btn active" } else { "layer-btn" }
+                    class=move || if state.annotations_visible.get() { "layer-btn layer-btn-solo active" } else { "layer-btn layer-btn-solo" }
                     on:click=move |_| {
                         let new_visible = !state.annotations_visible.get_untracked();
                         state.annotations_visible.set(new_visible);
@@ -1159,22 +1161,22 @@ pub fn BottomToolbar() -> impl IntoView {
                     }
                     title=move || if state.annotations_visible.get() { "Hide annotations" } else { "Show annotations" }
                 >
-                    <span class="layer-btn-category">"Ann"</span>
-                    <span class="layer-btn-value">{move || if state.annotations_visible.get() { "On" } else { "Off" }}</span>
+                    <span class="layer-btn-solo-label">"ANN"</span>
                 </button>
             })}
 
             // ── Bat book strip toggle ──
             // Replaces the old edge-tab handle on the right side of the main
             // view — the strip now lives behind a discoverable toolbar button
-            // next to the other view toggles.
+            // next to the other view toggles. Label is always "Bat / Book";
+            // on/off state rides on the `active` highlight.
             <button
                 class=move || if state.bat_book_open.get() { "layer-btn active" } else { "layer-btn" }
                 on:click=move |_| { state.bat_book_open.update(|v| *v = !*v); }
                 title=move || if state.bat_book_open.get() { "Hide bat book" } else { "Show bat book" }
             >
                 <span class="layer-btn-category">"Bat"</span>
-                <span class="layer-btn-value">{move || if state.bat_book_open.get() { "On" } else { "Off" }}</span>
+                <span class="layer-btn-value">"Book"</span>
             </button>
 
             // ── Tool button (Hand / Selection, only when file is open; hidden on mobile) ──
