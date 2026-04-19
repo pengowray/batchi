@@ -4,6 +4,7 @@ use wasm_bindgen::JsCast;
 use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement};
 use crate::canvas::spectrogram_renderer;
 use crate::canvas::tile_cache::{self, TILE_COLS};
+use crate::components::gutter::TimeGutter;
 use crate::dsp::chromagram::{NUM_PITCH_CLASSES, PITCH_CLASS_NAMES};
 use crate::state::{AppState, CanvasTool};
 use crate::viewport;
@@ -400,6 +401,8 @@ pub fn ChromagramView() -> impl IntoView {
                 }
             }
         >
+            <div class="spectrogram-row">
+            <div class="spectrogram-stage">
             <canvas
                 node_ref=canvas_ref
                 style:pointer-events=move || if state.viewport_zoomed.get() { "none" } else { "auto" }
@@ -432,6 +435,12 @@ pub fn ChromagramView() -> impl IntoView {
                 }
                 style:display=move || if state.is_playing.get() { "block" } else { "none" }
             />
+            </div>
+            </div>
+            <div class="view-bottom-row">
+                <TimeGutter/>
+                <div class="view-bottom-corner"></div>
+            </div>
         </div>
     }
 }

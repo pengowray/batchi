@@ -7,7 +7,7 @@ use crate::dsp::filters::{apply_eq_filter, apply_eq_filter_fast};
 use crate::dsp::zc_divide::zc_rate_per_bin;
 use crate::state::{AppState, CanvasTool, FilterQuality, SpectrogramHandle};
 use crate::components::spectrogram_events::{freq_snap, apply_axis_drag};
-use crate::components::gutter::BandGutter;
+use crate::components::gutter::{BandGutter, TimeGutter};
 use crate::viewport;
 
 const ZC_BIN_DURATION: f64 = 0.001; // 1ms bins
@@ -810,6 +810,7 @@ pub fn ZcDotChart() -> impl IntoView {
                 }
             }
         >
+            <div class="waveform-row">
             <div class="waveform-stage">
                 <canvas
                     node_ref=canvas_ref
@@ -846,6 +847,11 @@ pub fn ZcDotChart() -> impl IntoView {
                 />
             </div>
             <BandGutter/>
+            </div>
+            <div class="view-bottom-row">
+                <TimeGutter data_left_offset=LABEL_AREA_WIDTH/>
+                <div class="view-bottom-corner"></div>
+            </div>
         </div>
     }
 }
