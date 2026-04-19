@@ -1296,7 +1296,13 @@ pub fn Spectrogram() -> impl IntoView {
             style=move || {
                 // When viewport is pinch-zoomed, allow native pinch so user can zoom back out
                 let ta = if state.viewport_zoomed.get() { "pinch-zoom" } else { "none" };
-                if state.axis_drag_start_freq.get().is_some() || state.mouse_in_label_area.get()
+                // `cell` cursor while hovering an axis, dragging the band
+                // gutter (axis_drag_*), or mid-pan on the left axis
+                // (freq_pan_start). Keeps the cursor pinned even when a
+                // left-axis drag carries the pointer into the main canvas.
+                if state.axis_drag_start_freq.get().is_some()
+                    || ix.freq_pan_start.get().is_some()
+                    || state.mouse_in_label_area.get()
                     || state.mouse_in_time_axis.get() {
                     return format!("cursor: cell; touch-action: {ta};");
                 }
