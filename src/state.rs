@@ -468,6 +468,7 @@ pub enum MainView {
     ZcChart,
     Flow,
     Chromagram,
+    Resonators,
 }
 
 impl MainView {
@@ -479,6 +480,7 @@ impl MainView {
             Self::ZcChart => "ZC Chart",
             Self::Flow => "Flow",
             Self::Chromagram => "Chromagram",
+            Self::Resonators => "Resonators",
         }
     }
 
@@ -490,12 +492,13 @@ impl MainView {
             Self::ZcChart => "ZC",
             Self::Flow => "Flow",
             Self::Chromagram => "Chroma",
+            Self::Resonators => "Reson",
         }
     }
 
     /// Whether this view mode uses the spectrogram renderer.
     pub fn is_spectrogram(self) -> bool {
-        matches!(self, Self::Spectrogram | Self::XformedSpec | Self::Flow | Self::Chromagram)
+        matches!(self, Self::Spectrogram | Self::XformedSpec | Self::Flow | Self::Chromagram | Self::Resonators)
     }
 
     pub const ALL: &'static [MainView] = &[
@@ -505,6 +508,7 @@ impl MainView {
         Self::ZcChart,
         Self::Flow,
         Self::Chromagram,
+        Self::Resonators,
     ];
 }
 
@@ -1317,6 +1321,11 @@ pub struct AppState {
     pub chroma_gamma: RwSignal<f32>,
     // Chromagram frequency range preset
     pub chroma_range: RwSignal<ChromaRange>,
+
+    // Resonator view: per-bin EMA bandwidth in Hz (controls time-frequency tradeoff)
+    pub resonator_bandwidth_hz: RwSignal<f32>,
+    // Resonator view: number of bins expressed as an "fft_size" (num_bins = fft_size/2 + 1)
+    pub resonator_fft_size: RwSignal<usize>,
     // Colormap preference used when HFR mode is active
     pub hfr_colormap_preference: RwSignal<Colormap>,
     // When false, the Range button is hidden at full range
@@ -1759,6 +1768,8 @@ impl AppState {
             chroma_gain: RwSignal::new(0.0),
             chroma_gamma: RwSignal::new(1.0),
             chroma_range: RwSignal::new(ChromaRange::Full),
+            resonator_bandwidth_hz: RwSignal::new(500.0),
+            resonator_fft_size: RwSignal::new(256),
             hfr_colormap_preference: RwSignal::new(Colormap::Inferno),
             always_show_view_range: RwSignal::new(false),
 

@@ -205,6 +205,43 @@ pub fn schedule_flow_tiles(
     }
 }
 
+/// Schedule missing resonator tiles for the visible viewport.
+///
+/// Mirrors `schedule_flow_tiles` but targets the resonator cache. Also
+/// schedules a baseline-LOD fallback so switching zoom feels smooth.
+pub fn schedule_resonator_tiles(
+    state: AppState,
+    file_idx: usize,
+    total_cols: usize,
+    scroll_col: f64,
+    zoom: f64,
+    display_w: f64,
+) {
+    let ideal_lod = tile_cache::select_lod(zoom);
+    let ratio = tile_cache::lod_ratio(ideal_lod);
+
+    let vis_start = scroll_col.max(0.0).min((total_cols as f64 - 1.0).max(0.0));
+    let vis_end = (vis_start + display_w / zoom).min(total_cols as f64);
+    if vis_end <= vis_start { return; }
+
+    let vis_start_lod = vis_start * ratio;
+    let vis_end_lod = vis_end * ratio;
+    let first_tile = (vis_start_lod / TILE_COLS as f64).floor() as usize;
+    let last_tile = ((vis_end_lod - 0.001).max(0.0) / TILE_COLS as f64).floor() as usize;
+
+    for t in first_tile..=last_tile {
+        if tile_cache::get_resonator_tile(file_idx, ideal_lod, t).is_none() {
+            tile_cache::schedule_resonator_tile(state, file_idx, ideal_lod, t);
+        }
+        if ideal_lod != tile_cache::LOD_BASELINE {
+            let (fb_tile, _, _) = tile_cache::fallback_tile_info(ideal_lod, t, tile_cache::LOD_BASELINE);
+            if tile_cache::get_resonator_tile(file_idx, tile_cache::LOD_BASELINE, fb_tile).is_none() {
+                tile_cache::schedule_resonator_tile(state, file_idx, tile_cache::LOD_BASELINE, fb_tile);
+            }
+        }
+    }
+}
+
 /// Set up all tile-cache-clearing Effects. Call once from the component body.
 pub fn setup_cache_clearing_effects(state: AppState) {
     // Clear flow tile cache when algorithm or enabled state changes
@@ -251,5 +288,13 @@ pub fn setup_cache_clearing_effects(state: AppState) {
     Effect::new(move || {
         let _reassign = state.reassign_enabled.get();
         crate::canvas::tile_cache::clear_reassign_cache();
+    });
+
+    // Clear resonator tile cache when bandwidth or bin count changes
+    Effect::new(move || {
+        let _bw = state.resonator_bandwidth_hz.get();
+        let _fft = state.resonator_fft_size.get();
+        crate::canvas::tile_cache::clear_resonator_cache();
+        state.tile_ready_signal.update(|n| *n = n.wrapping_add(1));
     });
 }

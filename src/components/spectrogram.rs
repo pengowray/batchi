@@ -485,14 +485,17 @@ pub fn Spectrogram() -> impl IntoView {
                 let seg_px_per_sec = px_per_sec;
                 let seg_zoom = seg_px_per_sec * seg_time_res;
 
+                let resonators_on = main_view == MainView::Resonators;
                 let ideal_lod_for_source = crate::canvas::tile_cache::select_lod(seg_zoom);
-                let tile_source = if reassign_on && ideal_lod_for_source > 1 {
+                let tile_source = if resonators_on {
+                    spectrogram_renderer::TileSource::Resonators
+                } else if reassign_on && ideal_lod_for_source > 1 {
                     spectrogram_renderer::TileSource::Reassigned
                 } else {
                     spectrogram_renderer::TileSource::Normal
                 };
                 let xform_on = state.display_transform.get_untracked();
-                let preview_ref = if xform_on || decim_effective > 0 {
+                let preview_ref = if xform_on || decim_effective > 0 || resonators_on {
                     None
                 } else {
                     seg_file.preview.as_ref()
@@ -510,10 +513,17 @@ pub fn Spectrogram() -> impl IntoView {
                 );
 
                 // Schedule missing tiles for this segment
-                crate::canvas::tile_scheduler::schedule_normal_tiles(
-                    state, seg.file_index, seg_total_cols, file_scroll_col, seg_zoom,
-                    clip_right - clip_left, seg_time_res, is_playing, reassign_on, &disposed,
-                );
+                if resonators_on {
+                    crate::canvas::tile_scheduler::schedule_resonator_tiles(
+                        state, seg.file_index, seg_total_cols, file_scroll_col, seg_zoom,
+                        clip_right - clip_left,
+                    );
+                } else {
+                    crate::canvas::tile_scheduler::schedule_normal_tiles(
+                        state, seg.file_index, seg_total_cols, file_scroll_col, seg_zoom,
+                        clip_right - clip_left, seg_time_res, is_playing, reassign_on, &disposed,
+                    );
+                }
 
                 ctx.restore();
                 if drawn { any_drawn = true; }
@@ -587,16 +597,20 @@ pub fn Spectrogram() -> impl IntoView {
 
             drawn
         } else if !flow_on && total_cols > 0 {
-            // Normal or reassignment tile-based rendering
+            // Normal / reassignment / resonator tile-based rendering.
+            let resonators_on = main_view == MainView::Resonators;
             let ideal_lod_for_source = crate::canvas::tile_cache::select_lod(zoom);
-            let tile_source = if reassign_on && ideal_lod_for_source > 1 {
+            let tile_source = if resonators_on {
+                spectrogram_renderer::TileSource::Resonators
+            } else if reassign_on && ideal_lod_for_source > 1 {
                 spectrogram_renderer::TileSource::Reassigned
             } else {
                 spectrogram_renderer::TileSource::Normal
             };
-            // Skip preview fallback when xform/decimation is active (preview shows original untransformed data)
+            // Skip preview fallback when xform/decimation/resonators is active
+            // (preview shows the original untransformed FFT).
             let xform_on = state.display_transform.get_untracked();
-            let preview_ref = if xform_on || decim_effective > 0 {
+            let preview_ref = if xform_on || decim_effective > 0 || resonators_on {
                 None
             } else {
                 file.and_then(|f| f.preview.as_ref())
@@ -612,11 +626,17 @@ pub fn Spectrogram() -> impl IntoView {
                 tile_source,
             );
 
-            // Schedule missing tiles
-            crate::canvas::tile_scheduler::schedule_normal_tiles(
-                state, file_idx_val, total_cols, scroll_col, zoom,
-                display_w as f64, time_res, is_playing, reassign_on, &disposed,
-            );
+            // Schedule missing tiles for the active source.
+            if resonators_on {
+                crate::canvas::tile_scheduler::schedule_resonator_tiles(
+                    state, file_idx_val, total_cols, scroll_col, zoom, display_w as f64,
+                );
+            } else {
+                crate::canvas::tile_scheduler::schedule_normal_tiles(
+                    state, file_idx_val, total_cols, scroll_col, zoom,
+                    display_w as f64, time_res, is_playing, reassign_on, &disposed,
+                );
+            }
 
             drawn
         } else if pre_rendered.with_untracked(|pr| pr.is_some()) {

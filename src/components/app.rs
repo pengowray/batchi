@@ -1179,7 +1179,7 @@ fn MainArea() -> impl IntoView {
                         <div class="main-view">
                             // Show the selected main view
                             {move || match state.main_view.get() {
-                                MainView::Spectrogram | MainView::XformedSpec | MainView::Flow => view! { <Spectrogram /> }.into_any(),
+                                MainView::Spectrogram | MainView::XformedSpec | MainView::Flow | MainView::Resonators => view! { <Spectrogram /> }.into_any(),
                                 MainView::Waveform => view! {
                                     <div class="main-waveform-full">
                                         <Waveform />
@@ -1571,6 +1571,53 @@ pub fn MainViewButton() -> impl IntoView {
                 }
             })}
 
+            // Resonator quick controls (shown only when Resonators view is active)
+            {move || (state.main_view.get() == MainView::Resonators).then(|| {
+                view! {
+                    <hr />
+                    <div class="layer-panel-title">"Resonators"</div>
+                    <div class="dsp-custom-section">
+                        <div class="dsp-custom-title">{move || format!("Bandwidth: {:.0} Hz", state.resonator_bandwidth_hz.get())}</div>
+                        <div class="dsp-custom-slider-row">
+                            <input
+                                type="range"
+                                class="setting-range"
+                                min="20" max="4000" step="10"
+                                prop:value=move || state.resonator_bandwidth_hz.get().round().to_string()
+                                on:input=move |ev: web_sys::Event| {
+                                    let target = ev.target().unwrap();
+                                    let input: web_sys::HtmlInputElement = target.unchecked_into();
+                                    if let Ok(v) = input.value().parse::<f32>() {
+                                        state.resonator_bandwidth_hz.set(v.max(1.0));
+                                    }
+                                }
+                                on:dblclick=move |_| state.resonator_bandwidth_hz.set(500.0)
+                            />
+                        </div>
+                    </div>
+                    <div class="setting-row" style="padding: 4px 8px;">
+                        <span class="setting-label">"Bins"</span>
+                        <select
+                            class="setting-select"
+                            on:change=move |ev: web_sys::Event| {
+                                let target = ev.target().unwrap();
+                                let select: web_sys::HtmlSelectElement = target.unchecked_into();
+                                if let Ok(v) = select.value().parse::<usize>() {
+                                    state.resonator_fft_size.set(v.max(16));
+                                }
+                            }
+                            prop:value=move || state.resonator_fft_size.get().to_string()
+                        >
+                            <option value="64">"33"</option>
+                            <option value="128">"65"</option>
+                            <option value="256">"129"</option>
+                            <option value="512">"257"</option>
+                            <option value="1024">"513"</option>
+                        </select>
+                    </div>
+                }
+            })}
+
             // DSP filter rows (only when XformedSpec is active)
             {move || (state.main_view.get() == MainView::XformedSpec).then(|| {
                 view! {
@@ -1713,8 +1760,8 @@ pub fn MainViewButton() -> impl IntoView {
                 }
             })}
 
-            // Frequency range selector (for spectrogram/flow views)
-            {move || matches!(state.main_view.get(), MainView::Spectrogram | MainView::XformedSpec | MainView::Flow).then(|| {
+            // Frequency range selector (for spectrogram/flow/resonator views)
+            {move || matches!(state.main_view.get(), MainView::Spectrogram | MainView::XformedSpec | MainView::Flow | MainView::Resonators).then(|| {
                 let file_max = move || {
                     let files = state.files.get();
                     let idx = state.current_file_index.get();
@@ -1790,8 +1837,8 @@ pub fn MainViewButton() -> impl IntoView {
                 }
             })}
 
-            // Intensity sliders (for Spectrogram, XformedSpec, or Flow)
-            {move || matches!(state.main_view.get(), MainView::Spectrogram | MainView::XformedSpec | MainView::Flow).then(|| {
+            // Intensity sliders (for Spectrogram, XformedSpec, Flow, or Resonators)
+            {move || matches!(state.main_view.get(), MainView::Spectrogram | MainView::XformedSpec | MainView::Flow | MainView::Resonators).then(|| {
                 let is_xform = state.main_view.get_untracked() == MainView::XformedSpec;
                 let gain_sig = if is_xform { state.xform_spect_gain_db } else { state.spect_gain_db };
                 let range_sig = if is_xform { state.xform_spect_range_db } else { state.spect_range_db };

@@ -112,6 +112,7 @@ pub enum TileSource {
     Normal,
     Reassigned,
     Flow,
+    Resonators,
 }
 
 /// How tile dB data (and optional flow shifts) should be converted to RGBA pixels.
@@ -476,10 +477,15 @@ thread_local! {
 
 /// Compute a fingerprint of the rendering parameters that affect tile RGBA output.
 /// When this changes, cached tile canvases must be re-rendered.
+///
+/// The fingerprint includes `tile_source` so switching view (e.g. Spectrogram
+/// ↔ Resonators) invalidates canvas entries automatically — otherwise a cached
+/// canvas at one height could be reused for a tile at a different height.
 fn tile_render_fingerprint(
     settings: &SpectDisplaySettings,
     render_mode: &TileRenderMode,
     freq_adj_hash: u64,
+    tile_source: TileSource,
 ) -> u64 {
     let mut h: u64 = 0xcbf29ce484222325; // FNV offset basis
     let mix = |h: &mut u64, v: u64| {
@@ -515,6 +521,7 @@ fn tile_render_fingerprint(
         }
     }
     mix(&mut h, freq_adj_hash);
+    mix(&mut h, tile_source as u64);
     h
 }
 
@@ -732,11 +739,13 @@ pub fn blit_tiles_viewport(
                 TileSource::Normal => tile_cache::get_tile(fi, lod, ti).is_some(),
                 TileSource::Reassigned => tile_cache::get_reassign_tile(fi, lod, ti).is_some(),
                 TileSource::Flow => tile_cache::get_flow_tile(fi, lod, ti).is_some(),
+                TileSource::Resonators => tile_cache::get_resonator_tile(fi, lod, ti).is_some(),
             }
         };
         let fallback_fn = |fi: usize, lod: u8, ti: usize| -> bool {
             match tile_source {
                 TileSource::Flow => tile_cache::get_flow_tile(fi, lod, ti).is_some(),
+                TileSource::Resonators => tile_cache::get_resonator_tile(fi, lod, ti).is_some(),
                 _ => tile_cache::get_tile(fi, lod, ti).is_some(),
             }
         };
@@ -778,7 +787,7 @@ pub fn blit_tiles_viewport(
 
     // Compute fingerprint for tile canvas cache invalidation.
     let adj_hash = hash_freq_adjustments(freq_adjustments);
-    let fingerprint = tile_render_fingerprint(display_settings, &render_mode, adj_hash);
+    let fingerprint = tile_render_fingerprint(display_settings, &render_mode, adj_hash, tile_source);
 
     // Draw a tile to the canvas given its LOD and screen clip range.
     // Uses a per-tile offscreen canvas cache to avoid re-running tile_to_rgba
@@ -892,6 +901,7 @@ pub fn blit_tiles_viewport(
                     TileSource::Normal => tile_cache::borrow_tile(fi, lod, ti, |t| f(t)),
                     TileSource::Reassigned => tile_cache::borrow_reassign_tile(fi, lod, ti, |t| f(t)),
                     TileSource::Flow => tile_cache::borrow_flow_tile(fi, lod, ti, |t| f(t)),
+                    TileSource::Resonators => tile_cache::borrow_resonator_tile(fi, lod, ti, |t| f(t)),
                 }
             };
             borrow_fn(file_idx, vg.ideal_lod, tile_idx, &|tile| {
@@ -899,10 +909,16 @@ pub fn blit_tiles_viewport(
             }).is_some()
         },
         |fb_tile, fb_lod, clip_start, clip_end| {
-            // For flow tiles, fallback must also use flow cache
+            // Flow and Resonator fallbacks stay within their own caches; other
+            // sources fall back to the magnitude cache (which is always populated).
             match tile_source {
                 TileSource::Flow => {
                     tile_cache::borrow_flow_tile(file_idx, fb_lod, fb_tile, |tile| {
+                        blit_any_tile(tile, fb_lod, fb_tile, clip_start, clip_end);
+                    }).is_some()
+                }
+                TileSource::Resonators => {
+                    tile_cache::borrow_resonator_tile(file_idx, fb_lod, fb_tile, |tile| {
                         blit_any_tile(tile, fb_lod, fb_tile, clip_start, clip_end);
                     }).is_some()
                 }

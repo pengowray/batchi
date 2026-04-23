@@ -55,6 +55,9 @@ const FLOW_MAX_BYTES: usize = 120 * 1024 * 1024;
 const REASSIGN_MAX_BYTES: usize = 120 * 1024 * 1024;
 /// Chromagram cache budget.
 const CHROMA_MAX_BYTES: usize = 64 * 1024 * 1024;
+/// Resonator cache budget. Resonator tiles have the same layout as magnitude
+/// tiles (dB per pixel) so this sizing mirrors the magnitude cache.
+const RESONATOR_MAX_BYTES: usize = 256 * 1024 * 1024;
 
 /// Maximum time (ms) a tile can be in-flight before being considered stuck.
 const IN_FLIGHT_TIMEOUT_MS: f64 = 10_000.0;
@@ -515,6 +518,13 @@ thread_local! {
     /// Cached per-file global chromagram normalisation maxima (max_class, max_note).
     static CHROMA_GLOBAL_MAX: RefCell<HashMap<usize, (f32, f32)>> =
         RefCell::new(HashMap::new());
+
+    /// Resonator tile cache — multi-LOD, same CacheKey as magnitude tiles.
+    /// Stores absolute dB values per pixel (identical layout to magnitude tiles).
+    static RESONATOR_CACHE: RefCell<TileCache> = RefCell::new(TileCache::new(RESONATOR_MAX_BYTES));
+    static RESONATOR_IN_FLIGHT: RefCell<HashMap<CacheKey, f64>> =
+        RefCell::new(HashMap::new());
+    static RESONATOR_CACHE_GENERATION: RefCell<u64> = const { RefCell::new(0) };
 }
 
 // ── IN_FLIGHT helpers ────────────────────────────────────────────────────────
@@ -527,7 +537,8 @@ fn at_spawn_limit() -> bool {
     let flow = FLOW_IN_FLIGHT.with(|s| s.borrow().values().filter(|&&ts| now - ts <= IN_FLIGHT_TIMEOUT_MS).count());
     let reassign = REASSIGN_IN_FLIGHT.with(|s| s.borrow().values().filter(|&&ts| now - ts <= IN_FLIGHT_TIMEOUT_MS).count());
     let chroma = CHROMA_IN_FLIGHT.with(|s| s.borrow().values().filter(|&&ts| now - ts <= IN_FLIGHT_TIMEOUT_MS).count());
-    mag + flow + reassign + chroma >= MAX_CONCURRENT_SPAWNS
+    let reson = RESONATOR_IN_FLIGHT.with(|s| s.borrow().values().filter(|&&ts| now - ts <= IN_FLIGHT_TIMEOUT_MS).count());
+    mag + flow + reassign + chroma + reson >= MAX_CONCURRENT_SPAWNS
 }
 
 fn has_active_in_flight<K: Eq + std::hash::Hash>(map: &mut HashMap<K, f64>, key: &K) -> bool {
@@ -578,13 +589,14 @@ pub fn clear_all_tiles() {
     crate::canvas::spectrogram_renderer::clear_tile_canvas_cache();
 }
 
-/// Clear all tile caches (main, flow, reassign, chroma). Used when a global
-/// parameter like channel_view changes and all tiles need recomputation.
+/// Clear all tile caches (main, flow, reassign, chroma, resonator). Used when
+/// a global parameter like channel_view changes and all tiles need recomputation.
 pub fn clear_all_caches() {
     clear_all_tiles();
     clear_flow_cache();
     clear_reassign_cache();
     clear_chroma_cache();
+    clear_resonator_cache();
 }
 
 pub fn evict_far(file_idx: usize, lod: u8, center_tile: usize, keep_radius: usize) {
@@ -765,6 +777,10 @@ fn flow_request_still_active(key: &CacheKey) -> bool {
 
 fn reassign_request_still_active(key: &CacheKey) -> bool {
     REASSIGN_IN_FLIGHT.with(|s| has_active_in_flight(&mut s.borrow_mut(), key))
+}
+
+fn resonator_request_still_active(key: &CacheKey) -> bool {
+    RESONATOR_IN_FLIGHT.with(|s| has_active_in_flight(&mut s.borrow_mut(), key))
 }
 
 fn active_baseline_fft(state: AppState) -> usize {
@@ -2111,4 +2127,183 @@ fn apply_display_transform(samples: &[f32], sample_rate: u32, state: AppState) -
             crate::dsp::zc_divide::zc_divide(samples, sample_rate, factor, false)
         }
     }
+}
+
+// ── Resonator tile cache ─────────────────────────────────────────────────────
+
+pub fn get_resonator_tile(file_idx: usize, lod: u8, tile_idx: usize) -> Option<()> {
+    RESONATOR_CACHE.with(|c| c.borrow().get(file_idx, lod, tile_idx).map(|_| ()))
+}
+
+pub fn borrow_resonator_tile<R>(file_idx: usize, lod: u8, tile_idx: usize, f: impl FnOnce(&Tile) -> R) -> Option<R> {
+    RESONATOR_CACHE.with(|c| {
+        let mut cache = c.borrow_mut();
+        let key = (file_idx, lod, tile_idx);
+        if cache.tiles.contains_key(&key) {
+            cache.touch(key);
+            drop(cache);
+            RESONATOR_CACHE.with(|c| {
+                c.borrow().tiles.get(&key).map(f)
+            })
+        } else {
+            None
+        }
+    })
+}
+
+pub fn clear_resonator_cache() {
+    RESONATOR_CACHE.with(|c| c.borrow_mut().clear_all());
+    RESONATOR_IN_FLIGHT.with(|s| s.borrow_mut().clear());
+    RESONATOR_CACHE_GENERATION.with(|g| *g.borrow_mut() += 1);
+    // Offscreen tile canvases are keyed by (file_idx, lod, tile_idx) without
+    // an underlying-tile-dimension component, so resizing bin counts would
+    // otherwise reuse old canvases (rendered at the previous height) and draw
+    // them squished into the new destination rect.
+    crate::canvas::spectrogram_renderer::clear_tile_canvas_cache();
+}
+
+pub fn clear_resonator_file(file_idx: usize) {
+    RESONATOR_CACHE.with(|c| c.borrow_mut().clear_for_file(file_idx));
+    RESONATOR_IN_FLIGHT.with(|s| s.borrow_mut().retain(|k, _| k.0 != file_idx));
+    RESONATOR_CACHE_GENERATION.with(|g| *g.borrow_mut() += 1);
+}
+
+pub fn resonator_tile_active(file_idx: usize, lod: u8, tile_idx: usize) -> bool {
+    let key = (file_idx, lod, tile_idx);
+    RESONATOR_IN_FLIGHT.with(|s| has_active_in_flight(&mut s.borrow_mut(), &key))
+}
+
+pub fn resonator_debug_stats(file_idx: usize, lod: u8, first_tile: usize, last_tile: usize) -> TileDebugStats {
+    RESONATOR_CACHE.with(|c| {
+        let cache = c.borrow();
+        RESONATOR_IN_FLIGHT.with(|s| {
+            let mut inflight = s.borrow_mut();
+            let mut stats = collect_debug_stats(
+                cache.tiles.len(),
+                &mut inflight,
+                (first_tile..=last_tile).map(|tile_idx| (file_idx, lod, tile_idx)),
+                |key| cache.tiles.contains_key(key),
+            );
+            stats.used_bytes = cache.total_bytes;
+            stats.max_bytes = cache.max_bytes;
+            stats
+        })
+    })
+}
+
+/// Schedule a resonator tile for background generation at any LOD.
+///
+/// Produces a spectral tile using the Resonate algorithm instead of STFT.
+/// Output layout is identical to magnitude tiles (linear frequency axis,
+/// `num_bins = fft_size/2+1`), so standard dB-blit / colormap code applies.
+///
+/// The algorithm is stateful, so this reads extra pre-padding samples to let
+/// the resonator EMA converge before the tile's first column.
+pub fn schedule_resonator_tile(state: AppState, file_idx: usize, lod: u8, tile_idx: usize) {
+    use crate::dsp::resonators::{compute_resonator_columns, warmup_samples};
+
+    let key: CacheKey = (file_idx, lod, tile_idx);
+    if RESONATOR_CACHE.with(|c| c.borrow().tiles.contains_key(&key)) { return; }
+    if RESONATOR_IN_FLIGHT.with(|s| has_active_in_flight(&mut s.borrow_mut(), &key)) { return; }
+    if at_spawn_limit() { return; }
+
+    let total_samples = state.files.with_untracked(|files| {
+        files.get(file_idx).map(|f| f.audio.source.total_samples() as usize).unwrap_or(0)
+    });
+    let max_tiles = tile_count_for_samples(total_samples, lod);
+    if tile_idx >= max_tiles { return; }
+
+    RESONATOR_IN_FLIGHT.with(|s| s.borrow_mut().insert(key, js_sys::Date::now()));
+
+    let gen = RESONATOR_CACHE_GENERATION.with(|g| *g.borrow());
+
+    let config_hop = LOD_CONFIGS[lod as usize].hop_size;
+    let reson_fft = state.resonator_fft_size.get_untracked().max(16);
+    let bandwidth_hz = state.resonator_bandwidth_hz.get_untracked().max(1.0);
+
+    spawn_local(async move {
+        yield_to_browser().await;
+
+        if !resonator_request_still_active(&key) {
+            return;
+        }
+
+        // Resonators are O(samples * num_bins) — yield extra for expensive LODs.
+        if lod >= 2 {
+            yield_to_browser().await;
+            if !resonator_request_still_active(&key) { return; }
+        }
+        let is_current = is_current_file(&state, file_idx);
+        if !is_current {
+            for _ in 0..3 {
+                yield_to_browser().await;
+                if !resonator_request_still_active(&key) { return; }
+            }
+        }
+
+        let audio = state.files.with_untracked(|files| {
+            files.get(file_idx).map(|f| f.audio.clone())
+        });
+        let Some(audio) = audio else {
+            RESONATOR_IN_FLIGHT.with(|s| s.borrow_mut().remove(&key));
+            return;
+        };
+
+        let cv = state.channel_view.get_untracked();
+
+        // Warmup samples before the tile's first column so the EMA state has
+        // converged by the time we emit output.
+        let warmup = warmup_samples(audio.sample_rate, bandwidth_hz);
+        let warmup_cols = warmup.div_ceil(config_hop);
+        let warmup_samples_aligned = warmup_cols * config_hop;
+
+        let tile_sample_start = tile_idx * TILE_COLS * config_hop;
+        let padded_start = tile_sample_start.saturating_sub(warmup_samples_aligned);
+        let pre_pad_cols = (tile_sample_start - padded_start) / config_hop;
+        let padded_len = (pre_pad_cols + TILE_COLS) * config_hop;
+
+        streaming_source::prefetch_streaming(
+            audio.source.as_ref(),
+            padded_start as u64,
+            padded_len,
+        ).await;
+
+        if !resonator_request_still_active(&key) { return; }
+
+        let samples = audio.source.read_region(cv, padded_start as u64, padded_len);
+        if samples.is_empty() {
+            RESONATOR_IN_FLIGHT.with(|s| s.borrow_mut().remove(&key));
+            return;
+        }
+
+        yield_to_browser().await;
+        if !resonator_request_still_active(&key) { return; }
+
+        let cols = compute_resonator_columns(
+            &samples,
+            audio.sample_rate,
+            reson_fft,
+            config_hop,
+            pre_pad_cols,
+            TILE_COLS,
+            bandwidth_hz,
+        );
+
+        RESONATOR_IN_FLIGHT.with(|s| s.borrow_mut().remove(&key));
+
+        let current_gen = RESONATOR_CACHE_GENERATION.with(|g| *g.borrow());
+        if current_gen != gen {
+            state.tile_ready_signal.update(|n| *n = n.wrapping_add(1));
+            return;
+        }
+
+        if cols.is_empty() {
+            state.tile_ready_signal.update(|n| *n = n.wrapping_add(1));
+            return;
+        }
+
+        let rendered = spectrogram_renderer::pre_render_columns(&cols);
+        RESONATOR_CACHE.with(|c| c.borrow_mut().insert(file_idx, lod, tile_idx, rendered));
+        state.tile_ready_signal.update(|n| *n = n.wrapping_add(1));
+    });
 }

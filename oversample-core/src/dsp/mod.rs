@@ -14,3 +14,4 @@ pub mod zero_crossing;
 pub mod chromagram;
 pub mod psd;
 pub mod pulse_detect;
+pub mod resonators;

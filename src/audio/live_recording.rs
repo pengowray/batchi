@@ -8,6 +8,8 @@ use crate::audio::mic_backend::{with_live_samples, with_live_samples_mut};
 use crate::audio::wav_encoder::try_tauri_save;
 use crate::types::{AudioData, FileMetadata, SpectrogramData};
 use crate::dsp::fft::{compute_preview, compute_spectrogram_partial, compute_stft_columns};
+use crate::dsp::resonators::{compute_resonator_columns, warmup_samples};
+use crate::state::MainView;
 use std::sync::Arc;
 
 /// FFT and hop sizes for live waterfall rendering.
@@ -371,15 +373,42 @@ pub(crate) fn spawn_live_processing_loop(state: AppState, file_index: usize, sam
 
                 let new_col_count = total_possible_cols - last_processed_col;
 
-                // Compute new STFT columns
-                let new_cols = compute_stft_columns(
-                    samples,
-                    sample_rate,
-                    fft_size,
-                    hop_size,
-                    last_processed_col,
-                    new_col_count,
-                );
+                // Compute new spectral columns using the currently selected view.
+                // Resonators are stateful: each tick we slice the buffer tail
+                // and run a short warmup prefix so the EMA converges before we
+                // emit the genuinely-new columns. This keeps per-tick cost
+                // bounded regardless of total recording length.
+                let new_cols = if state.main_view.get_untracked() == MainView::Resonators {
+                    let bandwidth_hz = state.resonator_bandwidth_hz.get_untracked().max(1.0);
+                    let warmup = warmup_samples(sample_rate, bandwidth_hz);
+                    let warmup_cols = warmup.div_ceil(hop_size);
+                    let skip_cols = warmup_cols.min(last_processed_col);
+                    let slice_start_col = last_processed_col - skip_cols;
+                    let slice_start_sample = slice_start_col * hop_size;
+                    if slice_start_sample >= samples.len() {
+                        Vec::new()
+                    } else {
+                        let tail = &samples[slice_start_sample..];
+                        compute_resonator_columns(
+                            tail,
+                            sample_rate,
+                            fft_size,
+                            hop_size,
+                            skip_cols,
+                            new_col_count,
+                            bandwidth_hz,
+                        )
+                    }
+                } else {
+                    compute_stft_columns(
+                        samples,
+                        sample_rate,
+                        fft_size,
+                        hop_size,
+                        last_processed_col,
+                        new_col_count,
+                    )
+                };
 
                 if new_cols.is_empty() {
                     return (false, 0.0);

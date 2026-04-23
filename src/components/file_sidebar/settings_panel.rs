@@ -223,6 +223,89 @@ pub(crate) fn SpectrogramSettingsPanel() -> impl IntoView {
                 }
             }}
 
+            // Resonator-specific settings (shown only when Resonators view is active)
+            {move || {
+                if state.main_view.get() == MainView::Resonators {
+                    view! {
+                        <div class="setting-group">
+                            <div class="setting-group-title">"Resonators"</div>
+                            <div class="setting-row">
+                                <span class="setting-label" style="font-size:11px;color:#888;line-height:1.3">
+                                    "Alexandre Fran\u{00e7}ois's Resonate algorithm: "
+                                    "a bank of independent complex resonators, one per bin. "
+                                    "Lower bandwidth → sharper bins / slower response; "
+                                    "higher → faster response / wider bins."
+                                </span>
+                            </div>
+                            <div class="setting-row">
+                                <span class="setting-label">{move || {
+                                    let bw = state.resonator_bandwidth_hz.get();
+                                    format!("Bandwidth: {:.0} Hz", bw)
+                                }}</span>
+                                <input
+                                    type="range"
+                                    class="setting-range"
+                                    min="20"
+                                    max="4000"
+                                    step="10"
+                                    prop:value=move || state.resonator_bandwidth_hz.get().round().to_string()
+                                    on:input=move |ev: web_sys::Event| {
+                                        let target = ev.target().unwrap();
+                                        let input: web_sys::HtmlInputElement = target.unchecked_into();
+                                        if let Ok(v) = input.value().parse::<f32>() {
+                                            state.resonator_bandwidth_hz.set(v.max(1.0));
+                                        }
+                                    }
+                                />
+                            </div>
+                            <div class="setting-row">
+                                <span class="setting-label">{move || {
+                                    let f = state.resonator_fft_size.get();
+                                    format!("Bins: {} ({} eq. FFT)", f / 2 + 1, f)
+                                }}</span>
+                                <select
+                                    class="setting-select"
+                                    on:change=move |ev: web_sys::Event| {
+                                        let target = ev.target().unwrap();
+                                        let select: web_sys::HtmlSelectElement = target.unchecked_into();
+                                        if let Ok(v) = select.value().parse::<usize>() {
+                                            state.resonator_fft_size.set(v.max(16));
+                                        }
+                                    }
+                                    prop:value=move || state.resonator_fft_size.get().to_string()
+                                >
+                                    <option value="64">"33 bins (eq. 64)"</option>
+                                    <option value="128">"65 bins (eq. 128)"</option>
+                                    <option value="256">"129 bins (eq. 256)"</option>
+                                    <option value="512">"257 bins (eq. 512)"</option>
+                                    <option value="1024">"513 bins (eq. 1024)"</option>
+                                </select>
+                            </div>
+                            <div class="setting-row">
+                                <button
+                                    class="setting-button"
+                                    on:click=move |_| {
+                                        state.resonator_bandwidth_hz.set(500.0);
+                                        state.resonator_fft_size.set(256);
+                                    }
+                                >"Reset"</button>
+                            </div>
+                            <div class="setting-row">
+                                <span class="setting-label" style="font-size:11px;color:#888;line-height:1.3">
+                                    "See "
+                                    <a href="https://alexandrefrancois.org/Resonate/" target="_blank" style="color:#6cf">"Resonate"</a>
+                                    " and "
+                                    <a href="https://github.com/jhartquist/resonators" target="_blank" style="color:#6cf">"jhartquist/resonators"</a>
+                                    " for algorithm details."
+                                </span>
+                            </div>
+                        </div>
+                    }.into_any()
+                } else {
+                    view! { <span></span> }.into_any()
+                }
+            }}
+
             // Chromagram-specific settings (shown only when Chromagram view is active)
             {move || {
                 if state.main_view.get() == MainView::Chromagram {
