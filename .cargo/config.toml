@@ -1,0 +1,9 @@
+# Enable WASM SIMD128 for wasm32 builds. `wide::f32x4` (used by the
+# `resonators` dep) picks its WASM SIMD128 backend only when this feature
+# is set; without it, it falls back to scalar arrays. Required for the
+# Resonators view to hit v128.* intrinsics in-browser.
+#
+# Safari 16.4+, Chrome 91+, Firefox 89+ all support WASM SIMD128 — which is
+# already the compatibility floor we target elsewhere.
+[target.wasm32-unknown-unknown]
+rustflags = ["-C", "target-feature=+simd128"]
