@@ -31,6 +31,52 @@ fn format_hz(hz: f64) -> String {
     }
 }
 
+/// Run a fixed SIMD-vs-scalar benchmark on the resonator hot loop and log
+/// the result to the browser console. Uses `performance.now()` for wall
+/// time. Runs at a couple of bank sizes so one click gives a useful picture.
+fn run_resonator_bench() {
+    use crate::dsp::resonators::bench_simd_vs_scalar;
+
+    let Some(perf) = web_sys::window().and_then(|w| w.performance()) else {
+        log::warn!("bench: window.performance unavailable");
+        return;
+    };
+    let now_ms = {
+        let perf = perf.clone();
+        move || perf.now()
+    };
+
+    let simd128 = cfg!(target_feature = "simd128");
+    let header = format!(
+        "Resonators bench (target-feature simd128={}): 1s of 48 kHz audio, 10 iterations",
+        if simd128 { "on" } else { "off" },
+    );
+    log::info!("{header}");
+
+    let sample_rate = 48_000u32;
+    let samples_per_iter = sample_rate as usize; // ~1 second
+    let iterations = 10;
+    let bandwidth_hz = 20.0;
+
+    for &num_bins in &[65usize, 129, 257, 513] {
+        let r = bench_simd_vs_scalar(
+            num_bins,
+            samples_per_iter,
+            iterations,
+            bandwidth_hz,
+            sample_rate,
+            now_ms.clone(),
+        );
+        let speedup = r.speedup();
+        let msg = format!(
+            "bins={:>4}: SIMD {:>7.2} ms,  scalar {:>7.2} ms,  speedup {:.2}x",
+            r.num_bins, r.simd_ms, r.scalar_ms, speedup,
+        );
+        log::info!("{msg}");
+    }
+    log::info!("(open DevTools Console to read these)");
+}
+
 #[component]
 pub(crate) fn SpectrogramSettingsPanel() -> impl IntoView {
     let state = expect_context::<AppState>();
@@ -397,6 +443,12 @@ pub(crate) fn SpectrogramSettingsPanel() -> impl IntoView {
                                         state.resonator_viewport_bins.set(true);
                                     }
                                 >"Reset"</button>
+                                <button
+                                    class="setting-button"
+                                    style="margin-left:6px"
+                                    title="Run a SIMD-vs-scalar A/B benchmark on the resonator hot loop. Result is logged to the browser console."
+                                    on:click=move |_| run_resonator_bench()
+                                >"Bench"</button>
                             </div>
                             <div class="setting-row">
                                 <span class="setting-label" style="font-size:11px;color:#888;line-height:1.3">

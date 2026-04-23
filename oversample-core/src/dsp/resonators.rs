@@ -245,6 +245,105 @@ fn build_log_row_map(
         .collect()
 }
 
+/// Result of a resonator bank benchmark run.
+#[derive(Clone, Copy, Debug)]
+pub struct BenchResult {
+    /// Number of resonator bins in the bank.
+    pub num_bins: usize,
+    /// Number of input samples processed per iteration.
+    pub samples_per_iter: usize,
+    /// Number of iterations run.
+    pub iterations: usize,
+    /// Wall time for the SIMD path, in milliseconds.
+    pub simd_ms: f64,
+    /// Wall time for the scalar path, in milliseconds.
+    pub scalar_ms: f64,
+}
+
+impl BenchResult {
+    /// SIMD vs scalar speedup ratio. Values > 1.0 mean SIMD is faster.
+    pub fn speedup(&self) -> f64 {
+        if self.simd_ms <= 0.0 {
+            0.0
+        } else {
+            self.scalar_ms / self.simd_ms
+        }
+    }
+}
+
+/// Run a fixed-workload bench comparing the SIMD and scalar hot loops in
+/// the resonators crate. Uses a caller-supplied wall-clock `now_ms` (so
+/// this works in WASM via `performance.now()` and natively via `Instant`).
+///
+/// `num_bins` controls the bank size, `samples_per_iter` the signal length
+/// per call, `iterations` how many times the signal is fed through. For
+/// meaningful timings, make `samples_per_iter * iterations` large enough
+/// that the workload runs for at least a few tens of milliseconds.
+///
+/// Both paths process an identical signal on fresh banks — comparable
+/// down to f32 rounding.
+pub fn bench_simd_vs_scalar<F: FnMut() -> f64>(
+    num_bins: usize,
+    samples_per_iter: usize,
+    iterations: usize,
+    bandwidth_hz: f32,
+    sample_rate: u32,
+    mut now_ms: F,
+) -> BenchResult {
+    use resonators::{ResonatorBank, ResonatorConfig, alpha_from_tau};
+
+    // Build matching configs: linear freq layout, single bandwidth, same
+    // beta=1.0 as our production adapter.
+    let sr_f = sample_rate as f32;
+    let nyq = sr_f * 0.5;
+    let tau = 1.0 / (std::f32::consts::TAU * bandwidth_hz.max(0.1));
+    let alpha = alpha_from_tau(tau, sr_f);
+    let denom = (num_bins - 1).max(1) as f32;
+    let configs: Vec<ResonatorConfig> = (0..num_bins)
+        .map(|k| {
+            let f = (k as f32 * nyq / denom).max(0.01);
+            ResonatorConfig::new(f, alpha, 1.0)
+        })
+        .collect();
+
+    // Synthetic signal: 1 kHz tone + a little noise-like variation. The
+    // actual content doesn't matter for timing — just needs to exercise
+    // the full per-bin update path.
+    let signal: Vec<f32> = (0..samples_per_iter)
+        .map(|i| {
+            let t = i as f32 / sr_f;
+            (std::f32::consts::TAU * 1000.0 * t).sin() * 0.5
+        })
+        .collect();
+
+    // SIMD pass.
+    let mut simd_bank = ResonatorBank::new(&configs, sr_f);
+    let t0 = now_ms();
+    for _ in 0..iterations {
+        simd_bank.process_samples(&signal);
+    }
+    let simd_ms = now_ms() - t0;
+    // Keep the result alive so the optimizer can't eliminate the loop.
+    let _sink_simd = simd_bank.power(num_bins / 2);
+
+    // Scalar pass.
+    let mut scalar_bank = ResonatorBank::new(&configs, sr_f);
+    let t0 = now_ms();
+    for _ in 0..iterations {
+        scalar_bank.process_samples_scalar(&signal);
+    }
+    let scalar_ms = now_ms() - t0;
+    let _sink_scalar = scalar_bank.power(num_bins / 2);
+
+    BenchResult {
+        num_bins,
+        samples_per_iter,
+        iterations,
+        simd_ms,
+        scalar_ms,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
