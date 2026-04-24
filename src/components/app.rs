@@ -83,6 +83,47 @@ pub fn App() -> impl IntoView {
         }
     }
 
+    // Startup: scan for orphaned crash-recovery recordings and finalize them.
+    // Cheap no-op if the recovery dir is empty or missing.
+    if state.is_tauri {
+        wasm_bindgen_futures::spawn_local(async move {
+            use crate::tauri_bridge::{tauri_invoke, tauri_invoke_no_args};
+            let Ok(result) = tauri_invoke_no_args("mic_recover_recordings").await else {
+                return;
+            };
+            let arr = js_sys::Array::from(&result);
+            let count = arr.length();
+            if count > 0 {
+                log::info!("Recovered {} crashed recording(s) from previous session", count);
+                let first_path = js_sys::Reflect::get(&arr.get(0), &JsValue::from_str("path"))
+                    .ok().and_then(|v| v.as_string()).unwrap_or_default();
+                state.show_info_toast(format!(
+                    "Recovered {} recording{} from previous session ({})",
+                    count,
+                    if count == 1 { "" } else { "s" },
+                    first_path,
+                ));
+            }
+
+            // Android-only: also sweep stale IS_PENDING=1 MediaStore rows left
+            // over from a crashed recording. The plugin call is a no-op on
+            // non-Android and on pre-Q; a failed invoke (e.g. plugin missing
+            // on desktop) is dropped silently. Quick call regardless of
+            // whether any .wav.part files were found — the MediaStore row can
+            // outlive the internal partial file.
+            if let Ok(result) = tauri_invoke(
+                "plugin:media-store|cleanupPendingEntries",
+                &js_sys::Object::new().into(),
+            ).await {
+                let deleted = js_sys::Reflect::get(&result, &JsValue::from_str("deleted"))
+                    .ok().and_then(|v| v.as_f64()).unwrap_or(0.0) as u32;
+                if deleted > 0 {
+                    log::info!("Cleaned up {} orphaned MediaStore pending entries", deleted);
+                }
+            }
+        });
+    }
+
     // Startup: check for USB device (delayed to ensure Tauri internals are ready)
     if state.is_tauri && state.mic_strategy.get_untracked() == MicStrategy::Ask {
         wasm_bindgen_futures::spawn_local(async move {

@@ -94,6 +94,9 @@ pub struct MicState {
     pub channels: usize,
     pub device_name: String,
     pub supported_sample_rates: Vec<u32>,
+    /// Crash-recovery writer + shared state. Active between
+    /// `mic_start_recording` and `mic_stop_recording` on Android.
+    pub recovery: crate::recovery::RecoveryHandle,
 }
 
 #[derive(Serialize)]
@@ -556,6 +559,7 @@ pub fn open_mic(
         channels,
         device_name,
         supported_sample_rates: supported_rates,
+        recovery: crate::recovery::RecoveryHandle::default(),
     })
 }
 
@@ -722,13 +726,20 @@ pub fn write_wav_to_fd(_fd: i32, _wav_data: &[u8]) -> Result<(), String> {
 }
 
 /// Start the background emitter thread that sends audio chunks to the frontend.
+///
+/// The thread also does best-effort disk flushing for crash-recovery: when a
+/// `RecoveryWriter` is installed (by `mic_start_recording`), any native-format
+/// samples appended since the last tick are written to the `.wav.part` file.
+/// Disk I/O happens outside the buffer lock to avoid stalling the audio callback.
 pub fn start_emitter(
     app: tauri::AppHandle,
     buffer: Arc<Mutex<RecordingBuffer>>,
     stop_flag: Arc<AtomicBool>,
+    recovery: crate::recovery::RecoveryHandle,
 ) {
     std::thread::spawn(move || {
         use tauri::Emitter;
+        let mut tick: u32 = 0;
         while !stop_flag.load(Ordering::Relaxed) {
             std::thread::sleep(std::time::Duration::from_millis(80));
             let chunks = {
@@ -737,6 +748,34 @@ pub fn start_emitter(
             };
             if !chunks.is_empty() {
                 let _ = app.emit("mic-audio-chunk", &chunks);
+            }
+
+            // Flush new samples to disk every ~240 ms (every 3rd tick) to
+            // amortize open/write cost. Only happens when a recovery writer
+            // is installed (i.e. streaming-to-disk mode). We hold the writer
+            // lock across the drain+write so the stop command can't race us
+            // and consume the writer mid-flush (which would silently drop
+            // the bytes we just drained).
+            tick = tick.wrapping_add(1);
+            if tick % 3 == 0 {
+                if let Ok(mut wg) = recovery.writer.lock() {
+                    if wg.is_some() {
+                        let bytes = {
+                            let mut buf = match buffer.lock() {
+                                Ok(b) => b,
+                                Err(_) => continue,
+                            };
+                            crate::recovery::drain_cpal_bytes(&mut buf)
+                        };
+                        if !bytes.is_empty() {
+                            if let Some(writer) = wg.as_mut() {
+                                if let Err(e) = writer.append_bytes(&bytes) {
+                                    eprintln!("recovery flush failed: {}", e);
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     });

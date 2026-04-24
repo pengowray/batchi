@@ -240,6 +240,76 @@ class MediaStorePlugin(private val activity: Activity) : Plugin(activity) {
     }
 
     /**
+     * Scan MediaStore for our own pending (IS_PENDING=1) entries in
+     * Recordings/Oversample and delete them. Called once on app startup to
+     * clean up after a crash that left MediaStore rows orphaned — without
+     * this the user would see zero-byte "pending" files via other apps that
+     * honour IS_PENDING, and they'd accumulate silently over time.
+     *
+     * Safe: scoped storage on API 29+ restricts this query to entries our
+     * own app owns, so we can't accidentally delete other apps' in-progress
+     * writes. No-op on API < 29 (pre-Q has no IS_PENDING concept).
+     */
+    @Command
+    fun cleanupPendingEntries(invoke: Invoke) {
+        try {
+            val result = JSObject()
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+                result.put("deleted", 0)
+                result.put("skipped", true)
+                invoke.resolve(result)
+                return
+            }
+
+            val resolver = activity.contentResolver
+            val collection = MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+            // Only look inside our subfolder so we don't touch anything else
+            // the user might have put in shared Recordings via another app.
+            val selection = "${MediaStore.Audio.Media.IS_PENDING} = 1 AND " +
+                "${MediaStore.Audio.Media.RELATIVE_PATH} LIKE ?"
+            val args = arrayOf("%Recordings/$SUBFOLDER/%")
+            val projection = arrayOf(
+                MediaStore.Audio.Media._ID,
+                MediaStore.Audio.Media.DISPLAY_NAME,
+            )
+
+            var deleted = 0
+            val names = mutableListOf<String>()
+            resolver.query(collection, projection, selection, args, null)?.use { cursor ->
+                val idColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
+                val nameColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DISPLAY_NAME)
+                while (cursor.moveToNext()) {
+                    val id = cursor.getLong(idColumn)
+                    val name = cursor.getString(nameColumn) ?: "unknown"
+                    val uri = ContentUris.withAppendedId(collection, id)
+                    try {
+                        val rows = resolver.delete(uri, null, null)
+                        if (rows > 0) {
+                            deleted++
+                            names.add(name)
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Failed to delete pending entry $uri: ${e.message}")
+                    }
+                }
+            }
+
+            if (deleted > 0) {
+                Log.i(TAG, "Cleaned up $deleted pending MediaStore entries: $names")
+            }
+            result.put("deleted", deleted)
+            result.put("skipped", false)
+            // Also clear our own in-memory handle — its target may have been
+            // one of the rows we just deleted.
+            pendingRecordingUri = null
+            invoke.resolve(result)
+        } catch (e: Exception) {
+            Log.e(TAG, "cleanupPendingEntries failed", e)
+            invoke.reject("Failed to cleanup pending entries: ${e.message}")
+        }
+    }
+
+    /**
      * Cancel a pending recording entry created by createRecordingEntry.
      * Deletes the MediaStore row so no orphaned IS_PENDING=1 entry remains.
      * Safe to call even if no entry is pending (no-op).

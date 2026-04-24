@@ -436,10 +436,18 @@ pub(crate) fn spawn_live_processing_loop(state: AppState, file_index: usize, sam
                     });
                 }
 
-                // Periodically snapshot for waveform rendering (~1s interval)
+                // Periodically snapshot for waveform rendering.
+                //
+                // A fixed ~1s interval is O(N²) in total copy cost and blew the
+                // Android heap for multi-minute high-SR recordings. Instead we
+                // scale the interval with the current buffer length so each
+                // snapshot does at most ~25% new work — amortized O(N) total,
+                // while still giving frequent updates at the start.
                 if has_live_file {
-                    let snapshot_threshold = (sample_rate as usize).max(44100);
-                    let do_snapshot = samples.len() - last_snapshot_len >= snapshot_threshold || last_snapshot_len == 0;
+                    let base = (sample_rate as usize).max(44100);
+                    let adaptive = (samples.len() / 4).max(base);
+                    let do_snapshot = last_snapshot_len == 0
+                        || samples.len().saturating_sub(last_snapshot_len) >= adaptive;
                     if do_snapshot {
                         let snapshot = Arc::new(samples.to_vec());
                         state.files.update(|files| {
@@ -463,11 +471,42 @@ pub(crate) fn spawn_live_processing_loop(state: AppState, file_index: usize, sam
                 (true, normalized)
             });
 
-            // Trim circular buffer during listen-only (configurable max).
-            // Must be a separate mutable borrow — the closure above borrows immutably.
-            if any_update && is_listening && !is_recording {
+            // Trim the WASM-side circular buffer.
+            //
+            // We do this during listen AND during recording (whenever the
+            // Tauri side is streaming to disk, which is the default). During
+            // recording the WASM buffer is purely for the live waterfall + a
+            // recent-samples waveform strip — the full recording lives on
+            // disk via the .wav.part file. Keeping the full recording in
+            // WASM would blow the heap for long / high-SR captures.
+            //
+            // The two exceptions that DO need the full buffer in WASM RAM:
+            //   - Pre-roll recording: WASM re-encodes the WAV with the
+            //     pre-roll samples + cue marker, so everything must survive
+            //     until stop.
+            //   - To-memory mode: user explicitly opted out of disk writes.
+            let to_memory = state.record_mode.get_untracked() == crate::state::RecordMode::ToMemory;
+            let preroll_active = state.mic_preroll_samples.get_untracked() > 0;
+            let wasm_is_authoritative = to_memory || preroll_active || !is_tauri;
+            let should_trim = any_update
+                && (is_listening || (is_recording && !wasm_is_authoritative));
+            if should_trim {
                 with_live_samples_mut(is_tauri, |samples| {
-                    let buf_secs = state.mic_preroll_buffer_secs.get_untracked().max(2) as usize;
+                    // Keep an extra 2 s of headroom beyond the user-requested
+                    // pre-roll duration. `toggle_record_with_preroll` subtracts
+                    // the long-press gesture time (typically 400–700 ms, but
+                    // up to a few seconds if the user holds) from the buffer
+                    // length to work out where the "press moment" was — if the
+                    // buffer were exactly the requested length, the subtracted
+                    // gesture-time would eat into the actual pre-roll the
+                    // user asked for. With headroom the cap below ends up at
+                    // exactly the user's setting.
+                    const GESTURE_HEADROOM_SECS: u32 = 2;
+                    let buf_secs = state
+                        .mic_preroll_buffer_secs
+                        .get_untracked()
+                        .max(2)
+                        .saturating_add(GESTURE_HEADROOM_SECS) as usize;
                     let max_samples = (sample_rate as usize) * buf_secs;
                     if samples.len() > max_samples {
                         let trim = samples.len() - max_samples;
@@ -810,6 +849,51 @@ pub(crate) fn finalize_recording(params: FinalizeParams, state: AppState) {
     let FinalizeParams { samples, sample_rate, bits_per_sample, is_float, saved_path, file_size } = params;
 
     let live_idx = state.mic_live_file_idx.get_untracked();
+
+    // Streaming-to-disk mode: Tauri wrote the file during recording and
+    // returned only metadata (no samples in RAM). Hand off to the streaming
+    // loader so we only decode the head ~30 s for display and keep the rest
+    // on disk. Avoids the multi-GB memory spike that the old "load all
+    // samples into f.audio.samples" path would cause for long/high-SR
+    // recordings.
+    let has_native_path = !saved_path.is_empty() && !saved_path.starts_with("shared://");
+    if samples.is_empty() && has_native_path {
+        state.mic_live_file_idx.set(None);
+        live_waterfall::clear();
+        let path = saved_path.clone();
+        let live_idx_for_async = live_idx;
+        let fsize = file_size.unwrap_or(0) as u64;
+        wasm_bindgen_futures::spawn_local(async move {
+            if let Err(e) = finalize_streaming_tauri_recording(
+                path, fsize, sample_rate, bits_per_sample, is_float, state, live_idx_for_async,
+            ).await {
+                log::error!("Streaming finalize failed: {}", e);
+                if let Some(idx) = live_idx_for_async {
+                    state.files.update(|files| {
+                        if idx < files.len() { files.remove(idx); }
+                    });
+                }
+                state.show_error_toast(format!("Recording save succeeded but load failed: {}", e));
+            }
+        });
+        return;
+    }
+    // Shared storage (Android MediaStore): file was streamed directly into
+    // the content-resolver fd and lives under a content:// URI we can't
+    // read from here. Just drop the live placeholder; the user finds the
+    // file through the system file manager.
+    if samples.is_empty() && saved_path.starts_with("shared://") {
+        state.mic_live_file_idx.set(None);
+        live_waterfall::clear();
+        if let Some(idx) = live_idx {
+            state.files.update(|files| {
+                if idx < files.len() { files.remove(idx); }
+            });
+        }
+        state.show_info_toast("Recording saved to device storage");
+        return;
+    }
+
     state.mic_live_file_idx.set(None);
 
     if samples.is_empty() {
@@ -917,6 +1001,146 @@ pub(crate) fn finalize_recording(params: FinalizeParams, state: AppState) {
     state.scroll_offset.set(0.0);
 
     spawn_spectrogram_computation(audio_for_stft, name_check, file_index, state);
+}
+
+/// Async handoff for Tauri streaming-mode recordings. The `.wav` is already
+/// on disk (written incrementally during recording). We read just the header
+/// + first ~30 s via range reads, build a `StreamingWavSource`, and update
+/// the live file entry so the rest of the recording is streamed on demand
+/// via `read_file_range`. Peak memory = head window (~30 s of f32), not the
+/// full recording.
+async fn finalize_streaming_tauri_recording(
+    path: String,
+    file_size: u64,
+    expected_sample_rate: u32,
+    expected_bits_per_sample: u16,
+    _expected_is_float: bool,
+    state: AppState,
+    live_idx: Option<usize>,
+) -> Result<(), String> {
+    use crate::audio::loader::parse_wav_header_with_file_size;
+    use crate::audio::streaming_source::{FileHandle, StreamingWavSource};
+    use crate::audio::source::DEFAULT_ANALYSIS_WINDOW_SECS;
+    use crate::components::file_sidebar::streaming_load::{decode_head_pcm, scan_tail_for_guano};
+    use crate::canvas::tile_cache;
+
+    // Read first 64 KB for header parsing (covers fmt, optional fact, and
+    // usually the data chunk start).
+    let header_size = 65536u64.min(file_size);
+    let header_bytes = crate::tauri_bridge::read_file_range(&path, 0, header_size).await?;
+    let header = parse_wav_header_with_file_size(&header_bytes, Some(file_size))?;
+    if header.sample_rate != expected_sample_rate {
+        log::warn!(
+            "recording sample rate mismatch: file says {}, expected {}",
+            header.sample_rate, expected_sample_rate,
+        );
+    }
+
+    // Decode the first ~30 s into mono f32 for fast display + analysis.
+    let head_frames = ((DEFAULT_ANALYSIS_WINDOW_SECS * header.sample_rate as f64) as u64)
+        .min(header.total_frames);
+    let bytes_per_frame = header.channels as u64 * (header.bits_per_sample as u64 / 8);
+    let head_byte_len = head_frames * bytes_per_frame;
+    let head_pcm_bytes = crate::tauri_bridge::read_file_range(
+        &path, header.data_offset, head_byte_len,
+    ).await?;
+    let head_interleaved = decode_head_pcm(
+        &head_pcm_bytes,
+        header.bits_per_sample,
+        header.is_float,
+        header.channels,
+    );
+    let channels = header.channels as usize;
+    let (head_mono, head_raw) = if channels == 1 {
+        (head_interleaved, None)
+    } else {
+        let mono: Vec<f32> = head_interleaved
+            .chunks_exact(channels)
+            .map(|frame| frame.iter().sum::<f32>() / channels as f32)
+            .collect();
+        (mono, Some(head_interleaved))
+    };
+
+    // GUANO chunk is typically after the data chunk in our writer — scan the
+    // tail of the file for it.
+    let mut guano = header.guano.clone();
+    if guano.is_none() {
+        let data_end = header.data_offset + header.data_size;
+        if data_end < file_size {
+            let tail_len = (file_size - data_end).min(65536);
+            if let Ok(tail_bytes) = crate::tauri_bridge::read_file_range(&path, data_end, tail_len).await {
+                guano = scan_tail_for_guano(&tail_bytes);
+            }
+        }
+    }
+
+    let source = Arc::new(StreamingWavSource::new(
+        FileHandle::TauriPath(path.clone()),
+        &header,
+        head_mono.clone(),
+        head_raw,
+    ));
+
+    let duration_secs = header.total_frames as f64 / header.sample_rate as f64;
+    let samples_arc = Arc::new(head_mono);
+    let audio = AudioData {
+        samples: samples_arc,
+        source,
+        sample_rate: header.sample_rate,
+        channels: header.channels as u32,
+        duration_secs,
+        metadata: crate::types::FileMetadata {
+            file_size: file_size as usize,
+            format: "REC",
+            bits_per_sample: header.bits_per_sample,
+            is_float: header.is_float,
+            guano,
+            data_offset: Some(header.data_offset),
+            data_size: Some(header.data_size),
+        },
+    };
+    let audio_for_stft = audio.clone();
+
+    let preview = crate::dsp::fft::compute_preview(&audio, 256, 128);
+
+    // Build the recording name from the saved filename.
+    let name = path.rsplit(['/', '\\']).next().unwrap_or(&path).to_string();
+
+    let (file_index, name_check) = update_or_create_file(
+        state, live_idx, audio, preview, Vec::new(), header.sample_rate,
+    );
+
+    // Rename the live entry to match the on-disk filename + wire up the handle.
+    state.files.update(|files| {
+        if let Some(f) = files.get_mut(file_index) {
+            f.name = name.clone();
+            f.file_handle = Some(FileHandle::TauriPath(path.clone()));
+            f.is_recording = false;
+            f.audio.metadata.bits_per_sample = expected_bits_per_sample;
+        }
+    });
+
+    let canvas_w = state.spectrogram_canvas_width.get_untracked();
+    let final_time_res = 512.0 / header.sample_rate as f64;
+    state.zoom_level.set(crate::viewport::fit_zoom(canvas_w, final_time_res, duration_secs));
+    state.scroll_offset.set(0.0);
+    if state.mic_preroll_samples.get_untracked() > 0 {
+        state.mic_preroll_samples.set(0);
+    }
+
+    // Clear the provisional live-tile cache and kick off progressive tile
+    // computation — the same path used by regular file loads.
+    tile_cache::clear_file(file_index);
+    spawn_spectrogram_computation(audio_for_stft, name_check, file_index, state);
+
+    // Compute identity hash from the file on disk so the Name field in GUANO
+    // and future sidecar resolution stay consistent.
+    crate::file_identity::start_identity_computation(
+        state, file_index, name, file_size, None,
+        Some(44), Some(header.data_size), None,
+    );
+
+    Ok(())
 }
 
 fn generate_recording_name() -> String {

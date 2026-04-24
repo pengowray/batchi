@@ -7,6 +7,7 @@ mod cmd_playback;
 mod cmd_usb;
 mod native_playback;
 mod recording;
+mod recovery;
 mod usb_audio;
 mod xc;
 
@@ -51,6 +52,7 @@ pub fn run() {
             cmd_mic::mic_set_listening,
             cmd_mic::mic_get_status,
             cmd_mic::mic_list_devices,
+            cmd_mic::mic_recover_recordings,
             cmd_audio_files::audio_file_info,
             cmd_audio_files::audio_decode_full,
             cmd_audio_files::read_file_bytes,

@@ -28,10 +28,14 @@ pub struct UsbStreamState {
     pub sample_rate: u32,
     pub device_name: String,
     pub uac_version: u32, // 1 or 2, from USB Audio Class descriptor
+    /// Crash-recovery writer. Active between `usb_start_recording` and
+    /// `usb_stop_recording`; shared with the emitter thread for streaming
+    /// flushes.
+    pub recovery: crate::recovery::RecoveryHandle,
 }
 
 pub struct UsbRecordingBuffer {
-    samples_i16: Vec<i16>,
+    pub samples_i16: Vec<i16>,
     pending_f32: Vec<f32>,
     pub total_samples: usize,
     pub sample_rate: u32,
@@ -92,14 +96,28 @@ pub fn stop_usb_stream(state: &UsbStreamState) {
     state.cancel_flag.store(true, Ordering::Relaxed);
 }
 
+/// Take everything in the USB tail buffer as little-endian i16 PCM bytes and
+/// leave the buffer empty. Mirrors `recovery::drain_cpal_bytes`. Caller
+/// releases the buffer lock before writing to disk so the isochronous thread
+/// is not blocked by I/O.
+pub fn drain_usb_recovery_bytes(buf: &mut UsbRecordingBuffer) -> Vec<u8> {
+    if buf.samples_i16.is_empty() {
+        return Vec::new();
+    }
+    let samples = std::mem::take(&mut buf.samples_i16);
+    crate::recovery::encode_samples_i16(&samples)
+}
+
 #[allow(dead_code)]
 pub fn start_usb_emitter(
     app: tauri::AppHandle,
     buffer: Arc<Mutex<UsbRecordingBuffer>>,
     stop_flag: Arc<AtomicBool>,
+    recovery: crate::recovery::RecoveryHandle,
 ) {
     std::thread::spawn(move || {
         use tauri::Emitter;
+        let mut tick: u32 = 0;
         while !stop_flag.load(Ordering::Relaxed) {
             std::thread::sleep(std::time::Duration::from_millis(80));
             let chunks = {
@@ -108,6 +126,31 @@ pub fn start_usb_emitter(
             };
             if !chunks.is_empty() {
                 let _ = app.emit("mic-audio-chunk", &chunks);
+            }
+
+            // Disk flush every ~240 ms. We hold the writer lock across the
+            // drain+write so the stop path can't consume the writer
+            // mid-flush (which would silently drop the drained bytes).
+            tick = tick.wrapping_add(1);
+            if tick % 3 == 0 {
+                if let Ok(mut wg) = recovery.writer.lock() {
+                    if wg.is_some() {
+                        let bytes = {
+                            let mut buf = match buffer.lock() {
+                                Ok(b) => b,
+                                Err(_) => continue,
+                            };
+                            drain_usb_recovery_bytes(&mut buf)
+                        };
+                        if !bytes.is_empty() {
+                            if let Some(writer) = wg.as_mut() {
+                                if let Err(e) = writer.append_bytes(&bytes) {
+                                    eprintln!("usb recovery flush failed: {}", e);
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     });
@@ -233,8 +276,10 @@ pub fn start_usb_stream(
         Err(_) => return Err("USB stream startup timeout (5s) — device may not be sending data".into()),
     }
 
-    // Start emitter for streaming audio chunks to the frontend
-    start_usb_emitter(app, buffer.clone(), cancel_flag.clone());
+    // Start emitter for streaming audio chunks to the frontend (also does
+    // best-effort crash-recovery flushes when a writer is installed).
+    let recovery = crate::recovery::RecoveryHandle::default();
+    start_usb_emitter(app, buffer.clone(), cancel_flag.clone(), recovery.clone());
 
     Ok(UsbStreamState {
         cancel_flag,
@@ -244,10 +289,12 @@ pub fn start_usb_stream(
         is_streaming,
         device_name,
         uac_version,
+        recovery,
     })
 }
 
 #[cfg(not(target_os = "android"))]
+#[allow(clippy::too_many_arguments)]
 pub fn start_usb_stream(
     _fd: i32,
     _endpoint_address: u32,

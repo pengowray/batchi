@@ -1,4 +1,5 @@
-use crate::recording::{self, RecordingResult};
+use crate::recording::{self, NativeSampleFormat, RecordingResult};
+use crate::recovery;
 use crate::usb_audio::{self, UsbStreamInfo, UsbStreamStatus};
 use crate::UsbStreamMutex;
 use std::sync::atomic::Ordering;
@@ -64,7 +65,24 @@ pub fn usb_stop_stream(state: tauri::State<UsbStreamMutex>) -> Result<(), String
 }
 
 #[tauri::command]
-pub fn usb_start_recording(state: tauri::State<UsbStreamMutex>, shared_fd: Option<i32>) -> Result<(), String> {
+#[allow(clippy::too_many_arguments)]
+pub fn usb_start_recording(
+    app: tauri::AppHandle,
+    state: tauri::State<UsbStreamMutex>,
+    shared_fd: Option<i32>,
+    filename: Option<String>,
+    connection_type: Option<String>,
+    mic_name: Option<String>,
+    mic_make: Option<String>,
+    device_make: Option<String>,
+    device_model: Option<String>,
+    app_version: Option<String>,
+    loc_latitude: Option<f64>,
+    loc_longitude: Option<f64>,
+    loc_elevation: Option<f64>,
+    loc_accuracy: Option<f64>,
+    enable_recovery: Option<bool>,
+) -> Result<(), String> {
     let usb = state.lock().map_err(|e| e.to_string())?;
     let s = usb.as_ref().ok_or("USB stream not open")?;
     if !s.is_streaming.load(Ordering::Relaxed) {
@@ -75,6 +93,30 @@ pub fn usb_start_recording(state: tauri::State<UsbStreamMutex>, shared_fd: Optio
         let mut buf = s.buffer.lock().unwrap();
         buf.shared_fd = shared_fd;
     }
+
+    let args = recovery::StartArgs {
+        filename,
+        connection_type,
+        mic_name,
+        mic_make,
+        device_make,
+        device_model,
+        app_version,
+        loc_latitude,
+        loc_longitude,
+        loc_elevation,
+        loc_accuracy,
+        enable_recovery,
+    };
+    // USB streams are always 16-bit mono in this implementation.
+    if let Some(writer) = recovery::start_writer(
+        &app, &args, NativeSampleFormat::I16, s.sample_rate, 1, "batcap",
+    ) {
+        if let Ok(mut guard) = s.recovery.writer.lock() {
+            *guard = Some(writer);
+        }
+    }
+
     s.is_recording.store(true, Ordering::Relaxed);
     Ok(())
 }
@@ -102,7 +144,15 @@ pub fn usb_stop_recording(
         (buf.total_samples, buf.sample_rate, buf.shared_fd.take())
     };
 
+    // Take the recovery writer out. Done under the writer lock so the emitter
+    // can't race us and flush between here and the final tail drain below.
+    let recovery_writer = s.recovery.writer.lock().ok().and_then(|mut g| g.take());
+    let streaming_mode = recovery_writer.is_some();
+
     if num_samples == 0 {
+        if let Some(writer) = recovery_writer {
+            recovery::cleanup(writer);
+        }
         if !still_streaming {
             return Err("No samples recorded — USB stream died during recording".into());
         }
@@ -112,57 +162,97 @@ pub fn usb_stop_recording(
     let duration_secs = num_samples as f64 / sample_rate as f64;
     let skip_save = skip_native_save.unwrap_or(false);
 
-    let samples_f32 = usb_audio::get_usb_samples_f32(s);
-
-    let (saved_path, file_size_bytes, filename) = if skip_save {
+    if skip_save {
+        // WASM side will re-encode with pre-roll; streamed partial is redundant.
+        if let Some(writer) = recovery_writer {
+            recovery::cleanup(writer);
+        }
         let _ = shared_fd;
-        (String::new(), 0, String::new())
+        return Ok(RecordingResult {
+            filename: String::new(),
+            saved_path: String::new(),
+            sample_rate,
+            bits_per_sample: 16,
+            is_float: false,
+            duration_secs,
+            num_samples,
+            samples_f32: Vec::new(),
+            file_size_bytes: 0,
+        });
+    }
+
+    let now = chrono::Local::now();
+    let filename = now.format("batcap_%Y%m%d_%H%M%S.wav").to_string();
+    let location = match (loc_latitude, loc_longitude) {
+        (Some(lat), Some(lon)) => Some(recording::RecordingLocation {
+            latitude: lat,
+            longitude: lon,
+            elevation: loc_elevation,
+            accuracy: loc_accuracy,
+        }),
+        _ => None,
+    };
+    let device_lower = s.device_name.to_lowercase();
+    let interface_label = if device_lower.contains("echo meter") || device_lower.contains("emt2") {
+        "USB (EMT2)".to_string()
     } else {
-        let now = chrono::Local::now();
-        let filename = now.format("batcap_%Y%m%d_%H%M%S.wav").to_string();
+        match s.uac_version {
+            2 => "USB (UAC2)".to_string(),
+            1 => "USB (UAC1)".to_string(),
+            _ => "USB (UAC)".to_string(),
+        }
+    };
+    let is_mobile = cfg!(target_os = "android");
+    let guano_params = recording::TauriGuanoParams {
+        connection_type: Some(interface_label),
+        location,
+        device_make,
+        device_model,
+        mic_name: Some(s.device_name.clone()),
+        mic_make: None,
+        app_version: app_version.unwrap_or_else(|| env!("CARGO_PKG_VERSION").to_string()),
+        is_mobile,
+    };
+    let guano = recording::build_tauri_guano(
+        sample_rate, num_samples, &filename, &now, &guano_params,
+    );
+    let guano_text = guano.to_text();
 
-        let mut wav_data = usb_audio::encode_usb_wav(s)?;
-
-        let location = match (loc_latitude, loc_longitude) {
-            (Some(lat), Some(lon)) => Some(recording::RecordingLocation {
-                latitude: lat,
-                longitude: lon,
-                elevation: loc_elevation,
-                accuracy: loc_accuracy,
-            }),
-            _ => None,
+    let (saved_path, file_size_bytes, samples_f32) = if streaming_mode {
+        // Streaming-to-disk: partial file has every flushed sample. Append
+        // the tail + GUANO, patch the header, then move to destination.
+        let writer = recovery_writer.expect("streaming_mode implies writer");
+        let final_bytes = {
+            let mut buf = s.buffer.lock().unwrap();
+            usb_audio::drain_usb_recovery_bytes(&mut buf)
         };
+        let finalized_path = recovery::finalize_in_place_and_take(writer, &final_bytes, &guano_text)
+            .map_err(|e| format!("recovery finalize failed: {}", e))?;
+        let final_size = finalized_path.metadata().map(|m| m.len()).unwrap_or(0) as usize;
 
-        // USB interface label based on UAC version / device type
-        let device_lower = s.device_name.to_lowercase();
-        let interface_label = if device_lower.contains("echo meter") || device_lower.contains("emt2") {
-            "USB (EMT2)".to_string()
+        let saved_path = if let Some(fd) = shared_fd {
+            crate::cmd_mic::stream_finalized_to_shared_fd(&finalized_path, fd)?;
+            let _ = std::fs::remove_file(&finalized_path);
+            "shared://recording".to_string()
         } else {
-            match s.uac_version {
-                2 => "USB (UAC2)".to_string(),
-                1 => "USB (UAC1)".to_string(),
-                _ => "USB (UAC)".to_string(),
-            }
+            let dir = app
+                .path()
+                .app_data_dir()
+                .map_err(|e| e.to_string())?
+                .join("recordings");
+            std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+            let target = dir.join(&filename);
+            std::fs::rename(&finalized_path, &target)
+                .map_err(|e| format!("recovery: rename to final path: {}", e))?;
+            target.to_string_lossy().to_string()
         };
-
-        let is_mobile = cfg!(target_os = "android");
-
-        let guano_params = recording::TauriGuanoParams {
-            connection_type: Some(interface_label),
-            location,
-            device_make,
-            device_model,
-            mic_name: Some(s.device_name.clone()),
-            mic_make: None,
-            app_version: app_version.unwrap_or_else(|| env!("CARGO_PKG_VERSION").to_string()),
-            is_mobile,
-        };
-        let guano = recording::build_tauri_guano(
-            sample_rate, num_samples, &filename, &now, &guano_params,
-        );
-        oversample_core::audio::guano::append_guano_chunk(&mut wav_data, &guano.to_text());
+        (saved_path, final_size, Vec::new())
+    } else {
+        // To-memory mode: encode the accumulated i16 buffer, return samples.
+        let samples_f32 = usb_audio::get_usb_samples_f32(s);
+        let mut wav_data = usb_audio::encode_usb_wav(s)?;
+        oversample_core::audio::guano::append_guano_chunk(&mut wav_data, &guano_text);
         let file_size_bytes = wav_data.len();
-
         let path = if let Some(fd) = shared_fd {
             recording::write_wav_to_fd(fd, &wav_data)?;
             "shared://recording".to_string()
@@ -177,7 +267,7 @@ pub fn usb_stop_recording(
             std::fs::write(&full_path, &wav_data).map_err(|e| e.to_string())?;
             full_path.to_string_lossy().to_string()
         };
-        (path, file_size_bytes, filename)
+        (path, file_size_bytes, samples_f32)
     };
 
     Ok(RecordingResult {

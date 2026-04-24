@@ -509,6 +509,7 @@ fn handle_stop_result(result: StopResult, state: &AppState) {
 
 /// Stop recording and finalize.
 async fn do_stop_recording(state: &AppState, backend: ActiveBackend) {
+    let was_listening = state.mic_listening.get_untracked();
     state.mic_recording.set(false);
     state.mic_recording_start_time.set(None);
     state.mic_samples_recorded.set(0);
@@ -516,7 +517,15 @@ async fn do_stop_recording(state: &AppState, backend: ActiveBackend) {
     let result = backend.stop_recording(state).await;
     handle_stop_result(result, state);
 
-    backend.maybe_close(state).await;
+    if was_listening {
+        // Listen overlay was active during the recording. finalize_recording
+        // cleared mic_live_file_idx, which causes the processing loop to exit
+        // and leaves listening "on" but with no live file or waterfall. Kick
+        // off a fresh listen session to restore the live visualization.
+        do_start_listening(state, backend).await;
+    } else {
+        backend.maybe_close(state).await;
+    }
 }
 
 /// Start listening with the given backend (mic already open).
@@ -556,6 +565,29 @@ async fn do_stop_listening(state: &AppState, backend: ActiveBackend) {
 
 /// Toggle live HET listening on/off.
 pub async fn toggle_listen(state: &AppState) {
+    // If a recording is in progress, treat listen as a pure overlay: flip
+    // mic_listening + reset HET DSP state, but leave the recording buffer,
+    // live file, and processing loop untouched. Otherwise calling
+    // do_start_listening / do_stop_listening here would clear_buffer() (wiping
+    // in-progress recording samples) and replace mic_live_file_idx with a new
+    // "Listening" entry — corrupting the file list.
+    if state.mic_recording.get_untracked() {
+        if let Some(backend) = resolve_active_backend(state) {
+            let enabling = !state.mic_listening.get_untracked();
+            state.log_debug("info", format!(
+                "toggle_listen: recording active, {} HET overlay only",
+                if enabling { "enabling" } else { "disabling" },
+            ));
+            if enabling {
+                // Reset HET state so we don't hear stale audio from a prior session
+                backend.clear_dsp_state();
+            }
+            state.mic_listening.set(enabling);
+            backend.set_listening(state, enabling).await;
+        }
+        return;
+    }
+
     // If already listening, stop
     if state.mic_listening.get_untracked() {
         state.log_debug("info", "toggle_listen: stopping");
@@ -660,6 +692,14 @@ pub async fn toggle_record_with_preroll(state: &AppState) {
     } else {
         raw_preroll
     };
+    // The listen buffer keeps ~2 s of headroom beyond the user-requested
+    // duration (see trim logic in live_recording) specifically so that
+    // gesture-time compensation above doesn't eat into what the user asked
+    // for. Clamp back down to the requested duration here so long presses
+    // don't produce *more* pre-roll than the setting promises.
+    let requested_secs = state.mic_preroll_buffer_secs.get_untracked().max(2) as usize;
+    let requested_samples = requested_secs.saturating_mul(sample_rate as usize);
+    let preroll = preroll.min(requested_samples);
     state.mic_preroll_samples.set(preroll);
 
     if let Some(backend) = resolve_active_backend(state) {

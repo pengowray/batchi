@@ -17,6 +17,74 @@ use crate::dsp::zc_divide::zc_divide;
 use crate::tauri_bridge::{get_tauri_internals, tauri_invoke, tauri_invoke_no_args};
 use std::cell::RefCell;
 
+/// Build IPC args for `mic_start_recording` / `usb_start_recording`.
+/// Shared between the cpal and raw-USB paths so they can't drift.
+///
+/// Setting `enableRecovery: true` tells the backend to stream native-format
+/// PCM to a `<app_data>/recordings/.recovery/<name>.wav.part` file as the
+/// audio callback fires, and to drain the in-memory Tauri buffer after each
+/// flush. This bounds Tauri-side memory to ~240 ms of samples and
+/// doubles as crash-recovery. At stop the partial is finalized in-place (the
+/// GUANO chunk is appended and the header is patched) and moved to the
+/// final destination with no large in-memory copy.
+///
+/// We disable this in two cases:
+/// - `record_mode == ToMemory`: user explicitly asked to keep it all in RAM
+///   (no disk write at all).
+/// - `mic_preroll_samples > 0`: pre-roll recording re-encodes the WAV on the
+///   WASM side to splice in the pre-roll buffer + cue marker; any partial
+///   written in that case would be thrown away.
+fn build_start_recording_args(state: &AppState, shared_fd: Option<i32>) -> JsValue {
+    let args = js_sys::Object::new();
+    if let Some(fd_val) = shared_fd {
+        let _ = js_sys::Reflect::set(&args, &JsValue::from_str("sharedFd"), &JsValue::from_f64(fd_val as f64));
+    }
+
+    let to_memory = state.record_mode.get_untracked() == crate::state::RecordMode::ToMemory;
+    let preroll = state.mic_preroll_samples.get_untracked();
+    let stream_to_disk = state.is_tauri && !to_memory && preroll == 0;
+    let _ = js_sys::Reflect::set(&args, &JsValue::from_str("enableRecovery"), &JsValue::from_bool(stream_to_disk));
+
+    // Filename mirrors the one the WASM side uses for the live file so the
+    // sidecar + partial match up with the final WAV name on recovery.
+    let filename = state
+        .mic_live_file_idx
+        .get_untracked()
+        .and_then(|idx| state.files.with_untracked(|f| f.get(idx).map(|f| f.name.clone())));
+    if let Some(name) = filename {
+        let _ = js_sys::Reflect::set(&args, &JsValue::from_str("filename"), &JsValue::from_str(&name));
+    }
+    if let Some(c) = state.mic_connection_type.get_untracked() {
+        let _ = js_sys::Reflect::set(&args, &JsValue::from_str("connectionType"), &JsValue::from_str(&c));
+    }
+    if let Some(n) = state.mic_device_name.get_untracked() {
+        let _ = js_sys::Reflect::set(&args, &JsValue::from_str("micName"), &JsValue::from_str(&n));
+    }
+    if let Some(n) = state.mic_manufacturer.get_untracked() {
+        let _ = js_sys::Reflect::set(&args, &JsValue::from_str("micMake"), &JsValue::from_str(&n));
+    }
+    if state.device_model_enabled.get_untracked() {
+        if let Some(make) = state.cached_device_make.get_untracked() {
+            let _ = js_sys::Reflect::set(&args, &JsValue::from_str("deviceMake"), &JsValue::from_str(&make));
+        }
+        if let Some(model) = state.cached_device_model.get_untracked() {
+            let _ = js_sys::Reflect::set(&args, &JsValue::from_str("deviceModel"), &JsValue::from_str(&model));
+        }
+    }
+    let _ = js_sys::Reflect::set(&args, &JsValue::from_str("appVersion"), &JsValue::from_str(env!("CARGO_PKG_VERSION")));
+    if let Some(loc) = state.recording_location.get_untracked() {
+        let _ = js_sys::Reflect::set(&args, &JsValue::from_str("locLatitude"), &JsValue::from_f64(loc.latitude));
+        let _ = js_sys::Reflect::set(&args, &JsValue::from_str("locLongitude"), &JsValue::from_f64(loc.longitude));
+        if let Some(e) = loc.elevation {
+            let _ = js_sys::Reflect::set(&args, &JsValue::from_str("locElevation"), &JsValue::from_f64(e));
+        }
+        if let Some(a) = loc.accuracy {
+            let _ = js_sys::Reflect::set(&args, &JsValue::from_str("locAccuracy"), &JsValue::from_f64(a));
+        }
+    }
+    args.into()
+}
+
 /// Build IPC args for mic_stop_recording / usb_stop_recording,
 /// including optional GPS location and device model fields from state.
 fn build_stop_recording_args(state: &AppState) -> JsValue {
@@ -374,19 +442,13 @@ impl ActiveBackend {
             ActiveBackend::Browser => Ok(()),
             ActiveBackend::Cpal => {
                 let fd = try_create_shared_fd(state).await;
-                let args = js_sys::Object::new();
-                if let Some(fd_val) = fd {
-                    js_sys::Reflect::set(&args, &JsValue::from_str("sharedFd"), &JsValue::from_f64(fd_val as f64)).ok();
-                }
-                tauri_invoke("mic_start_recording", &args.into()).await.map(|_| ())
+                let args = build_start_recording_args(state, fd);
+                tauri_invoke("mic_start_recording", &args).await.map(|_| ())
             }
             ActiveBackend::RawUsb => {
                 let fd = try_create_shared_fd(state).await;
-                let args = js_sys::Object::new();
-                if let Some(fd_val) = fd {
-                    js_sys::Reflect::set(&args, &JsValue::from_str("sharedFd"), &JsValue::from_f64(fd_val as f64)).ok();
-                }
-                tauri_invoke("usb_start_recording", &args.into()).await.map(|_| ())
+                let args = build_start_recording_args(state, fd);
+                tauri_invoke("usb_start_recording", &args).await.map(|_| ())
             }
         }
     }

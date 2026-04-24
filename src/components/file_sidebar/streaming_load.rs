@@ -1563,7 +1563,7 @@ pub(super) async fn build_streaming_overview(
 }
 
 /// Decode raw PCM bytes to f32 samples (used for head region during streaming load).
-fn decode_head_pcm(bytes: &[u8], bits_per_sample: u16, is_float: bool, _channels: u16) -> Vec<f32> {
+pub(crate) fn decode_head_pcm(bytes: &[u8], bits_per_sample: u16, is_float: bool, _channels: u16) -> Vec<f32> {
     match (is_float, bits_per_sample) {
         (true, 32) => {
             bytes.chunks_exact(4)
@@ -1600,7 +1600,7 @@ fn decode_head_pcm(bytes: &[u8], bits_per_sample: u16, is_float: bool, _channels
 }
 
 /// Scan raw bytes (from after the data chunk) for a GUANO "guan" chunk.
-fn scan_tail_for_guano(tail_bytes: &[u8]) -> Option<crate::audio::guano::GuanoMetadata> {
+pub(crate) fn scan_tail_for_guano(tail_bytes: &[u8]) -> Option<crate::audio::guano::GuanoMetadata> {
     let mut pos = 0usize;
     while pos + 8 <= tail_bytes.len() {
         let chunk_id = &tail_bytes[pos..pos + 4];
