@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
+    <title>Oversample</title>
+    <link rel="icon" type="image/x-icon" href="favicon.ico"/>
+    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png"/>
+    <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png"/>
+    <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png"/>
+    <link rel="manifest" href="site.webmanifest"/>
+    
+    
+    
+    
+    
+    
+    
+    
+    <link rel="stylesheet" href="/style-ff8e3b27abb3eac3.css" integrity="sha384-/6LLEw88RoDbRVTlSwAFNINTzy7DBMnBfNFPbryewt/YCwTyjuY9Xw1OxaWSticH"/>
+    
+    <script src="mp4-muxer.js"></script>
+<link rel="modulepreload" href="/oversample-9365ec97481a072.js" crossorigin="anonymous" integrity="sha384-EAmxSKn//GL259iiWw29JDjAqKgCm/zD27zicfJUHdqdlvfK7YPrywTfRrVdK7Va"><link rel="preload" href="/oversample-9365ec97481a072_bg.wasm" crossorigin="anonymous" integrity="sha384-80GmEpuDvkirtcpGy0wKPotUjGiqAHLBQetaZX0ClB6j/kjoI6wDZotQpQhQ5n02" as="fetch" type="application/wasm"></head>
+<body>
+<script type="module">
+import init, * as bindings from '/oversample-9365ec97481a072.js';
+const wasm = await init({ module_or_path: '/oversample-9365ec97481a072_bg.wasm' });
+
+
+window.wasmBindings = bindings;
+
+
+dispatchEvent(new CustomEvent("TrunkApplicationStarted", {detail: {wasm}}));
+
+</script></body>
+</html>
